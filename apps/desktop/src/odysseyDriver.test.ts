@@ -1977,11 +1977,13 @@ describe("re-pointing a goal at another session", () => {
     // Codex is spent; nothing says the Claude account is.
     useStore.setState({ usage: { codex: usage({ primary: window(99, 2_000), limitReached: true, allowed: false }), claude: null } });
     const opened = vi.fn(async () => ({ key: OTHER, agentSessionId: "kw-2" }));
-    useStore.setState({ openSessionFor: opened as never });
+    // The session leads a team; the run keeps it on the new orchestrator.
+    const team = { workers: [{ name: "luna", provider: "codex" as const, capabilities: ["image"] }], nativeSubagents: false };
+    useStore.setState({ openSessionFor: opened as never, teams: { [SESSION]: team } });
 
     await useStore.getState().odysseyTick(SESSION);
 
-    expect(opened).toHaveBeenCalledWith("w1", "claude");
+    expect(opened).toHaveBeenCalledWith("w1", "claude", team);
     expect(api.odysseyRepoint).toHaveBeenCalledWith("o1", "w1", "kw-2", "claude");
     // Automatic: nobody is at the keyboard at 3am, and the move is journalled
     // instead so the history says why the account changed.

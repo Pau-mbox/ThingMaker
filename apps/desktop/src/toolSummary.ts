@@ -1,6 +1,7 @@
 /**
- * Reads structure out of a Kit tool call so the transcript can render it as
- * something better than a JSON blob.
+ * Reads structure out of an agent's tool call so the transcript can render it
+ * as something better than a JSON blob, and so Super Thing can read a check's
+ * exit code from a command the agent ran.
  *
  * Everything here is derived from what the tool itself reported. Nothing is
  * inferred from the model's prose and nothing is estimated: a test count is
@@ -9,6 +10,8 @@
  * is not recognised the result is `null` and the caller falls back to the raw
  * view.
  */
+
+import type { Provider } from "@thingmaker/contracts";
 
 /** How deep to walk a compose result before giving up. */
 const MAX_DEPTH = 5;
@@ -73,6 +76,54 @@ export function shellResultsIn(output: unknown, depth = 0): ShellResult[] {
     ];
   }
   return Object.values(output).flatMap((value) => shellResultsIn(value, depth + 1));
+}
+
+/**
+ * A shell command's result as each provider reports it on the stream
+ * (captured from the real programs):
+ *
+ * - **Codex** (bridged app-server): `rawInput.command`, and `rawOutput`
+ *   `{exitCode, output}`.
+ * - **Claude Code**: `rawInput.command`, the call's `status` (`completed` or
+ *   `failed`), and a plain-text `rawOutput` that starts with `Exit code N` on
+ *   a failure.
+ * - **Gemini** (`agy`): `rawInput.CommandLine`, but a failing command is
+ *   reported `completed` with no exit code, so nothing it reports can be read
+ *   as a pass or a fail. It yields no result rather than a wrong one.
+ * - The earlier runtime's `{exit_code, stdout, …}`, wherever it appears.
+ */
+export function shellResultsOf(patch: ToolPatchLike | undefined, provider: Provider | undefined): ShellResult[] {
+  if (!patch) return [];
+  const legacy = shellResultsIn(patch.rawOutput);
+  if (legacy.length > 0) return legacy;
+  const input = isRecord(patch.rawInput) ? patch.rawInput : {};
+  const raw = input.command ?? input.CommandLine ?? input.cmd;
+  const command = typeof raw === "string" ? raw : Array.isArray(raw) ? raw.filter((part) => typeof part === "string").join(" ") : null;
+  const output = patch.rawOutput;
+  if (provider === "codex" || (isRecord(output) && typeof output.exitCode === "number")) {
+    if (!isRecord(output) || typeof output.exitCode !== "number") return [];
+    return [{ command, exitCode: output.exitCode, stdout: asString(output.output ?? output.aggregatedOutput), stderr: "" }];
+  }
+  if (provider === "claude") {
+    if (patch.toolKind !== "execute" || !command) return [];
+    if (patch.status !== "completed" && patch.status !== "failed") return [];
+    const text = typeof output === "string" ? output : contentText(patch.content);
+    const code = /^Exit code (\d+)\s*\n?/.exec(text);
+    const exitCode = patch.status === "completed" ? 0 : code ? Number(code[1]) : 1;
+    return [{ command, exitCode, stdout: code ? text.slice(code[0].length) : text, stderr: "" }];
+  }
+  return [];
+}
+
+/** The fields of a tool call the readers here use. */
+export type ToolPatchLike = { toolKind?: string | null; status?: string | null; rawInput?: unknown; rawOutput?: unknown; content?: unknown };
+
+function contentText(content: unknown): string {
+  if (!Array.isArray(content)) return "";
+  return content
+    .map((entry) => (isRecord(entry) && isRecord(entry.content) && typeof entry.content.text === "string" ? entry.content.text : ""))
+    .join("\n")
+    .replace(/^```[a-z]*\n?|\n?```$/g, "");
 }
 
 /** Collects `{path, status}` results, which is what Kit's `edit` tool returns. */
@@ -156,8 +207,8 @@ export function testCountsIn(output: string): TestCounts | null {
  * command and a shell result are both present, so an ordinary shell call is
  * never dressed up as a test report.
  */
-export function detectTestRun(input: unknown, output: unknown): TestRun | null {
-  const results = shellResultsIn(output);
+export function detectTestRun(input: unknown, output: unknown, known?: ShellResult[]): TestRun | null {
+  const results = known && known.length > 0 ? known : shellResultsIn(output);
   if (results.length === 0) return null;
   const commands = commandsIn(input);
   const scriptLooksLikeTests = commands.some((command) => TEST_COMMAND.test(command));

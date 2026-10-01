@@ -305,3 +305,16 @@ describe("what the skill says about delegating under Claude", () => {
     expect(section).toContain("model is a field on its definition");
   });
 });
+
+describe("the skill and a session that leads a team", () => {
+  it("says how to delegate to workers and what a worker's check is worth", () => {
+    const section = flat("Leading a team");
+    expect(section).toContain("`delegate`");
+    expect(section).toContain("`6.3-pricing: …`");
+    expect(section).toContain("not evidence for the run");
+  });
+
+  it("no longer says the run ignores the agent's own tool results", () => {
+    expect(skill).not.toContain("rather than reading an exit code out of your tool results");
+  });
+});

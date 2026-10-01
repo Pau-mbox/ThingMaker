@@ -137,3 +137,38 @@ async fn a_claude_orchestrator_delegates_to_a_gemini_worker() {
     delegation.release(&key).await;
     let _ = actor.stop().await;
 }
+
+/// What a shell command's result looks like on `agy`'s stream, bridged: the
+/// shape Super Thing reads a check's exit code from.
+#[tokio::test]
+async fn a_shell_commands_result_carries_what_a_check_needs() {
+    if !enabled() {
+        return;
+    }
+    let scratch = tempfile::tempdir().unwrap();
+    let mut config = gemini(scratch.path(), None);
+    if let AgentLaunch::Gemini(options) = &mut config.launch {
+        options.permission_mode = PermissionStance::AcceptEdits;
+    }
+    let actor = SessionActor::open(config).await.expect("attached");
+    let mut subscription = actor.subscribe();
+    actor
+        .submit_text("r1", "Run exactly these two shell commands, one tool call each, then reply OK: `echo pass-marker` and `sh -c 'echo fail-marker; exit 3'`.")
+        .await
+        .expect("submitted");
+    loop {
+        let event = tokio::time::timeout(Duration::from_secs(240), subscription.recv()).await.expect("settles").expect("stream");
+        match &event.payload {
+            SessionEvent::Update(SessionUpdate::ToolCall(patch)) | SessionEvent::Update(SessionUpdate::ToolCallUpdate(patch)) => {
+                eprintln!("TOOL {} kind={:?} status={:?}\n  rawInput={}\n  rawOutput={}\n  content={}",
+                    patch.tool_call_id.clone().unwrap_or_default(), patch.kind, patch.status,
+                    serde_json::to_string(&patch.raw_input).unwrap_or_default(),
+                    serde_json::to_string(&patch.raw_output).unwrap_or_default().chars().take(600).collect::<String>(),
+                    serde_json::to_string(&patch.content).unwrap_or_default().chars().take(400).collect::<String>());
+            }
+            SessionEvent::Turn(TurnEffect::Settled { .. }) => break,
+            _ => {}
+        }
+    }
+    let _ = actor.stop().await;
+}

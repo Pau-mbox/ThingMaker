@@ -635,6 +635,28 @@ pub fn odyssey_claude_preflight(state: State<'_, AppState>) -> CommandResult<Cla
     use thingmaker_supervisor::agents::{Provider, claude::{auth, quota}};
 
     let resolved = state.resolve_provider(Provider::Claude)?;
+    // First, Claude Code's own usage data: it answers in about a second,
+    // proves the account is signed in, and — unlike the model list — says
+    // whether the account has room. A spent account is no place to move a run.
+    let home = state.home.clone().unwrap_or_default();
+    let script = resolved.prefix_args.first().map(std::path::PathBuf::from).unwrap_or_default();
+    if let Some(binary) = thingmaker_supervisor::agents::claude::usage_probe::locate_claude_binary(&script, &home)
+        && let Ok(snapshot) = thingmaker_supervisor::agents::claude::usage_probe::read_quota(&binary, std::time::Duration::from_secs(20))
+    {
+        if let Some(delegation) = state.delegation.get() {
+            delegation.note_quota(snapshot.clone());
+        }
+        if snapshot.status == thingmaker_supervisor::agents::events::QuotaStatus::Rejected {
+            return Ok(ClaudeAccountStatus {
+                available: false,
+                reset_at_unix: snapshot.available_again_at(),
+                message: Some("the Claude account's usage window is spent".into()),
+                problem: None,
+            });
+        }
+        return Ok(ClaudeAccountStatus { available: true, reset_at_unix: None, message: None, problem: None });
+    }
+    // Without it, the model list: slower, and it proves sign-in only.
     let scratch = state.data_dir.join("provider-probe");
     match auth::read_models(&resolved.program, &resolved.prefix_args, &scratch, std::time::Duration::from_secs(45)) {
         Ok(models) if !models.is_empty() => Ok(ClaudeAccountStatus { available: true, reset_at_unix: None, message: None, problem: None }),

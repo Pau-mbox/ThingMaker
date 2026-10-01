@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { commandsIn, detectTestRun, editedFilesIn, shellResultsIn, testCountsIn } from "./toolSummary";
+import { commandsIn, detectTestRun, editedFilesIn, shellResultsIn, shellResultsOf, testCountsIn } from "./toolSummary";
 
 describe("shell results in a compose output", () => {
   it("reads a bare result", () => {
@@ -124,5 +124,35 @@ describe("detecting a test run", () => {
 
   it("returns null without a shell result", () => {
     expect(detectTestRun({ script }, { preview: "…" })).toBeNull();
+  });
+});
+
+describe("a shell command's result, as each provider reports it", () => {
+  // Captured from the real programs on 1 October 2026.
+  it("reads Claude Code's status and its `Exit code N` prefix", () => {
+    const passed = { toolKind: "execute", status: "completed", rawInput: { command: "echo pass-marker" }, rawOutput: "pass-marker" };
+    expect(shellResultsOf(passed, "claude")).toEqual([{ command: "echo pass-marker", exitCode: 0, stdout: "pass-marker", stderr: "" }]);
+    const failed = { toolKind: "execute", status: "failed", rawInput: { command: "sh -c 'exit 3'" }, rawOutput: "Exit code 3\nfail-marker" };
+    expect(shellResultsOf(failed, "claude")).toEqual([{ command: "sh -c 'exit 3'", exitCode: 3, stdout: "fail-marker", stderr: "" }]);
+    expect(shellResultsOf({ ...passed, status: "in_progress" }, "claude")).toEqual([]);
+    expect(shellResultsOf({ ...passed, toolKind: "read" }, "claude")).toEqual([]);
+  });
+
+  it("reads Codex's exitCode", () => {
+    const run = { toolKind: "execute", status: "failed", rawInput: { command: "pnpm test", cwd: "/w" }, rawOutput: { exitCode: 1, output: "1 failed", durationMs: 9 } };
+    expect(shellResultsOf(run, "codex")).toEqual([{ command: "pnpm test", exitCode: 1, stdout: "1 failed", stderr: "" }]);
+  });
+
+  it("never reads Gemini's, which reports a failing command as completed with no exit code", () => {
+    const run = { toolKind: "execute", status: "completed", rawInput: { CommandLine: "sh -c 'exit 3'" }, rawOutput: "fail-marker\r\n" };
+    expect(shellResultsOf(run, "gemini")).toEqual([]);
+  });
+
+  it("still reads the earlier runtime's shape, and a test run from any of them", () => {
+    expect(shellResultsOf({ rawOutput: { exit_code: 0, stdout: "ok", stderr: "", command: "x" } }, "claude")).toHaveLength(1);
+    const tests = { toolKind: "execute", status: "completed", rawInput: { command: "pnpm test" }, rawOutput: "Tests  12 passed (12)" };
+    const run = detectTestRun(tests.rawInput, tests.rawOutput, shellResultsOf(tests, "claude"));
+    expect(run?.ok).toBe(true);
+    expect(run?.command).toBe("pnpm test");
   });
 });

@@ -11,7 +11,7 @@
  * the user is shown before a run starts, so the text here is the contract, not
  * a paraphrase of one.
  */
-import { ODYSSEY_AGENT_NOTES_DIR, ODYSSEY_DELEGATE, ODYSSEY_STATE_NOTE, type CheckKind, type MilestoneRecord, type OdysseyRecord, type Provider, type WorkspaceNotes } from "@thingmaker/contracts";
+import { ODYSSEY_AGENT_NOTES_DIR, ODYSSEY_DELEGATE, ODYSSEY_STATE_NOTE, PROVIDER_LABELS, type CheckKind, type Combo, type MilestoneRecord, type OdysseyRecord, type Provider, type WorkspaceNotes } from "@thingmaker/contracts";
 import { TASK_GRAMMAR, taskLinesFor } from "./odysseyTasks";
 import { ASK_GRAMMAR } from "./odysseyAsk";
 
@@ -126,6 +126,13 @@ export function buildBriefing(
     handedOver?: boolean;
     /** Which agent is being briefed; some of the protocol differs by it. */
     agent?: Provider;
+    /**
+     * The session's team, when it has workers. The orchestrator then
+     * delegates through the `team` tools, and — unless the team allows them —
+     * its own subagent tool is switched off, so the briefing must not tell it
+     * to raise subagents it cannot raise.
+     */
+    team?: Combo | null;
   } = {},
 ): string {
   // A goal that moved needs its milestone states in the text: the new model
@@ -169,16 +176,10 @@ export function buildBriefing(
       ? [`- The full specification is at \`${goal.planPath}\`. The milestone details below carry its substance, but read the file whenever you need more than they say. A milestone's \`spec:\` names the part of it to read for that milestone.`]
       : []),
     `- ${handoffLine(options.notes, options.now ?? Date.now())}`,
-    `- Every subagent you raise writes its result to \`${ODYSSEY_AGENT_NOTES_DIR}/<name>.md\` before it returns, and gets the handoff note and the milestone's spec reference in its prompt. When a turn is resumed or restarted, read that folder before raising anything again: a subagent that died at a quota wall may have finished on disk.`,
-    "- Plan, delegate, read results and report. Run the shell yourself to verify a subagent's claim or the milestone's check; routine implementation belongs in a subagent.",
-    // Claude Code has no role table for subagents, so the delegate is named
-    // here and its model is a field on the definition that was just installed.
-    ...(options.agent === "claude"
-      ? [`- Raise every subagent with \`subagent_type: ${ODYSSEY_DELEGATE}\`, which this project defines. It pins the model the run is meant to delegate on; the default subagent type does not.`]
-      : []),
+    ...delegationLines(options.agent, options.team),
     `- When the plan no longer fits what you found, change it with an SUPERTHING-AMEND block — add, revise, drop, split or move tasks and milestones — and give a \`reason:\`. ${goal.onPlanChange === "auto" ? "It is applied at once and the user sees the diff." : goal.onPlanChange === "review" ? "It is shown to the user as a diff and applied when they accept; until then, work to the plan as it stands." : "Task changes land at once. Adding or dropping a milestone, or changing its title or check, is shown to the user as a diff and lands when they accept; until then, work to the plan as it stands."}`,
     `- Decisions only a human can make — an ambiguous requirement, an architectural fork, constraints that conflict, a failure that keeps recurring, a permission you cannot grant yourself — go on one line: ${ASK_GRAMMAR}. Name what you will do meanwhile and carry on; never wait for the answer. Everything else you decide.`,
-    `- Milestones are broken into numbered tasks (6.3 is the third task of milestone 6). Name each subagent after its task, \`6.3-<slug>\`, so the run can show which model did it, and when a task starts, finishes or cannot be done, put a line in your reply: ${TASK_GRAMMAR}. Several lines per reply are fine.`,
+    `- Milestones are broken into numbered tasks (6.3 is the third task of milestone 6). Name each ${hasWorkers(options.team) ? "delegated job (the start of its task text)" : "subagent"} after its task, \`6.3-<slug>\`, so the run can show which model did it, and when a task starts, finishes or cannot be done, put a line in your reply: ${TASK_GRAMMAR}. Several lines per reply are fine.`,
     "",
     `Goal: ${goal.title}`,
     ...(goal.brief ? [goal.brief] : []),
@@ -189,6 +190,51 @@ export function buildBriefing(
     stop,
     `Budget: at most ${goal.maxContinuations} continuations${goal.tokenBudget ? `, and ${goal.tokenBudget.toLocaleString()} tokens` : ""}. Super Thing stops the run at the ceiling, so keep turns purposeful.`,
   ].join("\n");
+}
+
+function hasWorkers(team: Combo | null | undefined): team is Combo {
+  return !!team && team.workers.length > 0;
+}
+
+/**
+ * How the run delegates, which depends on who can do the work.
+ *
+ * - A team with workers: through the `team` tools, to workers on any
+ *   provider. They do not see this briefing, so each task has to carry what
+ *   the run needs from it: its task number and where to write its note.
+ * - The orchestrator's own subagents: when there is no team, or the team
+ *   allows them. Under Claude Code they are raised as the delegate this
+ *   project defines, which pins the model.
+ */
+function delegationLines(agent: Provider | undefined, team: Combo | null | undefined): string[] {
+  const notes = `\`${ODYSSEY_AGENT_NOTES_DIR}/<name>.md\``;
+  const lines: string[] = [];
+  const native = !hasWorkers(team) || team.nativeSubagents;
+  if (hasWorkers(team)) {
+    const roster = team.workers.map((worker) => `${worker.name} (${PROVIDER_LABELS[worker.provider]}${worker.model ? ` · ${worker.model}` : ""}${worker.capabilities.length > 0 ? `; ${worker.capabilities.join(", ")}` : ""})`).join(", ");
+    lines.push(
+      `- You lead a team: ${roster}. Hand routine implementation to its workers with the \`team\` tools — \`delegate\` by worker name or capability, then \`await_jobs\` for their reports; call \`list_workers\` if the team may have changed. Delegate independent tasks together.`,
+      `- A worker sees only the task you give it. Start each task with its plan number and a short name (\`6.3-pricing: …\`), include the milestone's spec reference and the handoff note's path, and tell it to write its result to ${notes} before it finishes.`,
+      native
+        ? "- You may also raise your own subagents for work inside this session."
+        : "- Your own subagent tool is turned off for this run: every delegated task goes to a worker.",
+    );
+  }
+  if (native) {
+    lines.push(
+      `- Every subagent you raise writes its result to ${notes} before it returns, and gets the handoff note and the milestone's spec reference in its prompt.`,
+    );
+    // Claude Code has no role table for subagents, so the delegate is named
+    // here and its model is a field on the definition that was just installed.
+    if (agent === "claude") {
+      lines.push(`- Raise every subagent with \`subagent_type: ${ODYSSEY_DELEGATE}\`, which this project defines. It pins the model the run is meant to delegate on; the default subagent type does not.`);
+    }
+  }
+  lines.push(
+    `- When a turn is resumed or restarted, read ${notes.replace("<name>.md", "")} before delegating anything again: a worker or subagent that stopped at a quota wall may have finished on disk.`,
+    `- Plan, delegate, read results and report. Run the shell yourself to verify a delegate's claim or the milestone's check; routine implementation belongs in ${hasWorkers(team) ? "a worker" : "a subagent"}.`,
+  );
+  return lines;
 }
 
 function deltaLine(delta: Delta): string {

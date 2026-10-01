@@ -135,3 +135,40 @@ fn the_accounts_usage_is_read_from_claude_code() {
     eprintln!("{} · {:?} · {:?}", binary.display(), quota.plan, quota.windows);
     assert!(quota.windows.iter().any(|window| window.kind == "five_hour" && window.used_percent.is_some()));
 }
+
+/// What a shell command's result looks like on Claude Code's stream: the
+/// shape Super Thing reads a check's exit code from. Spends one small turn.
+#[tokio::test]
+async fn a_shell_commands_result_carries_what_a_check_needs() {
+    if std::env::var("THINGMAKER_REAL_CLAUDE").as_deref() != Ok("1") {
+        eprintln!("set THINGMAKER_REAL_CLAUDE=1 to spend a real turn; skipping");
+        return;
+    }
+    let home = std::path::PathBuf::from(std::env::var("HOME").expect("HOME"));
+    let (node, script) = locate_adapter(&home, None, std::env::var("THINGMAKER_CLAUDE_ACP").ok()).expect("claude-agent-acp is installed");
+    let scratch = tempfile::tempdir().unwrap();
+    let mut options = ClaudeLaunchOptions::new(scratch.path(), node.clone(), vec![script.to_string_lossy().into_owned()]);
+    options.permission_mode = PermissionStance::AcceptEdits;
+    options.model = Some("haiku".into());
+    let actor = SessionActor::open(SessionActorConfig::new(LaunchTarget::executable(node), AgentLaunch::Claude(options))).await.expect("attached");
+    let mut subscription = actor.subscribe();
+    actor
+        .submit_text("r1", "Run exactly these two shell commands with your Bash tool, one call each, then reply OK: `echo pass-marker` and `sh -c 'echo fail-marker; exit 3'`.")
+        .await
+        .expect("submitted");
+    loop {
+        let event = tokio::time::timeout(Duration::from_secs(180), subscription.recv()).await.expect("settles").expect("stream");
+        match &event.payload {
+            SessionEvent::Update(SessionUpdate::ToolCall(patch)) | SessionEvent::Update(SessionUpdate::ToolCallUpdate(patch)) => {
+                eprintln!("TOOL {} kind={:?} status={:?}\n  rawInput={}\n  rawOutput={}\n  content={}",
+                    patch.tool_call_id.clone().unwrap_or_default(), patch.kind, patch.status,
+                    serde_json::to_string(&patch.raw_input).unwrap_or_default(),
+                    serde_json::to_string(&patch.raw_output).unwrap_or_default().chars().take(600).collect::<String>(),
+                    serde_json::to_string(&patch.content).unwrap_or_default().chars().take(400).collect::<String>());
+            }
+            SessionEvent::Turn(TurnEffect::Settled { .. }) => break,
+            _ => {}
+        }
+    }
+    let _ = actor.stop().await;
+}

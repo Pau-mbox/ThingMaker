@@ -295,3 +295,28 @@ describe("the model a run delegates on", () => {
     expect(text).toContain("routine implementation belongs in a subagent");
   });
 });
+
+describe("a run led by a session with a team", () => {
+  const goal = { id: "o1", title: "Ship it", brief: null, state: "running", maxContinuations: 10, tokenBudget: null, stopCondition: "goal_complete", onPlanChange: "auto", planPath: null } as unknown as Parameters<typeof buildBriefing>[0];
+  const team = { workers: [{ name: "luna", provider: "codex" as const, model: "gpt-6-luna", capabilities: ["image", "fast"] }], nativeSubagents: false };
+
+  it("delegates through the team tools and never asks for subagents it cannot raise", () => {
+    const text = buildBriefing(goal, [], { agent: "claude", team });
+    expect(text).toContain("You lead a team: luna (Codex · gpt-6-luna; image, fast)");
+    expect(text).toContain("`delegate`");
+    expect(text).toContain("`6.3-pricing: …`");
+    expect(text).toContain("Your own subagent tool is turned off for this run");
+    expect(text).not.toContain(ODYSSEY_DELEGATE);
+    expect(text).toContain("routine implementation belongs in a worker");
+  });
+
+  it("offers both when the team allows the orchestrator its own subagents", () => {
+    const text = buildBriefing(goal, [], { agent: "claude", team: { ...team, nativeSubagents: true } });
+    expect(text).toContain("You may also raise your own subagents");
+    expect(text).toContain(ODYSSEY_DELEGATE);
+  });
+
+  it("is unchanged without workers", () => {
+    expect(buildBriefing(goal, [], { agent: "claude", team: { workers: [], nativeSubagents: false } })).toBe(buildBriefing(goal, [], { agent: "claude" }));
+  });
+});

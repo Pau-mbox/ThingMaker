@@ -414,9 +414,11 @@ which is not what the run intends.
 
 **If you are Codex**, raise subagents the way you normally do.
 
-Whichever you are, the milestone's check is Super Thing's to run: it runs the
-check itself rather than reading an exit code out of your tool results, so
-run the check when you want to know, and let Super Thing be the one that decides.
+Whichever you are, a milestone's check decides it, never a claim. When you
+(or a subagent of yours) run the check as its own shell call, Super Thing
+reads its exit code out of that tool result; when nothing in the turn ran it,
+Super Thing runs the check itself. Run it when you want to know, and let the
+exit code be the one that decides.
 
 Everything else is the same: name each subagent after its task, and have it
 write its result to `docs/super-thing/agents/<name>.md` before it returns.
@@ -424,6 +426,27 @@ write its result to `docs/super-thing/agents/<name>.md` before it returns.
 A subagent cannot ask for permission. Give a subagent work that runs within
 the permissions it already has, and keep anything that would prompt in your
 own turn.
+
+## Leading a team
+
+ThingMaker may give your session a team: workers on other providers and
+models, chosen by the user, that you reach through the `team` tools
+(`list_workers`, `delegate`, `await_jobs`). When the briefing says you lead a
+team, delegate routine work to the workers; when it says your own subagent
+tool is turned off, every delegated task goes to a worker.
+
+- A worker sees only the task you give it, not this protocol. Start the task
+  with its plan number and a short name (`6.3-pricing: …`) so the run ties the
+  job to the plan, give it the milestone's `section:` and the handoff note's
+  path, and tell it to write its result to `docs/super-thing/agents/<name>.md`
+  before it finishes.
+- Pick workers by capability: `image` for image generation, `fast` for
+  mechanical edits, `review` for a second opinion.
+- A job may wait out a temporary limit and resume by itself; `await_jobs`
+  says so. Carry on with other work meanwhile.
+- A check a worker runs is in the worker's session, not yours, so it is not
+  evidence for the run. Run the milestone's check yourself, or let Super Thing
+  run it.
 
 ## Delegating verification
 

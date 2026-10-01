@@ -61,7 +61,7 @@ import { matchAgentToTask, parseTaskLines } from "./odysseyTasks";
 import { AMEND_INSTRUCTION, describeAmendment, describeOp, diffText, isMilestoneScope, parseAmendment, planDiff, resolveOps, retellNote, shouldCarry, type AmendOp, type ResolvedOp } from "./odysseyAmend";
 import { parseAsks } from "./odysseyAsk";
 import { CLAUDE_RETRY_MS, claudeUsageFrom } from "./odysseyClaudeQuota";
-import { shellResultsIn } from "./toolSummary";
+import { shellResultsOf } from "./toolSummary";
 import { applyEvent, emptyProjection, type Projection } from "./projection";
 
 export const CLOSE_REQUESTED_EVENT = "thingmaker://close-requested";
@@ -418,7 +418,7 @@ type State = {
   /** Opens or resumes a session. A resume runs on the provider that wrote it; a new one on `provider`, else the last one used. */
   openSession: (workspaceId: string, mode: OpenMode, provider?: Provider) => Promise<void>;
   /** Opens a fresh session on a named agent and returns how to address it. */
-  openSessionFor: (workspaceId: string, provider: Provider) => Promise<{ key: string; agentSessionId: string } | null>;
+  openSessionFor: (workspaceId: string, provider: Provider, combo?: Combo) => Promise<{ key: string; agentSessionId: string } | null>;
   selectSession: (sessionId: string) => void;
   setDraft: (sessionId: string, draft: string) => void;
   send: (sessionId: string) => Promise<void>;
@@ -454,6 +454,17 @@ function attentionFor(event: EventEnvelope, current: AttentionKind): AttentionKi
     return payload.phase === "succeeded" ? "completed" : "failed";
   }
   return current;
+}
+
+/**
+ * Reads the Claude account again, from Claude Code's own usage data. When it
+ * cannot be asked, a held reading is dropped instead: the old rule, from when
+ * a refusal was the only reading the Claude account ever gave.
+ */
+async function rereadClaudeUsage(get: Get, set: Set): Promise<void> {
+  const fresh = await api.providerQuota("claude").catch(() => null);
+  if (fresh && fresh.provider === "claude") get().noteQuota(fresh);
+  else if (get().usage.claude) set({ usage: { ...get().usage, claude: null } });
 }
 
 /** Whether a live session is a worker a delegation opened. */
@@ -839,7 +850,8 @@ async function performMove(get: Get, set: Set, sessionId: string, target: MoveTa
       // Always a fresh session rather than an open one of the right agent:
       // the briefing goes out again anyway, so reusing one buys nothing and
       // could take a session the user is working in.
-      const opened = await get().openSessionFor(session.workspaceId, target.agent);
+      // The run keeps its team: the new orchestrator leads the same workers.
+      const opened = await get().openSessionFor(session.workspaceId, target.agent, get().teams[sessionId]);
       if (!opened) return false;
       targetKey = opened.key;
       targetAgentSessionId = opened.agentSessionId;
@@ -860,7 +872,11 @@ async function performMove(get: Get, set: Set, sessionId: string, target: MoveTa
       // it did, one second after the first real move, undoing a human who had
       // just said what they wanted. A goal set to `either` is left alone:
       // there the user has already said "you decide".
-      const landedOn: "claude" | "codex" = targetProvider === "codex" ? "codex" : "claude";
+      // A run moved by hand onto Gemini is the user's choice too, but a goal
+      // can only be pinned to an orchestrator that can lead a team; "either"
+      // keeps it where it was put, since nothing moves a run off an account
+      // that is not spent.
+      const landedOn: "claude" | "codex" | "either" = targetProvider === "codex" ? "codex" : targetProvider === "gemini" ? "either" : "claude";
       if (moved.goal.orchestrator !== "either" && moved.goal.orchestrator !== landedOn) {
         await api.odysseyEditGoal(moved.goal.id, { orchestrator: landedOn }).catch(() => undefined);
         moved = (await api.odysseyView(moved.goal.id)) ?? moved;
@@ -1582,6 +1598,30 @@ export const useStore = create<State>((set, get) => ({
         // Attribution is a convenience; the run does not depend on it.
       }
     }
+    // Jobs the session delegated to its team, named after their task the way
+    // the briefing asks (`6.3-pricing: …`).
+    for (const job of get().jobs[sessionId] ?? []) {
+      const name = /^\s*(\d+\.\d+[^\s:]*)/.exec(job.task)?.[1];
+      if (!name) continue;
+      const harness = `team · ${PROVIDER_LABELS[job.provider]}`;
+      const key = `${job.status}|${harness}|${job.model ?? ""}`;
+      if (seen.get(job.id) === key) continue;
+      const match = matchAgentToTask(name, view.milestones);
+      if (!match) continue;
+      seen.set(job.id, key);
+      try {
+        if (match.step.agentName !== name || match.step.harness !== harness || (job.model && match.step.model !== job.model)) {
+          await api.odysseyAssignStep(match.step.id, name, harness, job.model ?? null);
+          changed = true;
+        }
+        if ((job.status === "starting" || job.status === "running" || job.status === "waiting") && match.step.state === "pending") {
+          await api.odysseySetStepState(match.step.id, "in_progress");
+          changed = true;
+        }
+      } catch {
+        // Attribution is a convenience; the run does not depend on it.
+      }
+    }
     if (changed) await get().refreshOdyssey(sessionId, view.goal.id);
   },
 
@@ -1602,11 +1642,10 @@ export const useStore = create<State>((set, get) => ({
   async odysseyStart(sessionId) {
     const view = get().odyssey[sessionId];
     if (!view) return;
-    // Pressing Resume is the user saying "try it now", and on the Claude
-    // account that is the only way to find out: nothing there reports
-    // headroom, so a recorded refusal would otherwise stand until its own
-    // stated reset even when the account is plainly working.
-    if (get().sessionAgent(sessionId) === "claude" && get().usage.claude) set({ usage: { ...get().usage, claude: null } });
+    // Pressing Resume is the user saying "try it now": the account is read
+    // again (Claude Code answers its own usage), and a recorded refusal does
+    // not stand in the way of a working account.
+    if (get().sessionAgent(sessionId) === "claude") await rereadClaudeUsage(get, set);
     try {
       await api.odysseySetState(view.goal.id, "running");
       // The exact wording the guard looks for, so a restart clears it.
@@ -1895,7 +1934,7 @@ export const useStore = create<State>((set, get) => ({
       const carried = await buildAmendmentLines(get, sessionId, view.goal.continuationsUsed);
       const base =
         decision.action === "brief"
-          ? buildBriefing(view.goal, view.milestones, { skillAvailable, notes, handedOver: handedOver(view.journal), agent })
+          ? buildBriefing(view.goal, view.milestones, { skillAvailable, notes, handedOver: handedOver(view.journal), agent, team: get().teams[sessionId] ?? null })
           : buildContinuation({
               milestone: decision.milestone,
               index: decision.index,
@@ -2115,10 +2154,11 @@ export const useStore = create<State>((set, get) => ({
       return;
     }
 
-    // A turn the Claude account answered is the only positive evidence that
-    // account ever gives: there is no endpoint to ask, so a completed turn is
-    // what clears a limit recorded earlier.
-    if (get().sessionAgent(sessionId) === "claude" && get().usage.claude) set({ usage: { ...get().usage, claude: null } });
+    // A turn the Claude account answered: the reading is taken again, so the
+    // runner decides from the account as it is now. Without a reading, the
+    // answered turn is itself the evidence that clears a refusal recorded
+    // earlier.
+    if (get().sessionAgent(sessionId) === "claude") void rereadClaudeUsage(get, set);
 
     // The model's own claim, read from *this turn's* messages and stored as a
     // claim. Without a pending turn (a reload, or a prompt the user sent) the
@@ -2149,7 +2189,7 @@ export const useStore = create<State>((set, get) => ({
           // record decides. The prose never does.
           if (readableFromToolResults(milestone.checkKind)) {
             const fresh = newCallIds(session?.projection.toolCalls.keys() ?? [], get().odysseyToolBaseline[sessionId]);
-            const results = (fresh ?? []).flatMap((id) => shellResultsIn(session?.projection.toolCalls.get(id)?.rawOutput));
+            const results = (fresh ?? []).flatMap((id) => shellResultsOf(session?.projection.toolCalls.get(id), session?.snapshot.provider));
             const evidence = fresh === null ? ({ kind: "absent", reason: "this turn was not started by the runner, so its tool results cannot be attributed to it" } as const) : evidenceFor(milestone.checkSpec, results);
             if (evidence.kind === "found") {
               const passed = evidence.result.exitCode === 0;
@@ -3117,9 +3157,9 @@ export const useStore = create<State>((set, get) => ({
    * address it — the run moving to a new orchestrator, rather than a person
    * starting work.
    */
-  async openSessionFor(workspaceId, provider) {
+  async openSessionFor(workspaceId, provider, combo) {
     try {
-      const opened = await api.sessionOpen({ workspaceId, mode: { mode: "new" }, provider, ...launchDefaults(get().sessionDefaults, provider) });
+      const opened = await api.sessionOpen({ workspaceId, mode: { mode: "new" }, provider, ...launchDefaults(get().sessionDefaults, provider), ...(combo ? { combo } : {}) });
       await attachLive(get, set, opened.handle, workspaceId, false);
       const live = get().sessions[opened.handle.id];
       const agentSessionId = live?.snapshot.agentSessionId ?? opened.snapshot.agentSessionId ?? null;
@@ -3186,6 +3226,9 @@ export const useStore = create<State>((set, get) => ({
   noteJob(job) {
     const previous = get().jobs[job.orchestrator]?.find((existing) => existing.id === job.id);
     set({ jobs: { ...get().jobs, [job.orchestrator]: upsertJob(get().jobs[job.orchestrator], job) } });
+    // A job named after a plan task is that task's worker: the run shows who
+    // took it, as it does for a subagent.
+    if (get().odyssey[job.orchestrator] && (!previous || previous.status !== job.status || previous.workerSession !== job.workerSession)) void get().odysseyObserveAgents(job.orchestrator);
     // A new worker session has a row now: the sidebar shows it under its
     // orchestrator.
     if (job.workerSession && previous?.workerSession !== job.workerSession) {

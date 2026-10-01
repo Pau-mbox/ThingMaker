@@ -1,6 +1,6 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState, type ClipboardEvent, type KeyboardEvent, type ReactElement } from "react";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
-import type { ContentBlock, Mention, ToolPatch } from "@thingmaker/contracts";
+import type { ContentBlock, Mention, Provider, ToolPatch } from "@thingmaker/contracts";
 import { PROVIDER_LABELS } from "@thingmaker/contracts";
 import { useStore, isWorkerIn, sessionTitle, type SessionTab } from "../store";
 import { api } from "../ipc";
@@ -19,7 +19,7 @@ import { AttachmentThumb, BlockImage, InlineImage, workspaceImageRenderer } from
 import { Markdown } from "../markdown";
 import type { Card } from "../projection";
 import { assignImages, keyOf, type ImageRef } from "../transcriptImages";
-import { detectTestRun, editedFilesIn } from "../toolSummary";
+import { detectTestRun, editedFilesIn, shellResultsOf } from "../toolSummary";
 import { CodeChangesCard, EditedFilesList, TestsCard } from "./ChangeCards";
 import { IconAgents, IconArrowUp, IconAt, IconBox, IconBranch, IconCheck, IconChevron, IconDots, IconFolder, IconImage, IconPaperclip, IconSquare, IconTerminal } from "./icons";
 
@@ -75,10 +75,10 @@ function Blocks({ blocks, markdown, onLink, workspaceId }: { blocks: ContentBloc
   );
 }
 
-function ToolCard({ patch, detached, sessionId, workspaceId }: { patch: ToolPatch; detached: string | undefined; sessionId: string; workspaceId: string }) {
+function ToolCard({ patch, detached, sessionId, workspaceId, provider }: { patch: ToolPatch; detached: string | undefined; sessionId: string; workspaceId: string; provider: Provider | undefined }) {
   // Both are read from what the tool returned, so they appear only when the
   // call actually produced that shape.
-  const testRun = useMemo(() => detectTestRun(patch.rawInput, patch.rawOutput), [patch.rawInput, patch.rawOutput]);
+  const testRun = useMemo(() => detectTestRun(patch.rawInput, patch.rawOutput, shellResultsOf(patch, provider)), [patch, provider]);
   const edited = useMemo(() => editedFilesIn(patch.rawOutput).slice(0, 12), [patch.rawOutput]);
   // No agent times its tool calls on the wire; nothing is guessed.
   const millis = null;
@@ -199,7 +199,7 @@ function CardBody({ card, sessionId }: { card: Card; sessionId: string }) {
       );
     case "tool": {
       if (!patch) return null;
-      return <ToolCard detached={detached} patch={patch} sessionId={sessionId} workspaceId={workspaceId} />;
+      return <ToolCard detached={detached} patch={patch} provider={provider} sessionId={sessionId} workspaceId={workspaceId} />;
     }
     case "notice":
       return (
