@@ -457,7 +457,7 @@ describe("the Super Thing screen", () => {
     // Tasks: one done of two on the active milestone.
     expect(strip.getByText("1 of 2")).toBeTruthy();
     expect(strip.getByText("12 of 50")).toBeTruthy();
-    expect(screen.getAllByRole("tab").map((tab) => tab.textContent)).toEqual(["Roadmap", "Inbox", "Documents", "History", "Changes", "Settings"]);
+    expect(screen.getAllByRole("tab").map((tab) => tab.textContent)).toEqual(["Roadmap", "Inbox", "Documents", "Team", "History", "Changes", "Settings"]);
     expect(screen.queryByLabelText("Test command")).toBeNull();
     openTab("Changes");
     expect(screen.getByText(/Nothing queued/)).toBeTruthy();

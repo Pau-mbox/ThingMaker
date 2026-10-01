@@ -22,6 +22,7 @@ import { TaskTable } from "./OdysseyTasks";
 import { InboxPanel, useInboxItems } from "./OdysseyInbox";
 import { taskProgress } from "../odysseyTasks";
 import { AmendDialog, AmendmentList } from "./OdysseyAmend";
+import { MemoryPanel, RunOptions, Timeline, WorktreeCard } from "./SuperThingTeam";
 import { isPlanDocument, fileNameOf, summarize, type DocumentSummary } from "../odysseyDocument";
 import { planSummary, allManual } from "../odysseyPlan";
 import { api } from "../ipc";
@@ -655,6 +656,7 @@ function StateCard({ view, sessionId }: { view: OdysseyView; sessionId: string }
             {runtime.lastReasonAt > 0 && <span className="muted"> · {ago(now - runtime.lastReasonAt)}</span>}
           </p>
         )}
+        {runtime?.forecast && <p className="small muted">Forecast: {runtime.forecast}.</p>}
         {goal.state === "blocked" && <p className="small chip-warn">{view.journal.find((entry) => entry.kind === "guard")?.summary ?? "Blocked."}</p>}
         {/* Resume writes "running" and the guard writes "blocked" again on the
             same tick, so offering it here would be offering nothing. The only
@@ -813,6 +815,7 @@ function Settings({ view, sessionId }: { view: OdysseyView; sessionId: string })
             {runningOn && <> Right now it is running on {ACCOUNT_LABEL[runningOn]}.</>}
           </span>
         </label>
+        <RunOptions onEdit={(edit) => void editOdysseyGoal(sessionId, goal.id, edit)} view={view} />
         <label className="odyssey-field">
           <span className="small">When the agent says a milestone is done</span>
           <select aria-label="When the agent says a milestone is done" className="select" onChange={(event) => void editOdysseyGoal(sessionId, goal.id, { onReport: event.target.value as OnReport })} value={goal.onReport}>
@@ -1017,6 +1020,12 @@ function NewGoalForm({ sessionId, workspaceId, agentSessionId }: { sessionId: st
   const [testCommand, setTestCommand] = useState("");
   const [dropping, setDropping] = useState(false);
   const [creating, setCreating] = useState(false);
+  const presets = useStore((s) => s.teamPresets);
+  const saveTeam = useStore((s) => s.saveTeam);
+  const [presetId, setPresetId] = useState("");
+  const [isolate, setIsolate] = useState(false);
+  const [dispatch, setDispatch] = useState<"agent" | "runner">("agent");
+  const preset = presets.find((entry) => entry.id === presetId);
 
   // The project's test command is a property of the project more than of one
   // goal, so the newest goal in this workspace that had one is the default.
@@ -1101,7 +1110,17 @@ function NewGoalForm({ sessionId, workspaceId, agentSessionId }: { sessionId: st
         ...(document ? { planSource: document.name, planDocument: document.text } : {}),
         ...(document?.adopted ? { planPath: document.adopted.path } : {}),
         ...(testCommand.trim() ? { defaultCheck: testCommand.trim() } : {}),
+        isolate,
+        dispatch,
+        // A preset is the run's team: its orchestrator becomes the account the
+        // goal runs on, and the workers come with it to every session it uses.
+        ...(preset ? { team: { orchestrator: preset.orchestrator, combo: preset.combo } } : {}),
       });
+      const created = useStore.getState().odyssey[sessionId];
+      if (preset && created) {
+        if (preset.orchestrator.provider !== "gemini") await api.odysseyEditGoal(created.goal.id, { orchestrator: preset.orchestrator.provider }).catch(() => undefined);
+        await saveTeam(sessionId, preset.combo).catch(() => undefined);
+      }
       // With a document attached the next thing to happen is the planning
       // turn, so it is asked for immediately rather than waiting for a click.
       if (document && useStore.getState().odyssey[sessionId]) await requestPlan(sessionId);
@@ -1177,6 +1196,33 @@ function NewGoalForm({ sessionId, workspaceId, agentSessionId }: { sessionId: st
             Run from the project root. The agent is told to make it each milestone&rsquo;s check when it plans, so Super Thing can verify a claim instead of waiting for
             your tick. Without one, every milestone is yours to tick.
           </span>
+        </label>
+        <label className="odyssey-field">
+          <span className="small">Team</span>
+          <select aria-label="Team" className="select" onChange={(event) => setPresetId(event.target.value)} value={presetId}>
+            <option value="">This session&rsquo;s own team</option>
+            {presets.map((entry) => (
+              <option key={entry.id} value={entry.id}>
+                {entry.name}
+              </option>
+            ))}
+          </select>
+          <span className="small muted">
+            {preset
+              ? `Led by ${PROVIDER_LABELS[preset.orchestrator.provider]}${preset.orchestrator.model ? ` · ${preset.orchestrator.model}` : ""} with ${preset.combo.workers.length} worker${preset.combo.workers.length === 1 ? "" : "s"}. A run on another account moves there when it starts.`
+              : "The run leads whatever team this session has."}
+          </span>
+        </label>
+        <label className="odyssey-field">
+          <span className="small">Who hands out the tasks</span>
+          <select aria-label="Who hands out the tasks" className="select" onChange={(event) => setDispatch(event.target.value as "agent" | "runner")} value={dispatch}>
+            <option value="agent">The orchestrator delegates</option>
+            <option value="runner">Super Thing hands out the tasks</option>
+          </select>
+        </label>
+        <label className="odyssey-toggle">
+          <input checked={isolate} onChange={(event) => setIsolate(event.target.checked)} type="checkbox" />
+          <span className="small">Run in its own branch and worktree, so it never touches your checkout until you merge</span>
         </label>
         <label className="odyssey-field">
           <span className="small">Stop when</span>
@@ -1288,7 +1334,7 @@ export function OdysseyPane({ sessionId }: { sessionId: string }) {
   const [editingGoal, setEditingGoal] = useState(false);
   const [briefingOpen, setBriefingOpen] = useState(false);
   const [amendOpen, setAmendOpen] = useState(false);
-  const [tab, setTab] = useState<"roadmap" | "inbox" | "documents" | "history" | "changes" | "settings">("roadmap");
+  const [tab, setTab] = useState<"roadmap" | "inbox" | "documents" | "team" | "history" | "changes" | "settings">("roadmap");
   const inbox = useInboxItems(sessionId, view);
   const [goalTitle, setGoalTitle] = useState("");
   const [goalBrief, setGoalBrief] = useState("");
@@ -1413,6 +1459,7 @@ export function OdysseyPane({ sessionId }: { sessionId: string }) {
             ["roadmap", "Roadmap"],
             ["inbox", inbox.length > 0 ? `Inbox (${inbox.length})` : "Inbox"],
             ["documents", "Documents"],
+            ["team", "Team"],
             ["history", "History"],
             ["changes", openAmendments > 0 ? `Changes (${openAmendments})` : "Changes"],
             ["settings", "Settings"],
@@ -1463,8 +1510,15 @@ export function OdysseyPane({ sessionId }: { sessionId: string }) {
       )}
       {tab === "inbox" && <InboxPanel sessionId={sessionId} view={view} />}
       {tab === "documents" && <DocumentsCard sessionId={sessionId} view={view} />}
+      {tab === "team" && (
+        <div className="odyssey-tab-stack">
+          <Timeline view={view} />
+          <MemoryPanel goalUpdatedAt={goal.updatedAt} workspaceId={session.workspaceId} />
+        </div>
+      )}
       {tab === "history" && (
         <div className="odyssey-tab-stack">
+          <WorktreeCard sessionId={sessionId} view={view} />
           <RunHistory journal={journal} />
           <VerifiedStrip milestones={milestones} />
         </div>

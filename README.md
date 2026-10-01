@@ -46,7 +46,8 @@ with your own sign-in, and never reads, stores or passes on a token.
 | 🔀 **Cross-provider delegation** | The orchestrator gets `team` tools — `list_workers`, `delegate`, `await_jobs` — and hands self-contained tasks to workers on any provider. Workers are real sessions you can open and watch. |
 | ⏳ **Limits, handled** | Routing picks the worker whose account has the most headroom. When a worker hits a temporary limit (an image generation cap, a usage window, an overloaded server) the job waits — until the provider's own reset when it names one — then the same worker carries on with its context. |
 | 📊 **Live usage** | Five-hour and weekly windows for Claude and Codex in the sidebar, read from each provider's own program at no cost. |
-| 🧭 **Super Thing** | A long-horizon goal runner: milestones, checks, checkpoints and a journal, and failover to another provider's orchestrator when an account is spent. |
+| 🧭 **Super Thing** | A long-horizon goal runner that keeps going with the window closed: milestones and tasks, checks that decide what is done, a journal of every decision, failover and a spend forecast across accounts, an optional branch and worktree per run, and a mode where it hands ready tasks to the team's workers itself and has them reviewed on another provider. |
+| 🧠 **Shared memory** | One project memory — decisions, conventions, facts — that the orchestrator, its workers and you read and write. |
 | 🖼️ **Inline images** | Images agents generate or read show up right in the transcript, including Codex's generated images. |
 | 🔍 **Review and tools** | Diffs and baselines, git staging and commits, worktrees, an integrated terminal, file browsing, artifacts and skills. |
 | 🔐 **Your accounts, your machine** | Each provider signs in through its own flow and keeps its own credentials. Switch accounts from the Providers panel. Everything runs locally. |
@@ -138,7 +139,7 @@ cargo test --workspace --exclude thingmaker-desktop && cargo clippy --workspace 
 ```
 
 Live tests against the real providers are opt-in and spend a few tokens:
-`THINGMAKER_REAL_CLAUDE=1`, `THINGMAKER_REAL_CODEX=1`, `THINGMAKER_REAL_GEMINI=1`, `THINGMAKER_REAL_DELEGATION=1`.
+`THINGMAKER_REAL_CLAUDE=1`, `THINGMAKER_REAL_CODEX=1`, `THINGMAKER_REAL_GEMINI=1`, `THINGMAKER_REAL_DELEGATION=1`, `THINGMAKER_REAL_SUPERTHING=1`.
 
 | Where | What |
 | --- | --- |
@@ -161,8 +162,7 @@ Live tests against the real providers are opt-in and spend a few tokens:
 ## Status
 
 ThingMaker is young and moving fast. It is built and used daily on macOS
-(Apple silicon). Next up: shared project memory across agents and smarter
-routing between providers.
+(Apple silicon).
 
 ## License
 

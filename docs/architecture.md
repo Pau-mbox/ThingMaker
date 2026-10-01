@@ -56,7 +56,24 @@ Kit is removed; Claude Code and Codex run end to end and either can orchestrate 
 - **Accounts**: the Providers panel's **Switch account** signs a provider out
   through its own CLI, then starts a new sign-in. The launch options also accept
   a separate `CODEX_HOME` for each Codex account; the UI does not offer that yet.
-- **Super Thing** runs on either provider, with N-provider failover.
+- **Super Thing** (`superthing`, ADR-010) is an engine in the supervisor that
+  runs every long-horizon goal, whether or not a window is open.
+  - It decides, briefs, continues, reads each settled turn, checkpoints, runs
+    checks, parks on a spent window, resumes after it, and moves a run to
+    another account. Every decision goes into the goal's record before it
+    acts, and a running goal's session is reopened after a restart.
+  - The protocol is `team` tools (`superthing_report`, `superthing_task`,
+    `superthing_ask`, `superthing_amend`, `superthing_propose_plan`), checked
+    against the record when they are called; the `SUPERTHING-*` lines are the
+    fallback.
+  - Shared project memory (`memory_read`, `memory_write`) and the run's
+    `board`, for the orchestrator and, on a reduced server, its workers.
+  - Optional: a run's own branch and worktree (checkpoints commit, rollback,
+    merge back); runner dispatch of ready tasks to workers by capability, with
+    a review on another provider; a spend forecast from measured turn costs,
+    and a spread policy across accounts.
+  - A live test runs a goal end to end on Claude and on Codex:
+    `THINGMAKER_REAL_SUPERTHING=1`.
 - **Teams and delegation** (`delegation`): every session is an orchestrator.
   - Its agent gets a `team` MCP server with `list_workers`, `delegate`,
     `await_jobs`, `job_status` and `cancel_job`.
@@ -76,8 +93,8 @@ Kit is removed; Claude Code and Codex run end to end and either can orchestrate 
 
 Next steps:
 
-- Smarter routing between providers, with a spread policy so no one account is drained.
-- Shared project memory and a live board the whole team reads and writes.
+- Separate accounts per provider (`CODEX_HOME` per account) in the UI.
+- Charging worker turns to a goal's token budget.
 
 ## Layout
 

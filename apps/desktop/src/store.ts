@@ -1068,6 +1068,9 @@ export const useStore = create<State>((set, get) => ({
       if (view) {
         await get().odysseyLoadAmendments(sessionId, view.goal.id);
         await get().odysseyLoadInbox(sessionId, view.goal.id);
+        // What the engine is doing now; later changes arrive as events.
+        const runtime = await api.superthingRuntime(view.goal.id).catch(() => null);
+        if (runtime && typeof runtime === "object" && "lastReason" in runtime) set({ odysseyRuntime: { ...get().odysseyRuntime, [sessionId]: runtimeFrom(runtime) } });
       }
     } catch (error) {
       set({ error: asError(error) });
