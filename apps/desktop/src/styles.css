@@ -4324,3 +4324,28 @@ button.odyssey-task-title svg {
 .job-waiting {
   color: var(--warn);
 }
+
+/* Providers: each card leads with its provider's logo tile. */
+.provider-card {
+  display: grid;
+  grid-template-columns: 44px minmax(0, 1fr);
+  column-gap: 14px;
+  align-items: start;
+}
+
+.provider-body {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+
+.provider-name {
+  font-size: 15px;
+}
+
+.provider-logo {
+  display: block;
+  flex: none;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.45), 0 0 0 1px rgba(255, 255, 255, 0.06);
+}

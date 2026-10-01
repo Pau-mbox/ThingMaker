@@ -10,6 +10,7 @@
  */
 import { useEffect, useState } from "react";
 import type { Provider, ProviderInfo, ProviderModel } from "@thingmaker/contracts";
+import { ProviderLogo } from "./ProviderLogo";
 import { PROVIDER_LABELS } from "@thingmaker/contracts";
 import { api } from "../ipc";
 import { useStore } from "../store";
@@ -53,73 +54,76 @@ function ProviderCard({ info }: { info: ProviderInfo }) {
   };
 
   return (
-    <li className="card">
-      <div className="row wrap">
-        <strong>{info.label}</strong>
-        {!info.resolved && <span className="chip small chip-warn">not found</span>}
-        {auth?.loggedIn === true && (
-          <span className="chip small chip-active">
-            signed in{auth.account ? ` as ${auth.account}` : ""}
-            {auth.plan ? ` · ${auth.plan}` : ""}
-          </span>
-        )}
-        {auth?.loggedIn === false && <span className="chip small chip-warn">not signed in</span>}
-        {auth?.problem && <span className="chip small">{auth.problem}</span>}
-        {quota?.primary && (
-          <span className="chip small" title="As the provider last reported it">
-            {[quota.primary, quota.secondary]
-              .filter((w): w is NonNullable<typeof w> => !!w)
-              .map((w) => `${windowName(w.windowSeconds)} ${Math.max(0, 100 - Math.round(w.usedPercent))}% left`)
-              .join(" · ")}
-            {quota.limitReached ? " · limit reached" : ""}
-          </span>
-        )}
-      </div>
-      <p className="small muted">{BLURB[info.provider]}</p>
-      {info.resolved ? (
-        <p className="small muted mono">
-          {info.resolved.program} {info.resolved.prefixArgs.join(" ")} <span className="chip small">{info.resolved.source}</span>
-        </p>
-      ) : (
-        <p className="small chip-warn">{info.problem}</p>
-      )}
-      {SIGNS_IN_ELSEWHERE[info.provider] && <p className="small muted">{SIGNS_IN_ELSEWHERE[info.provider]}</p>}
-      <div className="row wrap">
-        {SIGNS_IN_ELSEWHERE[info.provider] ? null : auth?.loggedIn ? (
-          <button className="button" disabled={!info.resolved || running || !!(signIn && signIn.state === "running")} onClick={() => void switchAccount(info.provider)} type="button">
-            Switch account
-          </button>
+    <li className="card provider-card">
+      <ProviderLogo provider={info.provider} size={44} />
+      <div className="provider-body">
+        <div className="row wrap">
+          <strong className="provider-name">{info.label}</strong>
+          {!info.resolved && <span className="chip small chip-warn">not found</span>}
+          {auth?.loggedIn === true && (
+            <span className="chip small chip-active">
+              signed in{auth.account ? ` as ${auth.account}` : ""}
+              {auth.plan ? ` · ${auth.plan}` : ""}
+            </span>
+          )}
+          {auth?.loggedIn === false && <span className="chip small chip-warn">not signed in</span>}
+          {auth?.problem && <span className="chip small">{auth.problem}</span>}
+          {quota?.primary && (
+            <span className="chip small" title="As the provider last reported it">
+              {[quota.primary, quota.secondary]
+                .filter((w): w is NonNullable<typeof w> => !!w)
+                .map((w) => `${windowName(w.windowSeconds)} ${Math.max(0, 100 - Math.round(w.usedPercent))}% left`)
+                .join(" · ")}
+              {quota.limitReached ? " · limit reached" : ""}
+            </span>
+          )}
+        </div>
+        <p className="small muted">{BLURB[info.provider]}</p>
+        {info.resolved ? (
+          <p className="small muted mono">
+            {info.resolved.program} {info.resolved.prefixArgs.join(" ")} <span className="chip small">{info.resolved.source}</span>
+          </p>
         ) : (
-          <button className="button button-primary" disabled={!info.resolved || running || !!(signIn && signIn.state === "running")} onClick={() => void startSignIn(info.provider)} type="button">
-            Sign in with subscription
-          </button>
+          <p className="small chip-warn">{info.problem}</p>
         )}
-        {running && (
-          <button className="button button-warn" onClick={() => void cancelSignIn()} type="button">
-            Cancel sign-in
+        {SIGNS_IN_ELSEWHERE[info.provider] && <p className="small muted">{SIGNS_IN_ELSEWHERE[info.provider]}</p>}
+        <div className="row wrap">
+          {SIGNS_IN_ELSEWHERE[info.provider] ? null : auth?.loggedIn ? (
+            <button className="button" disabled={!info.resolved || running || !!(signIn && signIn.state === "running")} onClick={() => void switchAccount(info.provider)} type="button">
+              Switch account
+            </button>
+          ) : (
+            <button className="button button-primary" disabled={!info.resolved || running || !!(signIn && signIn.state === "running")} onClick={() => void startSignIn(info.provider)} type="button">
+              Sign in with subscription
+            </button>
+          )}
+          {running && (
+            <button className="button button-warn" onClick={() => void cancelSignIn()} type="button">
+              Cancel sign-in
+            </button>
+          )}
+          <button className="button" onClick={() => void loadProviders()} type="button">
+            Check again
           </button>
+          <button className="button" disabled={!info.resolved || loadingModels} onClick={() => void listModels()} type="button">
+            {loadingModels ? "Asking…" : "List models"}
+          </button>
+        </div>
+        {models && (
+          <ul className="call-list">
+            {models.map((model) => (
+              <li className="small" key={model.id}>
+                <strong>{model.name}</strong> <span className="mono muted">{model.id}</span>
+                {model.isDefault && <span className="chip small">default</span>}
+                {model.needsCredits && <span className="chip small chip-warn">uses credits beyond the plan</span>}
+                {model.efforts.length > 0 && <span className="muted"> · effort {model.efforts.join(", ")}</span>}
+                {model.description && <span className="muted"> · {model.description}</span>}
+              </li>
+            ))}
+            {models.length === 0 && <li className="small muted">The account listed no models; it is probably not signed in.</li>}
+          </ul>
         )}
-        <button className="button" onClick={() => void loadProviders()} type="button">
-          Check again
-        </button>
-        <button className="button" disabled={!info.resolved || loadingModels} onClick={() => void listModels()} type="button">
-          {loadingModels ? "Asking…" : "List models"}
-        </button>
       </div>
-      {models && (
-        <ul className="call-list">
-          {models.map((model) => (
-            <li className="small" key={model.id}>
-              <strong>{model.name}</strong> <span className="mono muted">{model.id}</span>
-              {model.isDefault && <span className="chip small">default</span>}
-              {model.needsCredits && <span className="chip small chip-warn">uses credits beyond the plan</span>}
-              {model.efforts.length > 0 && <span className="muted"> · effort {model.efforts.join(", ")}</span>}
-              {model.description && <span className="muted"> · {model.description}</span>}
-            </li>
-          ))}
-          {models.length === 0 && <li className="small muted">The account listed no models; it is probably not signed in.</li>}
-        </ul>
-      )}
     </li>
   );
 }
