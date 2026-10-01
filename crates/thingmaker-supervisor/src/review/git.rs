@@ -410,7 +410,7 @@ pub fn worktree_list(root: &Path) -> Result<Vec<WorktreeEntry>, DesktopError> {
     Ok(entries)
 }
 
-fn valid_branch_name(name: &str) -> bool {
+pub fn valid_branch_name(name: &str) -> bool {
     !name.is_empty()
         && name.len() <= 200
         && !name.starts_with('-')
@@ -439,6 +439,92 @@ pub fn worktree_add(root: &Path, path: &Path, branch: &str, base: &str) -> Resul
     }
     let path_text = path.to_string_lossy().into_owned();
     git_ok(root, &["worktree", "add", "-b", branch, &path_text, base]).map(|_| ())
+}
+
+/// The commit `HEAD` points at.
+pub fn head_commit(root: &Path) -> Result<String, DesktopError> {
+    Ok(git_ok(root, &["rev-parse", "HEAD"])?.trim().to_string())
+}
+
+/// Whether the working tree has no changes, tracked or untracked.
+pub fn is_clean(root: &Path) -> Result<bool, DesktopError> {
+    Ok(git_ok(root, &["status", "--porcelain", "--untracked-files=normal"])?.trim().is_empty())
+}
+
+/// The identity a commit is made under when the repository has none set.
+fn identity_args(root: &Path) -> Vec<&'static str> {
+    let has = git(root, &["config", "--get", "user.email"]).map(|output| output.status.success() && !output.stdout.is_empty()).unwrap_or(false);
+    if has { Vec::new() } else { vec!["-c", "user.name=Super Thing", "-c", "user.email=superthing@localhost"] }
+}
+
+/// Commits everything in the tree. `None` when there was nothing to commit.
+pub fn commit_all(root: &Path, message: &str) -> Result<Option<String>, DesktopError> {
+    git_ok(root, &["add", "-A"])?;
+    if git_ok(root, &["diff", "--cached", "--quiet"]).is_ok() {
+        return Ok(None);
+    }
+    let mut args = identity_args(root);
+    args.extend(["commit", "-q", "--no-verify", "-m", message]);
+    git_ok(root, &args)?;
+    head_commit(root).map(Some)
+}
+
+/// Puts the tree back to `commit`, dropping everything after it, tracked and
+/// untracked. Only ever used inside a run's own worktree.
+pub fn reset_hard(root: &Path, commit: &str) -> Result<(), DesktopError> {
+    if commit.is_empty() || commit.starts_with('-') || !commit.chars().all(|c| c.is_ascii_hexdigit()) {
+        return Err(DesktopError::io("invalid commit"));
+    }
+    git_ok(root, &["reset", "-q", "--hard", commit])?;
+    git_ok(root, &["clean", "-q", "-fd"])?;
+    Ok(())
+}
+
+/// Commits on `branch` that the checkout at `root` does not have, newest first.
+pub fn commits_ahead(root: &Path, branch: &str) -> Result<Vec<(String, String)>, DesktopError> {
+    if !valid_branch_name(branch) {
+        return Err(DesktopError::io("invalid branch name"));
+    }
+    let range = format!("HEAD..{branch}");
+    let text = git_ok(root, &["log", "--format=%H%x09%s", "-n", "200", &range])?;
+    Ok(text.lines().filter_map(|line| line.split_once('\t')).map(|(sha, subject)| (sha.to_string(), subject.to_string())).collect())
+}
+
+/// What merging a run's branch did.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "outcome", rename_all = "snake_case")]
+pub enum MergeOutcome {
+    Merged { commit: String },
+    /// Nothing to merge: the checkout already has every commit.
+    UpToDate,
+    /// The merge would conflict; it was aborted and nothing changed.
+    Conflicts { files: Vec<String> },
+}
+
+/// Merges `branch` into the checkout at `root` with a merge commit. A merge
+/// that conflicts is aborted, so the checkout is left as it was.
+pub fn merge_branch(root: &Path, branch: &str, message: &str) -> Result<MergeOutcome, DesktopError> {
+    if !valid_branch_name(branch) {
+        return Err(DesktopError::io("invalid branch name"));
+    }
+    if !is_clean(root)? {
+        return Err(DesktopError::conflict("the checkout has uncommitted changes; commit or stash them before merging the run"));
+    }
+    if commits_ahead(root, branch)?.is_empty() {
+        return Ok(MergeOutcome::UpToDate);
+    }
+    let mut args = identity_args(root);
+    args.extend(["merge", "--no-ff", "--no-edit", "-m", message, branch]);
+    let output = git(root, &args)?;
+    if output.status.success() {
+        return Ok(MergeOutcome::Merged { commit: head_commit(root)? });
+    }
+    let files: Vec<String> = git_ok(root, &["diff", "--name-only", "--diff-filter=U"]).unwrap_or_default().lines().map(str::to_string).collect();
+    let _ = git(root, &["merge", "--abort"]);
+    if files.is_empty() {
+        return Err(DesktopError::io(format!("git merge failed: {}", String::from_utf8_lossy(&output.stderr).trim())));
+    }
+    Ok(MergeOutcome::Conflicts { files })
 }
 
 /// Removes a worktree. `force` is required when it has modifications; callers

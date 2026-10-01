@@ -14,6 +14,7 @@ pub mod review;
 pub mod runtime_env;
 pub mod session;
 pub mod skills;
+pub mod superthing;
 pub mod support;
 pub mod terminal;
 pub mod workspace;

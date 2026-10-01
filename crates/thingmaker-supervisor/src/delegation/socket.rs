@@ -102,7 +102,7 @@ async fn serve(delegation: Delegation, stream: UnixStream) -> std::io::Result<()
     let mut lines = AsyncBufReader::new(read).lines();
     let Some(hello) = lines.next_line().await? else { return Ok(()) };
     let token = serde_json::from_str::<Value>(&hello).ok().and_then(|value| value.get("token").and_then(Value::as_str).map(str::to_string));
-    let Some(session) = token.and_then(|token| delegation.session_for_token(&token)) else {
+    let Some(caller) = token.and_then(|token| delegation.caller_for_token(&token)) else {
         write.write_all(b"{\"error\":\"unknown token\"}\n").await?;
         return Ok(());
     };
@@ -133,10 +133,10 @@ async fn serve(delegation: Delegation, stream: UnixStream) -> std::io::Result<()
         };
         for message in messages {
             let delegation = delegation.clone();
-            let session = session.clone();
+            let caller = caller.clone();
             let tx = tx.clone();
             tokio::spawn(async move {
-                if let Some(reply) = mcp::handle(&delegation, &session, &message).await {
+                if let Some(reply) = mcp::handle(&delegation, &caller, &message).await {
                     let _ = tx.send(reply).await;
                 }
             });

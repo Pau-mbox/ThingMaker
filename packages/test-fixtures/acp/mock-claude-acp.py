@@ -27,6 +27,10 @@ Flags:
   --hang-in-tool   a prompt starts a tool call and then waits in it, the way
                    an orchestrator waits in `await_jobs`; `session/cancel`
                    ends it
+  --follow-plan    plays a Super Thing orchestrator: answers a planning prompt
+                   with a plan block, a briefing with an acknowledgement, and a
+                   continuation by writing a file, running the milestone's
+                   check as a shell call and reporting that milestone done
 """
 import json
 import sys
@@ -38,6 +42,9 @@ HANG = "--hang" in sys.argv
 HANG_IN_TOOL = "--hang-in-tool" in sys.argv
 hanging = {}
 ASK = "--ask" in sys.argv
+FOLLOW = "--follow-plan" in sys.argv
+cwds = {}
+turns = {"count": 0}
 
 
 def option(name, default):
@@ -172,6 +179,42 @@ def run_turn(session_id):
     })
 
 
+def prompt_text(params):
+    return "\n".join(block.get("text", "") for block in (params.get("prompt") or []) if isinstance(block, dict))
+
+
+def say(session_id, text):
+    update(session_id, {"sessionUpdate": "agent_message_chunk", "content": {"type": "text", "text": text}})
+
+
+def follow_turn(session_id, text):
+    """One turn of a model that does what Super Thing asks, to the protocol."""
+    import os
+    import re
+    turns["count"] += 1
+    if "setting up a Super Thing goal" in text:
+        say(session_id, "Here is the plan.\n\nSUPERTHING-PLAN\nmilestone: Write the first file\ncheck: command true\nstep: write it\nmilestone: Write the second file\ncheck: command true\nstep: write it\nEND-SUPERTHING-PLAN")
+        return
+    if "You are working under Super Thing" in text:
+        say(session_id, "Understood. I will work the milestones in order.")
+        return
+    found = re.search(r"Milestone (\d+)/(\d+)", text)
+    if not found:
+        say(session_id, "Nothing to do.")
+        return
+    number = found.group(1)
+    root = cwds.get(session_id)
+    if root:
+        with open(os.path.join(root, f"work-{number}-{turns['count']}.txt"), "w") as handle:
+            handle.write(f"milestone {number}\n")
+    check = re.search(r"Its check: `([^`]+)` must exit 0", text)
+    if check:
+        call = f"toolu_check_{turns['count']}"
+        update(session_id, {"sessionUpdate": "tool_call", "toolCallId": call, "title": check.group(1), "kind": "execute", "status": "in_progress", "rawInput": {"command": check.group(1)}})
+        update(session_id, {"sessionUpdate": "tool_call_update", "toolCallId": call, "status": "completed", "rawOutput": "ok"})
+    say(session_id, f"Milestone {number} is done.\nSUPERTHING-REPORT: milestone={number} status=complete note=wrote the file")
+
+
 for line in sys.stdin:
     line = line.strip()
     if not line:
@@ -194,12 +237,14 @@ for line in sys.stdin:
     elif method == "session/new":
         sys.stderr.write("meta: " + json.dumps(params.get("_meta")) + "\n")
         sys.stderr.flush()
+        cwds[SESSION] = params.get("cwd")
         send({"jsonrpc": "2.0", "id": request, "result": {"sessionId": SESSION, "configOptions": config_options()}})
     elif method == "session/load":
         loaded = params.get("sessionId")
         if loaded != SESSION:
             send({"jsonrpc": "2.0", "id": request, "error": {"code": -32602, "message": f"no session {loaded}"}})
         else:
+            cwds[loaded] = params.get("cwd")
             # A load replays the session as updates before it answers.
             update(loaded, {"sessionUpdate": "user_message_chunk", "content": {"type": "text", "text": "earlier ask"}})
             update(loaded, {"sessionUpdate": "agent_message_chunk", "content": {"type": "text", "text": "earlier work"}})
@@ -241,6 +286,9 @@ for line in sys.stdin:
                     "data": {"errorKind": "rate_limit"},
                 },
             })
+        elif FOLLOW:
+            follow_turn(params.get("sessionId"), prompt_text(params))
+            send({"jsonrpc": "2.0", "id": request, "result": {"stopReason": "end_turn"}})
         else:
             run_turn(params.get("sessionId"))
             send({"jsonrpc": "2.0", "id": request, "result": {"stopReason": "end_turn"}})

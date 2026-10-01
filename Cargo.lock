@@ -4651,6 +4651,7 @@ dependencies = [
  "ignore",
  "libc",
  "portable-pty",
+ "regex",
  "reqwest",
  "rusqlite",
  "serde",

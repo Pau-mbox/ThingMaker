@@ -9,7 +9,7 @@ use rusqlite::params;
 
 use super::{Storage, now_unix_ms};
 
-pub const SCHEMA_VERSION: i64 = 18;
+pub const SCHEMA_VERSION: i64 = 19;
 
 struct Migration {
     version: i64,
@@ -128,6 +128,12 @@ const MIGRATIONS: &[Migration] = &[
         name: "gemini",
         sql: include_str!("schema/0018_gemini.sql"),
         rebuilds: true,
+    },
+    Migration {
+        version: 19,
+        name: "superthing_engine",
+        sql: include_str!("schema/0019_superthing_engine.sql"),
+        rebuilds: false,
     },
 ];
 

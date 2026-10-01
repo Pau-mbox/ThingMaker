@@ -798,6 +798,17 @@ pub struct CreateRequest {
     pub plan_path: Option<String>,
     #[serde(default)]
     pub default_check: Option<String>,
+    #[serde(default)]
+    pub dispatch: thingmaker_supervisor::storage::odyssey::Dispatch,
+    #[serde(default)]
+    pub review_tasks: bool,
+    #[serde(default)]
+    pub isolate: bool,
+    #[serde(default)]
+    pub account_policy: thingmaker_supervisor::storage::odyssey::AccountPolicy,
+    /// The team the run starts with, `{orchestrator, combo}`, from a preset.
+    #[serde(default)]
+    pub team: Option<serde_json::Value>,
 }
 
 #[tauri::command]
@@ -824,6 +835,11 @@ pub fn odyssey_create(request: CreateRequest, state: State<'_, AppState>) -> Com
         plan_document: request.plan_document,
         plan_path: request.plan_path,
         default_check: request.default_check,
+        dispatch: request.dispatch,
+        review_tasks: request.review_tasks,
+        isolate: request.isolate,
+        account_policy: request.account_policy,
+        team: request.team,
     };
     let created = state.with_storage(|storage| storage.odyssey_create(&new)).map_err(storage_error)?;
     state

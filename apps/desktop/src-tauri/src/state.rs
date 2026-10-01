@@ -70,6 +70,10 @@ pub struct AppState {
     /// them on. Set once in `setup`.
     pub delegation: std::sync::OnceLock<thingmaker_supervisor::delegation::Delegation>,
     pub delegation_socket: std::sync::OnceLock<thingmaker_supervisor::delegation::socket::DelegationSocket>,
+    /// Super Thing's engine (ADR-010). Set once in `setup`, after delegation.
+    pub engine: std::sync::OnceLock<thingmaker_supervisor::superthing::Engine>,
+    /// The model each live attachment was opened on, when one was asked for.
+    pub actor_models: Mutex<HashMap<String, String>>,
 }
 
 impl AppState {
@@ -89,6 +93,8 @@ impl AppState {
             resource_dir: resource_dir.map(Path::to_path_buf),
             delegation: std::sync::OnceLock::new(),
             delegation_socket: std::sync::OnceLock::new(),
+            engine: std::sync::OnceLock::new(),
+            actor_models: Mutex::new(HashMap::new()),
         })
     }
 
@@ -135,7 +141,25 @@ impl AppState {
             .unwrap_or_else(|| id.to_string())
     }
 
+    /// Remembers the model an attachment was opened on.
+    pub fn set_actor_model(&self, id: &str, model: Option<&str>) {
+        let mut models = self.actor_models.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+        match model {
+            Some(model) => {
+                models.insert(id.to_string(), model.to_string());
+            }
+            None => {
+                models.remove(id);
+            }
+        }
+    }
+
+    pub fn actor_model(&self, id: &str) -> Option<String> {
+        self.actor_models.lock().unwrap_or_else(|poisoned| poisoned.into_inner()).get(id).cloned()
+    }
+
     pub fn remove_actor(&self, id: &str) -> Option<SessionActor> {
+        self.actor_models.lock().unwrap_or_else(|poisoned| poisoned.into_inner()).remove(id);
         self.actor_roots
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner())

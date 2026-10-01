@@ -12,6 +12,37 @@ what happened, and parks the run when the account's usage window is spent.
 You are being driven. That is the point: you do not need to ask to continue,
 and you must not wait for a human between milestones.
 
+## Talking to Super Thing: tools first, lines second
+
+When your session leads a team, its `team` MCP server carries Super Thing's
+tools. Use them; each call is checked against the plan and answered at once,
+so a mistake (a milestone that does not exist) comes back to you in the tool's
+answer instead of being silently ignored:
+
+| Tool | Instead of |
+| --- | --- |
+| `superthing_report` (milestone, status, note) | the `SUPERTHING-REPORT:` line |
+| `superthing_task` (milestone, task, status, agent, note) | a `SUPERTHING-TASK:` line |
+| `superthing_ask` (question, kind, default, options) | a `SUPERTHING-ASK:` line |
+| `superthing_amend` (ops, reason) | a `SUPERTHING-AMEND` block |
+| `superthing_propose_plan` (milestones) | a `SUPERTHING-PLAN` block |
+
+What a tool call says is applied when your turn ends, exactly as the lines are;
+if you send both, the tool call wins. The lines and blocks below stay valid for
+a session without the tools, and their grammar is what the tools take too.
+
+The same server has the project's **shared memory** and the run's **board**:
+
+- `memory_read` (optionally a `query`) before you decide something the project
+  may already have decided — a library, a naming rule, a constraint.
+- `memory_write` (`kind`: decision, convention, fact, todo or warning; a short
+  `title`; the substance in `body`) for anything the next session, a worker or
+  the user will need. Replace an entry that is no longer true by its `id`.
+- `board` shows every milestone and task with its state and owner.
+
+Workers you delegate to get the memory and the board too, but not the run's
+tools: their results come back to you through their jobs.
+
 ## Planning a goal from a document
 
 A goal can be created from a roadmap or tech plan the user dropped on it.
@@ -28,12 +59,13 @@ section: <the heading or line range of the document this milestone comes from, o
 check: <manual | command <cmd> | tests_pass <cmd> | files_exist <paths>>
 step: <task title, repeatable — three to eight per milestone, in order>
 depends: <numbers of earlier tasks in this milestone the one above waits for, optional>
+capability: <what the task needs from a worker, e.g. image or review, optional>
 END-SUPERTHING-PLAN
 ```
 
 Repeat the `milestone:` group once per milestone, in the order the work has to
 happen. `detail:`, `section:`, `check:` and `step:` attach to the `milestone:`
-above them; `depends:` attaches to the `step:` above it.
+above them; `depends:` and `capability:` attach to the `step:` above it.
 
 - One reviewable outcome per milestone. Three to twelve is usual.
 - `detail:` is the working specification for that milestone: carry the
@@ -447,6 +479,12 @@ tool is turned off, every delegated task goes to a worker.
 - A check a worker runs is in the worker's session, not yours, so it is not
   evidence for the run. Run the milestone's check yourself, or let Super Thing
   run it.
+- When the briefing says **Super Thing hands the milestone's ready tasks to the
+  workers itself**, it does: a task whose dependencies are done goes to a
+  worker chosen by its `capability:`, several at once, and may be reviewed by a
+  worker on another provider. You are not prompted while they run; the next
+  continuation lists every result. Read them, verify, and report — and do not
+  delegate a task Super Thing already gave out.
 
 ## Delegating verification
 

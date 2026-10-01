@@ -112,6 +112,56 @@ pub struct WorkerSpec {
     pub job_id: String,
     /// A name for the worker's session in the sidebar.
     pub title: String,
+    /// The token the worker's own reduced `team` server authenticates with
+    /// (memory and board, no delegation), for a provider that can load one.
+    pub mcp_token: Option<String>,
+}
+
+/// Who is calling the `team` server.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Caller {
+    Orchestrator { session: String, provider: Provider, root: PathBuf },
+    Worker { orchestrator: String, provider: Provider, root: PathBuf, name: String, job_id: String },
+}
+
+impl Caller {
+    pub fn root(&self) -> &std::path::Path {
+        match self {
+            Self::Orchestrator { root, .. } | Self::Worker { root, .. } => root,
+        }
+    }
+
+    /// The orchestrator session the call belongs to.
+    pub fn orchestrator(&self) -> &str {
+        match self {
+            Self::Orchestrator { session, .. } => session,
+            Self::Worker { orchestrator, .. } => orchestrator,
+        }
+    }
+
+    pub fn provider(&self) -> Provider {
+        match self {
+            Self::Orchestrator { provider, .. } | Self::Worker { provider, .. } => *provider,
+        }
+    }
+
+    /// How the caller signs what it writes: `claude`, or `codex · luna`.
+    pub fn author(&self) -> String {
+        match self {
+            Self::Orchestrator { provider, .. } => format!("{} · orchestrator", provider.as_str()),
+            Self::Worker { provider, name, .. } => format!("{} · {name}", provider.as_str()),
+        }
+    }
+}
+
+/// Tools another service answers on the same `team` server: Super Thing's
+/// protocol, the shared memory and the board (ADR-010).
+pub trait TeamExtension: Send + Sync {
+    fn tools(&self, caller: &Caller) -> Vec<serde_json::Value>;
+    /// Extra lines for the server's instructions.
+    fn instructions(&self, caller: &Caller) -> Option<String>;
+    /// The tool's result, or `None` when the tool is not this extension's.
+    fn call(&self, caller: &Caller, name: &str, arguments: &serde_json::Value) -> Option<BoxFuture<serde_json::Value>>;
 }
 
 /// The host's side: opening a worker session, and forgetting one.
@@ -217,12 +267,23 @@ struct JobRecord {
     view: JobView,
     slot: WorkerSlot,
     actor: Option<SessionActor>,
+    /// The worker's own MCP token, while its session is open.
+    token: Option<String>,
+}
+
+struct WorkerIdentity {
+    orchestrator: String,
+    provider: Provider,
+    root: PathBuf,
+    name: String,
+    job_id: String,
 }
 
 #[derive(Default)]
 struct State {
     orchestrators: HashMap<String, Orchestrator>,
     tokens: HashMap<String, String>,
+    worker_tokens: HashMap<String, WorkerIdentity>,
     jobs: HashMap<String, JobRecord>,
     /// Job ids per orchestrator, oldest first.
     order: HashMap<String, Vec<String>>,
@@ -236,6 +297,7 @@ struct Inner {
     on_change: Box<dyn Fn(&JobView) + Send + Sync>,
     state: Mutex<State>,
     changed: watch::Sender<u64>,
+    extension: std::sync::RwLock<Option<Arc<dyn TeamExtension>>>,
 }
 
 /// The delegation service. Cloning shares it.
@@ -267,7 +329,7 @@ impl Delegation {
     pub fn new(launcher: Arc<dyn WorkerLauncher>, on_change: impl Fn(&JobView) + Send + Sync + 'static) -> Self {
         let (changed, _) = watch::channel(0);
         Self {
-            inner: Arc::new(Inner { launcher, on_change: Box::new(on_change), state: Mutex::new(State::default()), changed }),
+            inner: Arc::new(Inner { launcher, on_change: Box::new(on_change), state: Mutex::new(State::default()), changed, extension: std::sync::RwLock::new(None) }),
         }
     }
 
@@ -297,6 +359,31 @@ impl Delegation {
         self.state().tokens.get(token).cloned()
     }
 
+    /// Who a token belongs to: an orchestrator, or one of its workers.
+    pub fn caller_for_token(&self, token: &str) -> Option<Caller> {
+        let state = self.state();
+        if let Some(session) = state.tokens.get(token) {
+            let orchestrator = state.orchestrators.get(session)?;
+            return Some(Caller::Orchestrator { session: session.clone(), provider: orchestrator.provider, root: orchestrator.root.clone() });
+        }
+        let worker = state.worker_tokens.get(token)?;
+        Some(Caller::Worker { orchestrator: worker.orchestrator.clone(), provider: worker.provider, root: worker.root.clone(), name: worker.name.clone(), job_id: worker.job_id.clone() })
+    }
+
+    /// Adds another service's tools to every `team` server.
+    pub fn set_extension(&self, extension: Arc<dyn TeamExtension>) {
+        *self.inner.extension.write().unwrap_or_else(|poisoned| poisoned.into_inner()) = Some(extension);
+    }
+
+    pub fn extension(&self) -> Option<Arc<dyn TeamExtension>> {
+        self.inner.extension.read().unwrap_or_else(|poisoned| poisoned.into_inner()).clone()
+    }
+
+    /// The orchestrator's workspace root and provider.
+    pub fn orchestrator_of(&self, session: &str) -> Option<(Provider, PathBuf)> {
+        self.state().orchestrators.get(session).map(|orchestrator| (orchestrator.provider, orchestrator.root.clone()))
+    }
+
     pub fn combo(&self, session: &str) -> Option<Combo> {
         self.state().orchestrators.get(session).map(|orchestrator| orchestrator.combo.clone())
     }
@@ -316,6 +403,7 @@ impl Delegation {
             let mut state = self.state();
             let Some(orchestrator) = state.orchestrators.remove(session) else { return };
             state.tokens.remove(&orchestrator.token);
+            state.worker_tokens.retain(|_, worker| worker.orchestrator != session);
             let ids = state.order.remove(session).unwrap_or_default();
             let mut actors = Vec::new();
             let mut finished = Vec::new();
@@ -473,7 +561,14 @@ impl Delegation {
                 started_at_unix_ms: now,
                 finished_at_unix_ms: None,
             };
-            state.jobs.insert(id.clone(), JobRecord { view: view.clone(), slot: route.slot.clone(), actor: reuse.as_ref().map(|(_, actor)| actor.clone()) });
+            let token = reuse.is_none().then(|| uuid::Uuid::new_v4().simple().to_string());
+            if let Some(token) = &token {
+                state.worker_tokens.insert(
+                    token.clone(),
+                    WorkerIdentity { orchestrator: session.to_string(), provider: route.slot.provider, root: root.clone(), name: route.slot.name.clone(), job_id: id.clone() },
+                );
+            }
+            state.jobs.insert(id.clone(), JobRecord { view: view.clone(), slot: route.slot.clone(), actor: reuse.as_ref().map(|(_, actor)| actor.clone()), token });
             state.order.entry(session.to_string()).or_default().push(id);
             (view, route.slot, reuse.map(|(_, actor)| actor), root, orchestrator_provider)
         };
@@ -484,7 +579,8 @@ impl Delegation {
         let job_id = view.id.clone();
         let summary: String = task.lines().next().unwrap_or(task).chars().take(60).collect();
         let title = format!("{} · {summary}", slot.name);
-        let spec = WorkerSpec { orchestrator: session.to_string(), root, slot, job_id: job_id.clone(), title };
+        let mcp_token = self.state().jobs.get(&job_id).and_then(|record| record.token.clone());
+        let spec = WorkerSpec { orchestrator: session.to_string(), root, slot, job_id: job_id.clone(), title, mcp_token };
         let queued = queued.map(|(wait, _)| wait);
         tokio::spawn(async move { service.run(job_id, spec, prompt, reuse, args, queued).await });
         Ok(view)
@@ -726,6 +822,15 @@ impl Delegation {
     }
 
     async fn release_worker(&self, job_id: &str, worker: &SessionActor) {
+        let token = {
+            let mut state = self.state();
+            let token = state.jobs.values_mut().find(|record| record.actor.as_ref().is_some_and(|actor| actor.handle().id == worker.handle().id) && record.token.is_some()).and_then(|record| record.token.take());
+            if let Some(token) = &token {
+                state.worker_tokens.remove(token);
+            }
+            token
+        };
+        let _ = token;
         self.update(job_id, |record| record.actor = None);
         let _ = worker.stop().await;
         self.inner.launcher.released(&worker.handle().id);

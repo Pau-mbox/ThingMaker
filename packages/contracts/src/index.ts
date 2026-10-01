@@ -722,9 +722,29 @@ export type OdysseyRecord = {
   onPlanChange: OnPlanChange;
   /** Which orchestrator this goal runs on, and whether it may move accounts. */
   orchestrator: Orchestrator;
+  /** Who hands the plan's tasks to workers: the orchestrator, or the runner. */
+  dispatch?: Dispatch;
+  /** With runner dispatch, a finished task is reviewed on another provider. */
+  reviewTasks?: boolean;
+  /** Whether the run gets its own branch and worktree when it starts. */
+  isolate?: boolean;
+  /** The checkout the run's worktree branched from, once it has one. */
+  sourceWorkspaceId?: string;
+  worktreePath?: string;
+  branch?: string;
+  baseRef?: string;
+  /** Stay on one account until it is spent, or spread across them. */
+  accountPolicy?: AccountPolicy;
+  /** The team the run started with, from a preset. */
+  team?: GoalTeam;
   createdAt: number;
   updatedAt: number;
 };
+
+export type Dispatch = "agent" | "runner";
+export type AccountPolicy = "drain" | "spread";
+/** The orchestrator and workers a goal runs with. */
+export type GoalTeam = { orchestrator?: { provider?: Provider; model?: string; effort?: string }; combo?: Combo };
 
 export type OdysseyStep = {
   id: string;
@@ -744,6 +764,12 @@ export type OdysseyStep = {
   startedAt?: number;
   updatedAt?: number;
   finishedAt?: number;
+  /** What the task needs from a worker (`image`, `review`). */
+  capability?: string;
+  /** The job the runner handed the task to. */
+  jobId?: string;
+  /** A cross-provider review of the result. */
+  review?: string;
 };
 
 export type StepEdit = { title?: string; detail?: string; dependsOn?: string[] };
@@ -836,6 +862,9 @@ export type OdysseyJournalEntry = {
   baselineId?: string;
   summary: string;
   detail?: string;
+  /** For a prompt: the provider and model of the session it went to. */
+  provider?: Provider;
+  model?: string;
 };
 
 export type OdysseyView = { goal: OdysseyRecord; milestones: MilestoneRecord[]; journal: OdysseyJournalEntry[] };
@@ -860,6 +889,11 @@ export type NewOdyssey = {
   planDocument?: string;
   planPath?: string;
   defaultCheck?: string;
+  dispatch?: Dispatch;
+  reviewTasks?: boolean;
+  isolate?: boolean;
+  accountPolicy?: AccountPolicy;
+  team?: GoalTeam;
 };
 
 /** Absent fields are left as they are; `tokenBudget: null` clears the budget. */
@@ -876,7 +910,50 @@ export type GoalEdit = {
   defaultCheck?: string | null;
   onPlanChange?: OnPlanChange;
   orchestrator?: Orchestrator;
+  dispatch?: Dispatch;
+  reviewTasks?: boolean;
+  isolate?: boolean;
+  accountPolicy?: AccountPolicy;
+  /** `null` clears it. */
+  team?: GoalTeam | null;
 };
+
+/** What the engine is doing for one goal right now (ADR-010). */
+export type SuperThingRuntime = {
+  resumeAt?: number;
+  lastReason: string;
+  lastReasonAt: number;
+  ticking: boolean;
+  stalledSince?: number;
+  stallNotified: boolean;
+  /** The attachment the goal runs on now. */
+  sessionHandle?: string;
+  /** What the spend forecast says about the next turn. */
+  forecast?: string;
+};
+
+/** What the engine tells the interface, on `SUPERTHING_EVENT`. */
+export type SuperThingEvent =
+  | { kind: "changed"; goalId: string; workspaceId: string; agentSessionId?: string | null }
+  | { kind: "runtime"; goalId: string; runtime: SuperThingRuntime }
+  | { kind: "announce"; goalId: string; text: string }
+  | { kind: "notify"; goalId: string; workspaceId: string; attention: "needs_input" | "blocked" | "done"; text: string }
+  | { kind: "session_opened"; workspaceId: string; handle: string; agentSessionId: string }
+  | { kind: "moved"; goalId: string; fromAgentSessionId?: string | null; toAgentSessionId: string; toHandle: string };
+
+export const SUPERTHING_EVENT = "thingmaker://superthing";
+
+/** Where a goal is moved: an open session by handle, or a fresh one. */
+export type SuperThingMoveTarget = { kind: "session"; handle: string } | { kind: "new"; provider: Provider };
+
+/** One checkpoint commit on a run's own branch. */
+export type RunCommit = { commit: string; subject: string };
+export type MergeOutcome = { outcome: "merged"; commit: string } | { outcome: "up_to_date" } | { outcome: "conflicts"; files: string[] };
+
+/** The project's shared memory. */
+export type MemoryKind = "decision" | "convention" | "fact" | "todo" | "warning";
+export type MemoryEntry = { id: string; workspaceId: string; kind: MemoryKind; title: string; body: string; author: string; odysseyId?: string; createdAt: number; updatedAt: number };
+export type MemoryWrite = { id?: string; kind: MemoryKind; title: string; body: string };
 
 export type MilestoneEdit = { title?: string; detail?: string; checkKind?: CheckKind; checkSpec?: string | null; section?: string | null };
 
@@ -1242,6 +1319,24 @@ export const COMMANDS = {
   sessionArchive: "session_archive",
   sessionPin: "session_pin",
   sessionRename: "session_rename",
+  superthingStart: "superthing_start",
+  superthingPause: "superthing_pause",
+  superthingTick: "superthing_tick",
+  superthingMove: "superthing_move",
+  superthingVerify: "superthing_verify",
+  superthingRunCheck: "superthing_run_check",
+  superthingRequestPlan: "superthing_request_plan",
+  superthingAmend: "superthing_amend",
+  superthingDecidePlanChange: "superthing_decide_plan_change",
+  superthingAnswer: "superthing_answer",
+  superthingRuntime: "superthing_runtime",
+  superthingBriefing: "superthing_briefing",
+  superthingCommits: "superthing_commits",
+  superthingRollback: "superthing_rollback",
+  superthingMerge: "superthing_merge",
+  memoryList: "memory_list",
+  memoryWrite: "memory_write",
+  memoryDelete: "memory_delete",
   odysseyReadPlan: "odyssey_read_plan",
   odysseyAdoptPlan: "odyssey_adopt_plan",
   odysseyForSession: "odyssey_for_session",

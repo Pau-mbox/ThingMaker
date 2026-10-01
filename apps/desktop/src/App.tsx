@@ -69,19 +69,9 @@ export function App() {
   const reducedMotion = useStore((s) => s.uiPrefs.reducedMotion);
   const sidebarCollapsed = useStore((s) => s.sidebarCollapsed);
 
-  const odysseyPoll = useStore((s) => s.odysseyPoll);
-
   useEffect(() => {
     void bootstrap();
   }, [bootstrap]);
-
-  // Super Thing's heartbeat. A running goal advances on turn settles; this is what
-  // moves a goal that is parked on a usage window, and what picks a run back up
-  // after a reload. Ten seconds is fine for a countdown measured in hours.
-  useEffect(() => {
-    const timer = setInterval(() => void odysseyPoll(), 10_000);
-    return () => clearInterval(timer);
-  }, [odysseyPoll]);
 
   useKeyboardShortcuts();
 

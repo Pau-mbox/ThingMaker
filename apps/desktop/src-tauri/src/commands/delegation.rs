@@ -48,6 +48,10 @@ pub fn start(app: &AppHandle) -> Result<(), String> {
     let emitter = app.clone();
     let delegation = Delegation::new(launcher, move |job: &JobView| {
         let _ = emitter.emit(JOB_EVENT, job);
+        // Super Thing follows the jobs it gave out, and the tasks they are named after.
+        if let Some(engine) = emitter.try_state::<AppState>().and_then(|state| state.engine.get().cloned()) {
+            engine.note_job(job);
+        }
     });
     let path = socket_path(&state.data_dir);
     let socket = tauri::async_runtime::block_on(async { DelegationSocket::bind(delegation.clone(), path) }).map_err(|error| format!("could not open the ThingMaker MCP socket: {error}"))?;
@@ -154,6 +158,16 @@ impl WorkerLauncher for HostLauncher {
             let (target, launch) = super::session::build_launch(&state, &record, spec.slot.provider, spec.slot.model.clone(), spec.slot.effort.clone(), None, reserved.clone())?;
             let mut config = SessionActorConfig::new(target, launch);
             config.environment = super::session::launch_environment(&state);
+            // The worker's own reduced team server: the project memory and the
+            // run's board (ADR-010). A provider that cannot load one goes without.
+            if let (Some(token), Some(socket), Some(program)) = (spec.mcp_token.as_deref(), state.delegation_socket.get(), relay_program())
+                && spec.slot.provider.can_orchestrate()
+            {
+                config.mcp_servers = vec![server_entry(&program, &[RELAY_ARG.to_string()], socket.path(), token)];
+                if spec.slot.provider == Provider::Claude {
+                    config.environment = config.environment.clone().with_set("MCP_TOOL_TIMEOUT", CLAUDE_MCP_TOOL_TIMEOUT_MS);
+                }
+            }
             let actor = SessionActor::open(config).await?;
             let snapshot = actor.snapshot().await?;
             let recorded = snapshot.agent_session_id.clone().unwrap_or_else(|| reserved.as_str().to_string());
@@ -167,6 +181,7 @@ impl WorkerLauncher for HostLauncher {
                 s.session_set_title_overlay(&row.id, Some(&spec.title))
             });
             state.insert_actor(actor.handle().id.clone(), recorded, actor.clone(), spec.root.clone());
+            state.set_actor_model(&actor.handle().id, spec.slot.model.as_deref());
             Ok(actor)
         })
     }

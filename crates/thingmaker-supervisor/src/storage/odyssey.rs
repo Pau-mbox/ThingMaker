@@ -117,6 +117,20 @@ string_enum!(Orchestrator {
     Either => "either",
 }, default Claude);
 
+// How a goal's plan is worked: the orchestrator delegates its tasks itself,
+// or the engine hands ready tasks to the team's workers.
+string_enum!(Dispatch {
+    Agent => "agent",
+    Runner => "runner",
+}, default Agent);
+
+// How a run spends the accounts: stay on one until it is spent, or move to
+// the one with the most room at a milestone boundary.
+string_enum!(AccountPolicy {
+    Drain => "drain",
+    Spread => "spread",
+}, default Drain);
+
 string_enum!(PlanChangeState {
     Proposed => "proposed",
     Applied => "applied",
@@ -202,6 +216,29 @@ pub struct OdysseyRecord {
     /// Which orchestrator this goal runs on, and whether it may move.
     #[serde(default)]
     pub orchestrator: Orchestrator,
+    /// Who hands the plan's tasks to workers.
+    #[serde(default)]
+    pub dispatch: Dispatch,
+    /// With runner dispatch, a finished task is reviewed on another provider.
+    #[serde(default)]
+    pub review_tasks: bool,
+    /// Whether the run gets its own branch and worktree when it starts.
+    #[serde(default)]
+    pub isolate: bool,
+    /// The checkout the run's worktree branched from.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source_workspace_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub worktree_path: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub branch: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub base_ref: Option<String>,
+    #[serde(default)]
+    pub account_policy: AccountPolicy,
+    /// The team the run was started with: `{orchestrator, combo}`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub team: Option<serde_json::Value>,
     pub created_at: i64,
     pub updated_at: i64,
 }
@@ -312,6 +349,15 @@ pub struct StepRecord {
     /// Step ids this task waits for.
     #[serde(default)]
     pub depends_on: Vec<String>,
+    /// What the task needs from a worker (`image`, `review`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub capability: Option<String>,
+    /// The job the runner handed this task to.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub job_id: Option<String>,
+    /// A cross-provider review of the task's result.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub review: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub started_at: Option<i64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -343,6 +389,11 @@ pub struct JournalEntry {
     pub summary: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub detail: Option<String>,
+    /// For a prompt: the provider and model of the session it went to.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub provider: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub model: Option<String>,
 }
 
 /// A workspace-relative file or folder the agent can open itself.
@@ -470,7 +521,7 @@ pub struct OdysseyView {
 }
 
 /// New goal, as the create command receives it.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct NewOdyssey {
     pub workspace_id: String,
@@ -498,6 +549,16 @@ pub struct NewOdyssey {
     pub plan_path: Option<String>,
     #[serde(default)]
     pub default_check: Option<String>,
+    #[serde(default)]
+    pub dispatch: Dispatch,
+    #[serde(default)]
+    pub review_tasks: bool,
+    #[serde(default)]
+    pub isolate: bool,
+    #[serde(default)]
+    pub account_policy: AccountPolicy,
+    #[serde(default)]
+    pub team: Option<serde_json::Value>,
 }
 
 /// Editable goal fields. Absent fields are left as they are.
@@ -517,6 +578,12 @@ pub struct GoalEdit {
     pub default_check: Option<Option<String>>,
     pub on_plan_change: Option<OnPlanChange>,
     pub orchestrator: Option<Orchestrator>,
+    pub dispatch: Option<Dispatch>,
+    pub review_tasks: Option<bool>,
+    pub isolate: Option<bool>,
+    pub account_policy: Option<AccountPolicy>,
+    /// `Some(None)` clears the team; absent leaves it alone.
+    pub team: Option<Option<serde_json::Value>>,
 }
 
 /// Editable milestone fields. Absent fields are left as they are.
@@ -531,7 +598,7 @@ pub struct MilestoneEdit {
     pub section: Option<Option<String>>,
 }
 
-const GOAL_COLUMNS: &str = "id, workspace_id, session_id, title, brief, state, stop_condition, on_usage_reset, max_continuations, continuations_used, token_budget, tokens_used, created_at, updated_at, plan_source, LENGTH(plan_document), on_report, dead_turn_minutes, plan_path, default_check, on_plan_change, orchestrator";
+const GOAL_COLUMNS: &str = "id, workspace_id, session_id, title, brief, state, stop_condition, on_usage_reset, max_continuations, continuations_used, token_budget, tokens_used, created_at, updated_at, plan_source, LENGTH(plan_document), on_report, dead_turn_minutes, plan_path, default_check, on_plan_change, orchestrator, dispatch, review_tasks, isolate, source_workspace_id, worktree_path, branch, base_ref, account_policy, team";
 
 fn goal_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<OdysseyRecord> {
     let state: String = row.get(5)?;
@@ -560,6 +627,15 @@ fn goal_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<OdysseyRecord> {
         default_check: row.get(19)?,
         on_plan_change: OnPlanChange::parse(&row.get::<_, String>(20)?),
         orchestrator: Orchestrator::parse(&row.get::<_, String>(21)?),
+        dispatch: Dispatch::parse(&row.get::<_, String>(22)?),
+        review_tasks: row.get::<_, i64>(23)? != 0,
+        isolate: row.get::<_, i64>(24)? != 0,
+        source_workspace_id: row.get(25)?,
+        worktree_path: row.get(26)?,
+        branch: row.get(27)?,
+        base_ref: row.get(28)?,
+        account_policy: AccountPolicy::parse(&row.get::<_, String>(29)?),
+        team: row.get::<_, Option<String>>(30)?.and_then(|text| serde_json::from_str(&text).ok()),
     })
 }
 
@@ -648,7 +724,7 @@ fn question_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<QuestionRecord> {
     })
 }
 
-const STEP_COLUMNS: &str = "id, milestone_id, position, title, state, note, detail, agent_name, harness, model, depends_on, started_at, updated_at, finished_at";
+const STEP_COLUMNS: &str = "id, milestone_id, position, title, state, note, detail, agent_name, harness, model, depends_on, started_at, updated_at, finished_at, capability, job_id, review";
 
 fn step_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<StepRecord> {
     let state: String = row.get(4)?;
@@ -669,6 +745,9 @@ fn step_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<StepRecord> {
         started_at: row.get(11)?,
         updated_at: row.get(12)?,
         finished_at: row.get(13)?,
+        capability: row.get(14)?,
+        job_id: row.get(15)?,
+        review: row.get(16)?,
     })
 }
 
@@ -683,6 +762,8 @@ fn journal_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<JournalEntry> {
         baseline_id: row.get(5)?,
         summary: row.get(6)?,
         detail: row.get(7)?,
+        provider: row.get(8)?,
+        model: row.get(9)?,
     })
 }
 
@@ -702,8 +783,8 @@ impl Storage {
         let id = new_id();
         let now = now_unix_ms();
         self.conn().execute(
-            "INSERT INTO odysseys (id, workspace_id, session_id, title, brief, state, stop_condition, on_usage_reset, max_continuations, token_budget, created_at, updated_at, plan_source, plan_document, on_report, plan_path, default_check)
-             VALUES (?1, ?2, ?3, ?4, ?5, 'draft', ?6, ?7, ?8, ?9, ?10, ?10, ?11, ?12, ?13, ?14, ?15)",
+            "INSERT INTO odysseys (id, workspace_id, session_id, title, brief, state, stop_condition, on_usage_reset, max_continuations, token_budget, created_at, updated_at, plan_source, plan_document, on_report, plan_path, default_check, dispatch, review_tasks, isolate, account_policy, team)
+             VALUES (?1, ?2, ?3, ?4, ?5, 'draft', ?6, ?7, ?8, ?9, ?10, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20)",
             params![
                 id,
                 new.workspace_id,
@@ -720,6 +801,11 @@ impl Storage {
                 new.on_report.as_str(),
                 new.plan_path.as_deref().map(str::trim).filter(|value| !value.is_empty()),
                 new.default_check.as_deref().map(str::trim).filter(|value| !value.is_empty()),
+                new.dispatch.as_str(),
+                new.review_tasks as i64,
+                new.isolate as i64,
+                new.account_policy.as_str(),
+                new.team.as_ref().map(|team| team.to_string()),
             ],
         )?;
         self.odyssey_get(&id)?.ok_or_else(|| StorageError::NotFound(format!("odyssey {id} not found")))
@@ -802,7 +888,7 @@ impl Storage {
             return Err(StorageError::Io("a goal needs at least one continuation".into()));
         }
         self.conn().execute(
-            "UPDATE odysseys SET title = ?2, brief = ?3, stop_condition = ?4, on_usage_reset = ?5, max_continuations = ?6, token_budget = ?7, updated_at = ?8, on_report = ?9, dead_turn_minutes = ?10, default_check = ?11, on_plan_change = ?12, orchestrator = ?13 WHERE id = ?1",
+            "UPDATE odysseys SET title = ?2, brief = ?3, stop_condition = ?4, on_usage_reset = ?5, max_continuations = ?6, token_budget = ?7, updated_at = ?8, on_report = ?9, dead_turn_minutes = ?10, default_check = ?11, on_plan_change = ?12, orchestrator = ?13, dispatch = ?14, review_tasks = ?15, isolate = ?16, account_policy = ?17, team = ?18 WHERE id = ?1",
             params![
                 id,
                 title,
@@ -820,6 +906,14 @@ impl Storage {
                 },
                 edit.on_plan_change.unwrap_or(existing.on_plan_change).as_str(),
                 edit.orchestrator.unwrap_or(existing.orchestrator).as_str(),
+                edit.dispatch.unwrap_or(existing.dispatch).as_str(),
+                edit.review_tasks.unwrap_or(existing.review_tasks) as i64,
+                edit.isolate.unwrap_or(existing.isolate) as i64,
+                edit.account_policy.unwrap_or(existing.account_policy).as_str(),
+                match &edit.team {
+                    Some(value) => value.as_ref().map(|team| team.to_string()),
+                    None => existing.team.as_ref().map(|team| team.to_string()),
+                },
             ],
         )?;
         self.odyssey_get(id)?.ok_or_else(|| StorageError::NotFound(format!("odyssey {id} not found")))
@@ -1206,6 +1300,50 @@ impl Storage {
         self.step_get(&id)?.ok_or_else(|| StorageError::NotFound(format!("step {id} not found")))
     }
 
+    /// A task with what it needs from a worker.
+    pub fn step_add_with(&self, milestone_id: &str, title: &str, detail: &str, depends_on: &[String], capability: Option<&str>) -> Result<StepRecord, StorageError> {
+        let step = self.step_add(milestone_id, title, detail, depends_on)?;
+        let capability = capability.map(str::trim).filter(|value| !value.is_empty());
+        if capability.is_none() {
+            return Ok(step);
+        }
+        self.conn().execute("UPDATE odyssey_steps SET capability = ?2 WHERE id = ?1", params![step.id, capability])?;
+        self.step_get(&step.id)?.ok_or_else(|| StorageError::NotFound(format!("step {} not found", step.id)))
+    }
+
+    /// The job the runner gave a task to, or none.
+    pub fn step_set_job(&self, id: &str, job_id: Option<&str>) -> Result<(), StorageError> {
+        self.conn().execute("UPDATE odyssey_steps SET job_id = ?2, updated_at = ?3 WHERE id = ?1", params![id, job_id, now_unix_ms()])?;
+        Ok(())
+    }
+
+    pub fn step_set_review(&self, id: &str, review: Option<&str>) -> Result<(), StorageError> {
+        self.conn().execute("UPDATE odyssey_steps SET review = ?2, updated_at = ?3 WHERE id = ?1", params![id, review, now_unix_ms()])?;
+        Ok(())
+    }
+
+    /// Moves a goal onto the worktree the run was given.
+    pub fn odyssey_set_worktree(&self, id: &str, workspace_id: &str, source_workspace_id: &str, path: &str, branch: &str, base_ref: &str) -> Result<(), StorageError> {
+        let changed = self.conn().execute(
+            "UPDATE odysseys SET workspace_id = ?2, source_workspace_id = ?3, worktree_path = ?4, branch = ?5, base_ref = ?6, updated_at = ?7 WHERE id = ?1",
+            params![id, workspace_id, source_workspace_id, path, branch, base_ref, now_unix_ms()],
+        )?;
+        if changed == 0 {
+            return Err(StorageError::NotFound(format!("odyssey {id} not found")));
+        }
+        Ok(())
+    }
+
+    /// Goals the engine has to look after: running, parked, or a draft
+    /// waiting for its plan.
+    pub fn odyssey_active(&self) -> Result<Vec<OdysseyRecord>, StorageError> {
+        let mut statement = self
+            .conn()
+            .prepare(&format!("SELECT {GOAL_COLUMNS} FROM odysseys WHERE state IN ('running', 'waiting_usage', 'draft', 'paused', 'blocked') AND session_id IS NOT NULL ORDER BY created_at"))?;
+        let rows = statement.query_map([], goal_row)?;
+        Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
+    }
+
     pub fn step_get(&self, id: &str) -> Result<Option<StepRecord>, StorageError> {
         Ok(self
             .conn()
@@ -1274,11 +1412,27 @@ impl Storage {
         summary: &str,
         detail: Option<&str>,
     ) -> Result<JournalEntry, StorageError> {
+        self.odyssey_journal_append_by(odyssey_id, kind, milestone_id, baseline_id, summary, detail, None, None)
+    }
+
+    /// The same, naming the provider and model a prompt went to.
+    #[allow(clippy::too_many_arguments)]
+    pub fn odyssey_journal_append_by(
+        &self,
+        odyssey_id: &str,
+        kind: JournalKind,
+        milestone_id: Option<&str>,
+        baseline_id: Option<&str>,
+        summary: &str,
+        detail: Option<&str>,
+        provider: Option<&str>,
+        model: Option<&str>,
+    ) -> Result<JournalEntry, StorageError> {
         let id = new_id();
         let at = now_unix_ms();
         self.conn().execute(
-            "INSERT INTO odyssey_journal (id, odyssey_id, at, kind, milestone_id, baseline_id, summary, detail) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
-            params![id, odyssey_id, at, kind.as_str(), milestone_id, baseline_id, summary, detail],
+            "INSERT INTO odyssey_journal (id, odyssey_id, at, kind, milestone_id, baseline_id, summary, detail, provider, model) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
+            params![id, odyssey_id, at, kind.as_str(), milestone_id, baseline_id, summary, detail, provider, model],
         )?;
         Ok(JournalEntry {
             id,
@@ -1289,6 +1443,8 @@ impl Storage {
             baseline_id: baseline_id.map(str::to_string),
             summary: summary.to_string(),
             detail: detail.map(str::to_string),
+            provider: provider.map(str::to_string),
+            model: model.map(str::to_string),
         })
     }
 
@@ -1297,7 +1453,7 @@ impl Storage {
     /// screen's "latest" line has to be the one that actually happened last.
     pub fn odyssey_journal(&self, odyssey_id: &str, limit: usize) -> Result<Vec<JournalEntry>, StorageError> {
         let mut statement = self.conn().prepare(
-            "SELECT id, odyssey_id, at, kind, milestone_id, baseline_id, summary, detail FROM odyssey_journal WHERE odyssey_id = ?1 ORDER BY at DESC, rowid DESC LIMIT ?2",
+            "SELECT id, odyssey_id, at, kind, milestone_id, baseline_id, summary, detail, provider, model FROM odyssey_journal WHERE odyssey_id = ?1 ORDER BY at DESC, rowid DESC LIMIT ?2",
         )?;
         let rows = statement.query_map(params![odyssey_id, limit as i64], journal_row)?;
         Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
@@ -1503,6 +1659,7 @@ mod tests {
                 plan_document: None,
                 plan_path: None,
                 default_check: None,
+                ..Default::default()
             })
             .unwrap();
         (workspace.id, record)
@@ -1532,6 +1689,7 @@ mod tests {
             plan_document: None,
             plan_path: None,
             default_check: None,
+            ..Default::default()
         };
         assert!(storage.odyssey_create(&new(Some("s-live".into()))).is_err(), "the agent's id is not a session row");
 
@@ -1588,6 +1746,7 @@ mod tests {
                 plan_document: None,
                 plan_path: None,
                 default_check: None,
+                ..Default::default()
             })
             .unwrap();
         assert!(storage.odyssey_repoint(&first.id, &second_session.id).is_err(), "that session already has a live goal");
@@ -1761,6 +1920,7 @@ mod tests {
                 plan_document: Some(document.into()),
                 plan_path: Some("docs/roadmap.md".into()),
                 default_check: None,
+                ..Default::default()
             })
             .unwrap();
 
@@ -1812,6 +1972,7 @@ mod tests {
                 plan_document: None,
                 plan_path: None,
                 default_check: None,
+                ..Default::default()
             }),
             Err(StorageError::Io(_))
         ));
@@ -1885,6 +2046,7 @@ mod tests {
             plan_document: None,
             plan_path: None,
             default_check: None,
+            ..Default::default()
         };
         let first = storage.odyssey_create(&new("First goal")).unwrap();
         assert!(storage.odyssey_create(&new("Second goal")).is_err(), "a session drives one live goal");

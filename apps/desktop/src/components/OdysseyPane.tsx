@@ -12,10 +12,10 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
-import { ODYSSEY_STATE_NOTE, ORCHESTRATOR_PROVIDERS, PROVIDERS, PROVIDER_LABELS, type AdoptedPlan, type Orchestrator, type OnPlanChange, type OnReport, type CheckKind, type MilestoneRecord, type OdysseyView, type OnUsageReset, type Provider, type StopCondition } from "@thingmaker/contracts";
+import { ODYSSEY_STATE_NOTE, ORCHESTRATOR_PROVIDERS, PROVIDER_LABELS, type AdoptedPlan, type Orchestrator, type OnPlanChange, type OnReport, type CheckKind, type MilestoneRecord, type OdysseyView, type OnUsageReset, type Provider, type StopCondition } from "@thingmaker/contracts";
 import { PLAN_REQUESTED, useStore } from "../store";
-import { buildBriefing, checkLabel } from "../odysseyPrompt";
-import { continuationsLeft, countdown, exhaustedCeiling, hasRunnableCheck, stallDuration, stallNotice, usageVerdict, waitingUntil } from "../odysseyRunner";
+import { checkLabel } from "../odysseyPrompt";
+import { countdown, exhaustedCeiling, hasRunnableCheck, stallDuration, stallNotice, usageVerdict, waitingUntil } from "../odysseyRunner";
 import { RunHistory, RunMonitor, UsageWindows, SpendModelNote } from "./OdysseyActivity";
 import { DocumentsCard } from "./OdysseyDocuments";
 import { TaskTable } from "./OdysseyTasks";
@@ -1303,7 +1303,21 @@ export function OdysseyPane({ sessionId }: { sessionId: string }) {
     }
   }, [view, sessionId, agentSessionId, loadOdyssey]);
 
-  const briefing = useMemo(() => (view ? buildBriefing(view.goal, view.milestones) : ""), [view]);
+  // The engine's own briefing, so what is shown is what the session is sent.
+  const [briefing, setBriefing] = useState("");
+  const briefingKey = view ? `${view.goal.id}:${view.goal.updatedAt}:${view.milestones.length}` : "";
+  useEffect(() => {
+    if (!view) return;
+    let current = true;
+    void api
+      .superthingBriefing(view.goal.id)
+      .then((text) => current && setBriefing(text))
+      .catch(() => undefined);
+    return () => {
+      current = false;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [briefingKey]);
 
   if (!session) return null;
   if (view === undefined) {

@@ -232,6 +232,7 @@ pub async fn session_open(request: OpenRequest, state: State<'_, AppState>) -> C
         OpenRequestMode::Resume { session_id } => Some(session_id.clone()),
         OpenRequestMode::New => None,
     };
+    let opened_model = model.clone();
     let (target, mut launch) = build_launch(&state, &record, provider, model, effort, resume, session_id.clone())?;
     let generation = 1;
     let mut config = SessionActorConfig::new(target, launch.clone());
@@ -268,6 +269,7 @@ pub async fn session_open(request: OpenRequest, state: State<'_, AppState>) -> C
     let _ = state.with_storage(|storage| storage.setting_set(super::delegation::COMBO_KEY, &super::delegation::session_scope(&desktop_session.id), &combo));
     super::delegation::watch_orchestrator(&state, &actor);
     state.insert_actor(handle.id.clone(), recorded_id.clone(), actor, PathBuf::from(&record.canonical_root));
+    state.set_actor_model(&handle.id, opened_model.as_deref());
     // Baseline before agent work (REV-02). Captured off the command path so a
     // large tree never delays the attachment; failures are logged, not fatal.
     if matches!(request.mode, OpenRequestMode::New) {

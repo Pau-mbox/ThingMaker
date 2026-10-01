@@ -350,6 +350,14 @@ impl Storage {
             .optional()?)
     }
 
+    /// A session row by its own id.
+    pub fn session_get(&self, id: &str) -> Result<Option<SessionRecord>, StorageError> {
+        Ok(self
+            .conn()
+            .query_row(&format!("SELECT {SESSION_COLUMNS} FROM sessions WHERE id = ?1"), params![id], row_to_session)
+            .optional()?)
+    }
+
     /// Marks a session the last time the desktop saw it attached.
     pub fn session_touch(&self, id: &str) -> Result<(), StorageError> {
         self.conn()

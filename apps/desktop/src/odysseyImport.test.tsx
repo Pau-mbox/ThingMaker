@@ -183,10 +183,11 @@ describe("dropping a Markdown plan on the goal form", () => {
     // goal's foreign key points at. Sending it as `sessionId` failed that key.
     expect(request.agentSessionId).toBe("kw-1");
     expect(request.sessionId).toBeUndefined();
-    // And the planning turn goes out immediately, carrying the document.
-    const submitted = calls.find((entry) => entry.command === "session_submit");
-    expect(submitted?.args.text ?? JSON.stringify(submitted?.args)).toContain("SUPERTHING-PLAN");
-    expect(JSON.stringify(submitted?.args)).toContain("Build the screens");
+    // And the engine is asked for the planning turn at once; it builds the
+    // prompt from the stored document and submits it.
+    const asked = calls.find((entry) => entry.command === "superthing_request_plan");
+    expect(asked?.args.goalId).toBeTruthy();
+    expect(commands()).not.toContain("session_submit");
   });
 
   it("lets the document be removed without touching the record", async () => {

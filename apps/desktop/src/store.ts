@@ -33,7 +33,6 @@ import type {
   MilestoneEdit,
   NewOdyssey,
   OdysseyView,
-  OdysseyStep,
   PlanChangeRecord,
   QuestionRecord,
   RepositoryInfo,
@@ -44,24 +43,15 @@ import type {
   ProviderInfo,
   QuotaSnapshot,
 } from "@thingmaker/contracts";
-import { EMPTY_COMBO, JOB_EVENT, ODYSSEY_STATE_NOTE, PROVIDERS, PROVIDER_LABELS, asConfigOptions, isEffortOption, type Combo, type JobView, type ProviderModel, type TeamPreset } from "@thingmaker/contracts";
-import { handoffBrief, isOpen, readPresets, upsertJob, upsertPreset } from "./team";
+import { EMPTY_COMBO, JOB_EVENT, ODYSSEY_STATE_NOTE, PROVIDERS, PROVIDER_LABELS, SUPERTHING_EVENT, asConfigOptions, isEffortOption, type Combo, type JobView, type ProviderModel, type SuperThingEvent, type SuperThingRuntime, type TeamPreset } from "@thingmaker/contracts";
+import { handoffBrief, readPresets, upsertJob, upsertPreset } from "./team";
 
 /** Preference keys (scope `ui`) for saved teams. */
 const TEAM_PRESETS_KEY = "teamPresets";
 const DEFAULT_PRESET_KEY = "defaultTeamPreset";
 import { api } from "./ipc";
 import { notify, shouldNotify } from "./notifications";
-import { agentNotesSince, buildBriefing, buildContinuation, type Delta } from "./odysseyPrompt";
-import { PROMPT_UNANSWERED, QUOTA_WAIT_HOLD, RUN_STARTED, TICK_FAILED, TRANSPORT_CLOSED, checkpointDetail, handedOver, heldUntil, looksLikeQuotaError, looksLikeQuotaWait, looksLikeTransportError, parseReport, progressFingerprint, quotaWaitUntil, resumedFrom } from "./odysseyReport";
-import { RESUME_JITTER_MS, continuationsLeft, deadTurn, decide, failoverDecision, lastPromptAt, resumeDecision, shouldResample, stallDuration, stallNotice, stopsAfterMilestone, usageVerdict } from "./odysseyRunner";
-import { evidenceFor, failureTail, newCallIds, readableFromToolResults } from "./odysseyEvidence";
-import { buildPlanningPrompt, parsePlan, type ProposedTask } from "./odysseyPlan";
-import { matchAgentToTask, parseTaskLines } from "./odysseyTasks";
-import { AMEND_INSTRUCTION, describeAmendment, describeOp, diffText, isMilestoneScope, parseAmendment, planDiff, resolveOps, retellNote, shouldCarry, type AmendOp, type ResolvedOp } from "./odysseyAmend";
-import { parseAsks } from "./odysseyAsk";
 import { CLAUDE_RETRY_MS, claudeUsageFrom } from "./odysseyClaudeQuota";
-import { shellResultsOf } from "./toolSummary";
 import { applyEvent, emptyProjection, type Projection } from "./projection";
 
 export const CLOSE_REQUESTED_EVENT = "thingmaker://close-requested";
@@ -133,22 +123,8 @@ export type OdysseyRuntime = {
   /** Set once the stall has been journalled and announced, so it is reported
    *  once per episode rather than once per tick. */
   stallNotified: boolean;
-};
-
-/**
- * A prompt the runner submitted and has not yet seen settle.
- *
- * What it is for: telling an answered turn from one an agent accepted and no model
- * ever saw. The transcript's token total and the count of agent messages are
- * both read just before the submit; if neither moved by the settle, nothing
- * answered. Kept in memory on purpose — after a reload the turn is given the
- * benefit of the doubt and counted.
- */
-export type PendingTurn = {
-  kind: "brief" | "continue";
-  submittedAt: number;
-  tokensAtSubmit: number | null;
-  agentMessagesAtSubmit: number;
+  /** What the engine's spend forecast says about the next turn. */
+  forecast?: string | null;
 };
 
 export const SESSION_TABS: SessionTab[] = ["transcript", "agents", "odyssey", "terminal", "files", "changes", "context", "artifacts", "images"];
@@ -199,15 +175,8 @@ type State = {
    *  is counting down to, the last reason a tick did nothing and when it was
    *  given, and how long the runner has been unable to act. */
   odysseyRuntime: Record<string, OdysseyRuntime>;
-  /** State changes not yet told to the model; the next continuation carries them. */
-  odysseyPendingDeltas: Record<string, Delta[]>;
-  /** Tool-call ids the runner had already seen when it submitted, so a check
-   *  the agent ran three turns ago cannot verify a milestone claimed now. */
-  odysseyToolBaseline: Record<string, string[]>;
   /** Changes the user asked for while the goal was running, per session. */
   odysseyAmendments: Record<string, AmendmentRecord[]>;
-  /** The runner's own prompt awaiting its settle, per session. */
-  odysseyPendingTurn: Record<string, PendingTurn>;
   /** What the run has written into the workspace, as last read; null when the read failed. */
   odysseyNotes: Record<string, WorkspaceNotes | null>;
   /** Plan changes the agent proposed, newest first. */
@@ -367,8 +336,6 @@ type State = {
   setStepState: (sessionId: string, id: string, state: StepState) => Promise<void>;
   /** Queues an amendment asking the agent to break a milestone into tasks. */
   odysseyRequestTasks: (sessionId: string, milestoneIndex: number) => Promise<void>;
-  /** Ties working subagents to the tasks they are named for, from the session stream. */
-  odysseyObserveAgents: (sessionId: string) => Promise<void>;
   odysseyLoadInbox: (sessionId: string, odysseyId: string) => Promise<void>;
   /** Applies or rejects a held plan change; either way the agent is told. */
   odysseyDecidePlanChange: (sessionId: string, id: string, decision: "apply" | "reject", note?: string) => Promise<void>;
@@ -379,26 +346,20 @@ type State = {
   /** Points the goal at another open session, or a fresh one of either agent. */
   odysseyMoveTo: (sessionId: string, target: MoveTarget) => Promise<void>;
   odysseyPause: (sessionId: string, reason?: string) => Promise<void>;
+  /** Asks the engine to look at the goal now. */
   odysseyTick: (sessionId: string) => Promise<void>;
-  /** One iteration, without the per-session guard. Call `odysseyTick`. */
-  odysseyTickOnce: (sessionId: string) => Promise<void>;
-  odysseyOnSettle: (sessionId: string, phase: string, error?: string) => Promise<void>;
-  odysseyPoll: () => Promise<void>;
+  /** What the engine tells the interface. */
+  noteSuperThing: (event: SuperThingEvent) => void;
   odysseyVerifyManually: (sessionId: string, milestoneId: string) => Promise<void>;
   odysseyRunCheck: (sessionId: string, milestoneId: string) => Promise<void>;
   odysseyRequestPlan: (sessionId: string) => Promise<void>;
   odysseyAddAmendment: (sessionId: string, request: NewAmendment) => Promise<void>;
   odysseyDiscardAmendment: (sessionId: string, id: string) => Promise<void>;
   odysseyLoadAmendments: (sessionId: string, odysseyId: string) => Promise<void>;
-  /** Reads an amendment block out of a reply and applies it. */
-  odysseyApplyAmendment: (sessionId: string, reply: string) => Promise<void>;
   /** Closes activity the runtime never reported finishing. Presentation only. */
   clearStaleActivity: (sessionId: string) => void;
-  odysseyReadPlanReply: (sessionId: string) => Promise<void>;
   /** Re-reads the handoff and subagent notes for the screen. */
   odysseyRefreshNotes: (sessionId: string) => Promise<void>;
-  /** Stores one usage reading per running goal, with the session's token counters. */
-  odysseyRecordUsageSamples: (snapshot: UsageSnapshot) => Promise<void>;
   /** Re-reads the account behind a session after a quota-shaped failure. */
   resampleAccount: (sessionId: string, message?: string | null) => Promise<void>;
   /** Which agent a live session runs, for the account its turns are charged to. */
@@ -409,11 +370,6 @@ type State = {
   noteClaudeLimit: (message: string | null | undefined) => boolean;
   /** Asks the Claude account whether it has room, without spending a turn. */
   refreshClaudeUsage: () => Promise<UsageSnapshot | null>;
-  odysseyQueueDelta: (sessionId: string, delta: Delta) => void;
-  odysseyDeltas: (sessionId: string) => Delta[];
-  odysseyCheckpoint: (sessionId: string, milestoneId: string | null) => Promise<string | null>;
-  odysseySessionTokens: (sessionId: string) => Promise<number | null>;
-  odysseyStartTokens: (sessionId: string) => number | null;
   setShowHidden: (show: boolean) => void;
   /** Opens or resumes a session. A resume runs on the provider that wrote it; a new one on `provider`, else the last one used. */
   openSession: (workspaceId: string, mode: OpenMode, provider?: Provider) => Promise<void>;
@@ -454,17 +410,6 @@ function attentionFor(event: EventEnvelope, current: AttentionKind): AttentionKi
     return payload.phase === "succeeded" ? "completed" : "failed";
   }
   return current;
-}
-
-/**
- * Reads the Claude account again, from Claude Code's own usage data. When it
- * cannot be asked, a held reading is dropped instead: the old rule, from when
- * a refusal was the only reading the Claude account ever gave.
- */
-async function rereadClaudeUsage(get: Get, set: Set): Promise<void> {
-  const fresh = await api.providerQuota("claude").catch(() => null);
-  if (fresh && fresh.provider === "claude") get().noteQuota(fresh);
-  else if (get().usage.claude) set({ usage: { ...get().usage, claude: null } });
 }
 
 /** Whether a live session is a worker a delegation opened. */
@@ -544,249 +489,30 @@ function launchDefaults(defaults: SessionDefaults, provider: Provider): { model?
   };
 }
 
-/**
- * One tick at a time per session.
- *
- * Three things start a tick — the heartbeat, a settled turn and Start — and
- * they each `await` something before calling, so they can all arrive at the
- * runner in the same instant. The `ticking` flag could not stop that: it is
- * read and written inside the tick, and by then the other callers are already
- * on their way. Five ticks landed together once and the agent refused four of them
- * with "session is already running a prompt", which blocked the goal and
- * burned continuations. A promise per session serialises them properly; the
- * ones that queue behind it then see the record the first one left.
- */
-const tickInFlight = new Map<string, Promise<void>>();
-
-/** Journal summary marking a planning turn as asked for. The settle that
- *  answers it is recognised by this line, so a reload does not lose the
- *  question and does not re-read an old reply as a plan. */
+/** Journal summary marking a planning turn as asked for; the engine writes it. */
 export const PLAN_REQUESTED = "Asked the agent to read the plan document";
 
-const EMPTY_RUNTIME: OdysseyRuntime = { resumeAt: null, lastReason: "", lastReasonAt: 0, ticking: false, stalledSince: null, stallNotified: false };
-
-/**
- * Merges into a goal's runner bookkeeping.
- *
- * Every call site used to write the whole record, so adding a field meant
- * every one of them silently reset it. Patching keeps the stall clock alive
- * across the ticks that do not care about it.
- */
-function setRuntime(get: () => State, set: (partial: Partial<State>) => void, sessionId: string, patch: Partial<OdysseyRuntime>) {
-  const current = get().odysseyRuntime[sessionId] ?? EMPTY_RUNTIME;
-  set({ odysseyRuntime: { ...get().odysseyRuntime, [sessionId]: { ...current, ...patch } } });
+/** The engine's runtime for a goal, in the shape the screen reads. */
+function runtimeFrom(runtime: SuperThingRuntime): OdysseyRuntime {
+  return {
+    resumeAt: runtime.resumeAt ?? null,
+    lastReason: runtime.lastReason,
+    lastReasonAt: runtime.lastReasonAt,
+    ticking: runtime.ticking,
+    stalledSince: runtime.stalledSince ?? null,
+    stallNotified: runtime.stallNotified,
+    forecast: runtime.forecast ?? null,
+  };
 }
 
-/** Clears the submit-in-flight marker. It means "a submit is awaiting its
- *  accept", not "a turn is running" — `projection.foreground` says that — so
- *  it has to be released once the response is in, exactly as `send` does.
- *  Leaving it set makes the runner see a busy session for ever. */
-function clearInFlight(get: () => State, set: (partial: Partial<State>) => void, sessionId: string) {
-  const current = get().sessions[sessionId];
-  if (current?.inFlightRequestId) set({ sessions: { ...get().sessions, [sessionId]: { ...current, inFlightRequestId: null } } });
-}
-
-/**
- * The lines that carry queued amendments into a prompt.
- *
- * Only `pending` ones: an amendment already told to the model is waiting for
- * its reply, and repeating it every turn would both cost tokens and invite the
- * model to apply it twice.
- */
-/**
- * Writes proposed tasks under a milestone and wires their dependencies.
- *
- * The plan and the amendment grammars name a dependency by its number within
- * the milestone, counting the tasks that already exist first; the record
- * keeps ids, because a number drifts the moment a task is added above it.
- * Ids only exist after the writes, so the wiring is a second pass.
- */
-async function createTasks(milestoneId: string, tasks: ProposedTask[], existing: OdysseyStep[]): Promise<void> {
-  const created: OdysseyStep[] = [];
-  for (const task of tasks) created.push(await api.odysseyAddStep(milestoneId, task.title));
-  const all = [...existing, ...created];
-  for (const [index, task] of tasks.entries()) {
-    const step = created[index];
-    if (!step || task.depends.length === 0) continue;
-    const ids = task.depends.map((n) => all[n - 1]?.id).filter((id): id is string => !!id && id !== step.id);
-    if (ids.length > 0) await api.odysseyEditStep(step.id, { dependsOn: ids });
+/** The live session a goal's record points at, by its id or its agent's. */
+function sessionKeyForGoal(state: State, goalId: string, agentSessionId?: string | null): string | null {
+  for (const [key, view] of Object.entries(state.odyssey)) if (view?.goal.id === goalId) return key;
+  if (agentSessionId) {
+    const live = Object.values(state.sessions).find((session) => session.snapshot.agentSessionId === agentSessionId);
+    if (live) return live.handle.id;
   }
-}
-
-/**
- * Applies a resolved plan change: milestone and task operations in the
- * block's order, additions placed afterwards so a position the agent gave
- * still refers to the list it was shown. Writes the diff to the journal,
- * marks any told amendments applied and tells the agent what changed.
- */
-async function applyResolvedOps(get: () => State, set: (partial: Partial<State>) => void, sessionId: string, view: OdysseyView, resolved: ResolvedOp[], notes: string[]): Promise<void> {
-  const told = (get().odysseyAmendments[sessionId] ?? []).filter((record) => record.state === "told");
-  const applied: string[] = [];
-  try {
-    for (const entry of resolved) {
-      if (entry.refused) {
-        applied.push(describeOp(entry));
-        continue;
-      }
-      const { op, milestone, step } = entry;
-      if (op.op === "revise" && milestone) {
-        await api.odysseyEditMilestone(milestone.id, {
-          ...(op.title ? { title: op.title } : {}),
-          ...(op.detail ? { detail: op.detail } : {}),
-          ...(op.section ? { section: op.section } : {}),
-          ...(op.checkKind ? { checkKind: op.checkKind, checkSpec: op.checkSpec } : {}),
-        });
-        // Tasks named in a revise are appended after the milestone's own,
-        // and their numbers count those first.
-        if (op.steps.length > 0) await createTasks(milestone.id, op.steps, milestone.steps);
-      } else if (op.op === "drop" && milestone) {
-        await api.odysseyDeleteMilestone(milestone.id);
-      } else if (op.op === "drop_task" && milestone && step) {
-        // Whatever waited on it now waits on what it waited on.
-        for (const sibling of milestone.steps) {
-          if (!sibling.dependsOn.includes(step.id)) continue;
-          const dependsOn = [...new Set([...sibling.dependsOn.filter((id) => id !== step.id), ...step.dependsOn.filter((id) => id !== sibling.id)])];
-          await api.odysseyEditStep(sibling.id, { dependsOn });
-        }
-        await api.odysseyDeleteStep(step.id);
-      } else if (op.op === "revise_task" && milestone && step) {
-        const dependsOn = op.depends ? op.depends.map((n) => milestone.steps[n - 1]?.id).filter((id): id is string => !!id && id !== step.id) : undefined;
-        await api.odysseyEditStep(step.id, {
-          ...(op.title ? { title: op.title } : {}),
-          ...(op.detail ? { detail: op.detail } : {}),
-          ...(dependsOn ? { dependsOn } : {}),
-        });
-      } else if (op.op === "split_task" && milestone && step) {
-        // The pieces inherit what the whole waited on, sit where it sat, and
-        // whatever waited on the whole waits on the last piece.
-        const pieces: OdysseyStep[] = [];
-        for (const piece of op.steps) pieces.push(await api.odysseyAddStep(milestone.id, piece.title));
-        const all = [...milestone.steps, ...pieces];
-        for (const [index, piece] of op.steps.entries()) {
-          const created = pieces[index];
-          if (!created) continue;
-          const own = piece.depends.map((n) => all[n - 1]?.id).filter((id): id is string => !!id && id !== created.id && id !== step.id);
-          const dependsOn = [...new Set([...step.dependsOn, ...own])];
-          if (dependsOn.length > 0) await api.odysseyEditStep(created.id, { dependsOn });
-        }
-        const last = pieces.at(-1);
-        for (const sibling of milestone.steps) {
-          if (sibling.id === step.id || !sibling.dependsOn.includes(step.id)) continue;
-          await api.odysseyEditStep(sibling.id, { dependsOn: [...new Set(sibling.dependsOn.map((id) => (id === step.id && last ? last.id : id)))] });
-        }
-        const ordered = milestone.steps.flatMap((sibling) => (sibling.id === step.id ? pieces.map((piece) => piece.id) : [sibling.id]));
-        await api.odysseyReorderSteps(milestone.id, ordered);
-        await api.odysseyDeleteStep(step.id);
-      } else if (op.op === "move_task" && milestone && step) {
-        const rest = milestone.steps.filter((sibling) => sibling.id !== step.id).map((sibling) => sibling.id);
-        const anchor = op.after === "start" ? -1 : rest.indexOf(milestone.steps[op.after - 1]?.id ?? "");
-        rest.splice(anchor + 1, 0, step.id);
-        await api.odysseyReorderSteps(milestone.id, rest);
-      }
-      applied.push(describeOp(entry));
-    }
-
-    // Adds go last and are placed afterwards, so a position the model gave
-    // still refers to the list it was shown.
-    const additions: { id: string; afterId: string | null }[] = [];
-    for (const entry of resolved) {
-      if (entry.op.op !== "add" || entry.refused) continue;
-      const created = await api.odysseyAddMilestone({
-        odysseyId: view.goal.id,
-        title: entry.op.title,
-        detail: entry.op.detail,
-        checkKind: entry.op.checkKind,
-        checkSpec: entry.op.checkSpec,
-        section: entry.op.section,
-      });
-      await createTasks(created.id, entry.op.steps, []);
-      const anchor = entry.op.after === "end" ? null : (view.milestones[entry.op.after - 1]?.id ?? null);
-      additions.push({ id: created.id, afterId: anchor });
-    }
-
-    if (additions.length > 0) {
-      await get().refreshOdyssey(sessionId, view.goal.id);
-      const current = get().odyssey[sessionId]?.milestones ?? [];
-      const added = new Set(additions.map((entry) => entry.id));
-      const ordered: string[] = [];
-      for (const milestone of current) {
-        if (added.has(milestone.id)) continue;
-        ordered.push(milestone.id);
-        for (const entry of additions) if (entry.afterId === milestone.id) ordered.push(entry.id);
-      }
-      // Anything whose anchor is gone (dropped in this same block) lands at
-      // the end rather than vanishing from the order.
-      for (const entry of additions) if (!ordered.includes(entry.id)) ordered.push(entry.id);
-      if (ordered.length === current.length) await api.odysseyReorderMilestones(view.goal.id, ordered);
-    }
-
-    await api.odysseyJournalAppend({
-      odysseyId: view.goal.id,
-      kind: "plan",
-      summary: `The plan changed: ${applied.length} operation${applied.length === 1 ? "" : "s"}`,
-      detail: [...applied, ...notes].join("\n"),
-    });
-    for (const record of told) await api.odysseyAmendSetState(record.id, "applied").catch(() => undefined);
-    get().odysseyQueueDelta(sessionId, { kind: "plan_edited", summary: applied.join("; ") });
-    await get().odysseyLoadAmendments(sessionId, view.goal.id);
-    await get().refreshOdyssey(sessionId, view.goal.id);
-  } catch (error) {
-    set({ error: asError(error) });
-  }
-}
-
-/** Per session: what the observer last recorded for each subagent, so a redraw does not rewrite the record. */
-const observedAgents = new Map<string, Map<string, string>>();
-
-async function buildAmendmentLines(get: () => State, sessionId: string, continuationsUsed: number): Promise<{ lines: string[]; ids: string[]; changes: boolean }> {
-  const due = (get().odysseyAmendments[sessionId] ?? []).filter((record) => shouldCarry(record, continuationsUsed));
-  const lines: string[] = [];
-  const ids: string[] = [];
-  let changes = false;
-  for (const record of due) {
-    const document = record.documentSource ? await api.odysseyAmendDocument(record.id).catch(() => null) : null;
-    lines.push(...describeAmendment(record, document));
-    // A repeat says so. Asking again in the same words reads as a new
-    // request, and the model has no way to know it already declined one.
-    if (record.tellCount > 0 && record.kind !== "note") lines.push(retellNote(record));
-    if (record.kind !== "note") changes = true;
-    ids.push(record.id);
-  }
-  return { lines, ids, changes };
-}
-
-/** The text of the last agent message in a session's projection. */
-/** Every agent message in the transcript, oldest first, as text. */
-function agentMessages(session: LiveSession | undefined): string[] {
-  if (!session) return [];
-  return session.projection.cards.flatMap((card) =>
-    card.kind === "message" && card.message.role === "agent" ? [card.message.blocks.map((block) => (block.type === "text" ? block.text : "")).join("\n")] : [],
-  );
-}
-
-/**
- * The agent's messages from this turn only: everything after the count the
- * runner took at submit. Reading the *last* message on every settle is how
- * one report line was journalled eight times — a burst of settles each
- * re-read the same reply. A report belongs to the turn that produced it.
- */
-function agentTextSince(session: LiveSession | undefined, fromCount: number): string {
-  return agentMessages(session).slice(fromCount).join("\n");
-}
-
-/** Whether this claim was already journalled since the last prompt went out. */
-function alreadyReported(journal: { kind: string; milestoneId?: string | undefined; detail?: string | undefined }[], milestoneId: string, note: string): boolean {
-  for (const entry of journal) {
-    if (entry.kind === "continuation" || entry.kind === "briefing") return false;
-    if (entry.kind === "report" && entry.milestoneId === milestoneId && (entry.detail ?? "") === note) return true;
-  }
-  return false;
-}
-
-function lastAgentText(session: LiveSession | undefined): string {
-  const card = session ? [...session.projection.cards].reverse().find((entry) => entry.kind === "message" && entry.message.role === "agent") : undefined;
-  if (!card || card.kind !== "message") return "";
-  return card.message.blocks.map((block) => (block.type === "text" ? block.text : "")).join("\n");
+  return null;
 }
 
 type Get = () => State;
@@ -803,113 +529,14 @@ function projectionFromSnapshot(snapshot: Snapshot): Projection {
   return projection;
 }
 
+/** Where a goal is being moved to: an open session, or a fresh one. */
+type MoveTarget = { kind: "session"; sessionId: string } | { kind: "new"; agent: Provider };
+
 /**
  * Attaches the renderer to a live actor: snapshot, retained history (replayed
  * in order, deduplicated by sequence), then the live stream. Events that
  * arrive while history is loading are buffered and applied after it.
  */
-/** Where a goal is being moved to: an open session, or a fresh one. */
-type MoveTarget = { kind: "session"; sessionId: string } | { kind: "new"; agent: Provider };
-
-/**
- * Moves a goal onto another session and leaves it running there
- * (docs/plans/odyssey-second-orchestrator.md §2.3).
- *
- * Shared by the user's "Move to…" and by automatic failover, which is the
- * point: the two differ only in who decided and whether anyone was asked.
- * `reason`, when given, is journalled so the history says why a run changed
- * accounts on its own.
- */
-async function performMove(get: Get, set: Set, sessionId: string, target: MoveTarget, reason: string | null): Promise<boolean> {
-  const view = get().odyssey[sessionId];
-  const session = get().sessions[sessionId];
-  if (!view || !session) return false;
-  const running = session.projection.foreground === "running" || session.projection.foreground === "awaiting_user";
-  try {
-    // A turn owns the working tree. It is cancelled before anything else
-    // moves, so two orchestrators are never editing it at once.
-    if (running) await api.sessionCancel(session.handle).catch(() => undefined);
-
-    let targetKey: string | null = null;
-    let targetAgentSessionId: string | null = null;
-    if (target.kind === "session") {
-      targetKey = target.sessionId;
-      targetAgentSessionId = get().sessions[target.sessionId]?.snapshot.agentSessionId ?? null;
-    } else {
-      // Moving onto an agent that cannot answer at all is how a goal ends up
-      // on a session that will never take a prompt, with no way back. This
-      // proves sign-in, not headroom — nothing on the Claude side reports
-      // headroom — but sign-in is the failure worth catching before the move.
-      if (target.agent === "claude") {
-        const status = await api.odysseyClaudePreflight().catch(() => null);
-        if (status && !status.available) {
-          set({ error: asError(new Error(status.problem ?? status.message ?? "the Claude account cannot be used right now")) });
-          return false;
-        }
-      }
-      // Always a fresh session rather than an open one of the right agent:
-      // the briefing goes out again anyway, so reusing one buys nothing and
-      // could take a session the user is working in.
-      // The run keeps its team: the new orchestrator leads the same workers.
-      const opened = await get().openSessionFor(session.workspaceId, target.agent, get().teams[sessionId]);
-      if (!opened) return false;
-      targetKey = opened.key;
-      targetAgentSessionId = opened.agentSessionId;
-    }
-    if (!targetKey || !targetAgentSessionId) {
-      set({ error: asError(new Error("that session is not attached any more")) });
-      return false;
-    }
-
-    const targetProvider = get().sessions[targetKey]?.snapshot.provider;
-    let moved = await api.odysseyRepoint(view.goal.id, session.workspaceId, targetAgentSessionId, targetProvider);
-    if (reason) {
-      await api.odysseyJournalAppend({ odysseyId: view.goal.id, kind: "state", summary: reason }).catch(() => undefined);
-    } else {
-      // A move the user made by hand *is* a statement about which account
-      // this run spends, so it updates the setting. Without this the runner
-      // reads the goal as still pinned where it was and drags it back — which
-      // it did, one second after the first real move, undoing a human who had
-      // just said what they wanted. A goal set to `either` is left alone:
-      // there the user has already said "you decide".
-      // A run moved by hand onto Gemini is the user's choice too, but a goal
-      // can only be pinned to an orchestrator that can lead a team; "either"
-      // keeps it where it was put, since nothing moves a run off an account
-      // that is not spent.
-      const landedOn: "claude" | "codex" | "either" = targetProvider === "codex" ? "codex" : targetProvider === "gemini" ? "either" : "claude";
-      if (moved.goal.orchestrator !== "either" && moved.goal.orchestrator !== landedOn) {
-        await api.odysseyEditGoal(moved.goal.id, { orchestrator: landedOn }).catch(() => undefined);
-        moved = (await api.odysseyView(moved.goal.id)) ?? moved;
-      }
-    }
-
-    // Deltas are what the next continuation has to say and they belong to the
-    // goal, not to the session that happened to be holding them. The pending
-    // turn belongs to the turn that was just cancelled and does not.
-    const deltas = get().odysseyPendingDeltas;
-    const { [sessionId]: carried = [], ...restDeltas } = deltas;
-    const { [sessionId]: _dropped, ...restPending } = get().odysseyPendingTurn;
-    set({
-      odysseyPendingDeltas: { ...restDeltas, [targetKey]: [...(deltas[targetKey] ?? []), ...carried] },
-      odysseyPendingTurn: restPending,
-      odyssey: { ...get().odyssey, [sessionId]: null, [targetKey]: moved },
-      // So the session left behind says where the run went instead of
-      // offering a blank form, which reads as the goal having been lost.
-      odysseyMovedAway: { ...get().odysseyMovedAway, [sessionId]: { goalId: moved.goal.id, title: moved.goal.title, to: targetKey } },
-    });
-    await get().loadOdyssey(targetKey);
-    // A goal parked on usage is running again the moment it is on an account
-    // that has room; without this it would sit in `waiting_usage` waiting for
-    // a window it is no longer on.
-    if (moved.goal.state === "waiting_usage") await get().odysseyStart(targetKey);
-    else await get().odysseyTick(targetKey);
-    return true;
-  } catch (error) {
-    set({ error: asError(error) });
-    return false;
-  }
-}
-
 async function attachLive(get: Get, set: Set, handle: SessionHandle, workspaceId: string, focus: boolean): Promise<void> {
   const snapshot = await api.sessionSnapshot(handle);
   const projection = projectionFromSnapshot(snapshot);
@@ -955,7 +582,6 @@ async function attachLive(get: Get, set: Set, handle: SessionHandle, workspaceId
     const viewing = view.kind === "session" && view.sessionId === id;
     let attention = current.attention;
     let announcement: string | null = null;
-    let sawAgents = false;
     let turnStartedAt = current.turnStartedAt;
     const worker = isWorkerSession(get, id, current);
     for (const event of events) {
@@ -969,7 +595,6 @@ async function attachLive(get: Get, set: Set, handle: SessionHandle, workspaceId
         turnStartedAt = Date.now();
         void get().sampleUsage(id, "start");
       }
-      if (payload.type === "runtime_event" && payload.event === "subagent_state_changed") sawAgents = true;
       if (payload.type === "quota") {
         const { type: _type, ...quota } = payload;
         get().noteQuota(quota);
@@ -977,29 +602,10 @@ async function attachLive(get: Get, set: Set, handle: SessionHandle, workspaceId
       if (payload.type === "turn" && payload.effect === "settled" && payload.kind === "foreground") {
         turnStartedAt = null;
         void get().sampleUsage(id, "settle");
-        // Super Thing advances on settled turns; it decides for itself whether
-        // this session has a running goal.
-        void get().odysseyOnSettle(id, payload.phase, payload.error);
         announcement = `${sessionTitle(current)}: turn ${payload.phase}`;
       } else if (payload.type === "permission_request") {
         announcement = `${sessionTitle(current)}: the agent asked for input`;
-        // Every decision taken on an unattended run goes in the record
-        // (docs/plans/odyssey-second-orchestrator.md §2.2). An orchestrator
-        // answers these without a human, so the only way anyone can audit
-        // what a run was allowed to do — or work out why the agent said its
-        // subagent launches were declined — is if each one is written down.
-        const goal = get().odyssey[id];
-        if (goal) {
-          const decision = payload.decision === "allowed" ? "allowed" : "refused";
-          void api
-            .odysseyJournalAppend({
-              odysseyId: goal.goal.id,
-              kind: "guard",
-              summary: `Permission ${decision}: ${payload.title ?? "an unnamed request"}`,
-              detail: `The agent asked to do something its permission mode did not already cover, and the run answered ${decision} from the workspace's trust state. Nobody was asked.`,
-            })
-            .catch(() => undefined);
-        }
+        // A run's permission decisions are journalled by the engine.
       } else if (payload.type === "exited") {
         announcement = `${sessionTitle(current)}: the agent exited`;
       }
@@ -1007,8 +613,6 @@ async function attachLive(get: Get, set: Set, handle: SessionHandle, workspaceId
     if (viewing) attention = "none";
     set({ sessions: { ...get().sessions, [id]: { ...current, projection: { ...current.projection }, attention, turnStartedAt, lastEventAt: Date.now() } } });
     if (announcement) get().announce(announcement);
-    // A subagent that appeared or moved may be a task's owner.
-    if (sawAgents && get().odyssey[id]) void get().odysseyObserveAgents(id);
     if (!viewing && attention !== "none" && attention !== current.attention) {
       const settings = get().settings;
       const workspace = get().workspaces.find((w) => w.id === current.workspaceId);
@@ -1049,10 +653,7 @@ export const useStore = create<State>((set, get) => ({
   repoInfo: {},
   odyssey: {},
   odysseyRuntime: {},
-  odysseyToolBaseline: {},
   odysseyAmendments: {},
-  odysseyPendingDeltas: {},
-  odysseyPendingTurn: {},
   odysseyNotes: {},
   odysseyMovedAway: {},
   odysseyPlanChanges: {},
@@ -1116,6 +717,7 @@ export const useStore = create<State>((set, get) => ({
       setInterval(readUsage, 5 * 60_000);
       void get().loadTeamPresets();
       void listen<JobView>(JOB_EVENT, (event) => get().noteJob(event.payload));
+      void listen<SuperThingEvent>(SUPERTHING_EVENT, (event) => get().noteSuperThing(event.payload));
       void listen(CLOSE_REQUESTED_EVENT, async () => {
         let activity: { id: string; active: boolean; detachedCalls: number }[] = [];
         try {
@@ -1288,7 +890,6 @@ export const useStore = create<State>((set, get) => ({
     if (snapshot) usage[quota.provider] = snapshot;
     else if (quota.status !== "rejected") usage[quota.provider] = null;
     set({ quotas, usage });
-    if (snapshot && quota.provider === "codex") void get().odysseyRecordUsageSamples(snapshot);
   },
 
   /**
@@ -1569,62 +1170,6 @@ export const useStore = create<State>((set, get) => ({
     });
   },
 
-  async odysseyObserveAgents(sessionId) {
-    const view = get().odyssey[sessionId];
-    const session = get().sessions[sessionId];
-    if (!view || !session) return;
-    const seen = observedAgents.get(sessionId) ?? new Map<string, string>();
-    observedAgents.set(sessionId, seen);
-    let changed = false;
-    for (const agent of session.projection.inspector.agents.values()) {
-      const key = `${agent.status}|${agent.harness}|${agent.model ?? ""}`;
-      if (seen.get(agent.id) === key) continue;
-      const match = matchAgentToTask(agent.name, view.milestones);
-      if (!match) continue;
-      seen.set(agent.id, key);
-      try {
-        // The harness and model are what the stream said; the name ties the
-        // row to the agent for next time. Completion is not inferred here:
-        // "done" is the agent's report, on its task line.
-        if (match.step.agentName !== agent.name || match.step.harness !== agent.harness || (agent.model && match.step.model !== agent.model)) {
-          await api.odysseyAssignStep(match.step.id, agent.name, agent.harness, agent.model);
-          changed = true;
-        }
-        if ((agent.status === "working" || agent.status === "starting") && match.step.state === "pending") {
-          await api.odysseySetStepState(match.step.id, "in_progress");
-          changed = true;
-        }
-      } catch {
-        // Attribution is a convenience; the run does not depend on it.
-      }
-    }
-    // Jobs the session delegated to its team, named after their task the way
-    // the briefing asks (`6.3-pricing: …`).
-    for (const job of get().jobs[sessionId] ?? []) {
-      const name = /^\s*(\d+\.\d+[^\s:]*)/.exec(job.task)?.[1];
-      if (!name) continue;
-      const harness = `team · ${PROVIDER_LABELS[job.provider]}`;
-      const key = `${job.status}|${harness}|${job.model ?? ""}`;
-      if (seen.get(job.id) === key) continue;
-      const match = matchAgentToTask(name, view.milestones);
-      if (!match) continue;
-      seen.set(job.id, key);
-      try {
-        if (match.step.agentName !== name || match.step.harness !== harness || (job.model && match.step.model !== job.model)) {
-          await api.odysseyAssignStep(match.step.id, name, harness, job.model ?? null);
-          changed = true;
-        }
-        if ((job.status === "starting" || job.status === "running" || job.status === "waiting") && match.step.state === "pending") {
-          await api.odysseySetStepState(match.step.id, "in_progress");
-          changed = true;
-        }
-      } catch {
-        // Attribution is a convenience; the run does not depend on it.
-      }
-    }
-    if (changed) await get().refreshOdyssey(sessionId, view.goal.id);
-  },
-
   async deleteStep(sessionId, id) {
     const current = get().odyssey[sessionId];
     try {
@@ -1636,48 +1181,32 @@ export const useStore = create<State>((set, get) => ({
   },
 
   /**
-   * Starts or resumes a run. Everything a run does goes through `odysseyTick`,
-   * so this only moves the state and lets the tick decide.
+   * Starts or resumes a run. The engine in the host runs it (ADR-010); this
+   * hands it the user's "go" and shows what the record says.
    */
   async odysseyStart(sessionId) {
     const view = get().odyssey[sessionId];
     if (!view) return;
-    // Pressing Resume is the user saying "try it now": the account is read
-    // again (Claude Code answers its own usage), and a recorded refusal does
-    // not stand in the way of a working account.
-    if (get().sessionAgent(sessionId) === "claude") await rereadClaudeUsage(get, set);
     try {
-      await api.odysseySetState(view.goal.id, "running");
-      // The exact wording the guard looks for, so a restart clears it.
-      await api.odysseyJournalAppend({ odysseyId: view.goal.id, kind: "state", summary: view.goal.state === "draft" ? RUN_STARTED : resumedFrom(view.goal.state) });
+      await api.superthingStart(view.goal.id);
       await get().refreshOdyssey(sessionId, view.goal.id);
-      await get().odysseyTick(sessionId);
     } catch (error) {
       set({ error: asError(error) });
     }
   },
 
   /**
-   * Points this goal at another session
-   * (docs/plans/odyssey-second-orchestrator.md §2.3).
-   *
-   * The record moves, the transcript does not. What survives is what a fresh
-   * orchestrator can read: the plan with its milestone states, the journal,
-   * `docs/super-thing/STATE.md` and the subagent notes — which is why the next
-   * briefing says so and lists what is already done.
-   *
-   * The current turn is cancelled rather than left running: two orchestrators
-   * editing one tree is the risk this feature carries, and the only cheap
-   * mitigation is that there is never more than one.
+   * Points this goal at another session. The record moves, the transcript
+   * does not: the new session is briefed from the record and the run's notes.
+   * The current turn is cancelled first, so there is never more than one
+   * orchestrator on the tree.
    */
   async odysseyMoveTo(sessionId, target) {
     const view = get().odyssey[sessionId];
     const session = get().sessions[sessionId];
     if (!view || !session) return;
     const running = session.projection.foreground === "running" || session.projection.foreground === "awaiting_user";
-    const destination =
-      target.kind === "session" ? (get().sessions[target.sessionId]?.snapshot.agentSessionId ?? null) : null;
-    if (target.kind === "session" && !destination) {
+    if (target.kind === "session" && !get().sessions[target.sessionId]) {
       set({ error: asError(new Error("that session is not attached any more")) });
       return;
     }
@@ -1700,10 +1229,12 @@ export const useStore = create<State>((set, get) => ({
       set({ error: asError(error) });
       return;
     }
-
     set({ busy: "Moving the run" });
     try {
-      if (await performMove(get, set, sessionId, target, null)) get().announce(`${view.goal.title}: moved to another session`);
+      await api.superthingMove(view.goal.id, target.kind === "session" ? { kind: "session", handle: target.sessionId } : { kind: "new", provider: target.agent });
+      get().announce(`${view.goal.title}: moved to another session`);
+    } catch (error) {
+      set({ error: asError(error) });
     } finally {
       set({ busy: null });
     }
@@ -1714,751 +1245,86 @@ export const useStore = create<State>((set, get) => ({
     const view = get().odyssey[sessionId];
     if (!view) return;
     try {
-      await api.odysseySetState(view.goal.id, "paused");
-      await api.odysseyJournalAppend({ odysseyId: view.goal.id, kind: "state", summary: reason ?? "Paused by you" });
+      await api.superthingPause(view.goal.id, reason);
       await get().refreshOdyssey(sessionId, view.goal.id);
     } catch (error) {
       set({ error: asError(error) });
     }
   },
 
-  /**
-   * One iteration of the runner (docs/plans/odyssey.md §4.1): checkpoint, then
-   * do whatever `decide` says. Guarded against re-entry, because a settle and
-   * a poll can land together.
-   */
+  /** Asks the engine to look at the goal now rather than on its next tick. */
   async odysseyTick(sessionId) {
-    // Not a queue, and not awaited: a tick that arrives while one is running
-    // has nothing new to decide, and awaiting would deadlock the paths that
-    // reach back into the runner (a desktop check restarts the run).
-    if (tickInFlight.has(sessionId)) return;
-    const run = get()
-      .odysseyTickOnce(sessionId)
-      .finally(() => tickInFlight.delete(sessionId));
-    tickInFlight.set(sessionId, run);
-    return run;
-  },
-
-  async odysseyTickOnce(sessionId) {
-    const state = get();
-    const view = state.odyssey[sessionId];
-    const session = state.sessions[sessionId];
-    if (!view || !session) return;
-    const runtime = state.odysseyRuntime[sessionId];
-    if (runtime?.ticking) return;
-
-    const agent = state.sessionAgent(sessionId);
-    const idle =
-      !session.inFlightRequestId &&
-      session.projection.foreground !== "running" &&
-      session.projection.foreground !== "cancelling" &&
-      session.projection.foreground !== "awaiting_user";
-    const decision = decide({
-      goal: view.goal,
-      milestones: view.milestones,
-      journal: view.journal,
-      session: {
-        attached: session.projection.attachment === "attached" && session.projection.process !== "exited",
-        idle,
-      },
-      usage: state.usageFor(agent),
-    });
-
-    const note = (lastReason: string, resumeAt: number | null = runtime?.resumeAt ?? null) =>
-      setRuntime(get, set, sessionId, { resumeAt, lastReason, lastReasonAt: Date.now(), ticking: false, stalledSince: null, stallNotified: false });
-
-    // The largest lever there is: 62% of the first real run's wall clock went
-    // on one account's usage window with a second subscription sitting idle
-    // (docs/plans/odyssey-second-orchestrator.md §2.5). The rule is in the
-    // runner and every guard in it is about *not* moving; this only performs
-    // what it decided.
-    const failover = failoverDecision({
-      goal: view.goal,
-      journal: view.journal,
-      current: agent,
-      usage: state.usage,
-      // Providers not yet asked about are not ruled out: an unknown is not a no.
-      ...(state.providers ? { candidates: state.providers.filter((info) => info.resolved && info.auth?.loggedIn !== false).map((info) => info.provider) } : {}),
-      // Parked means "waiting on capacity, with nothing else to do": the
-      // usage guard has stopped it, or the agent reported a quota wait and
-      // the runner is holding until the time it named. Read from the record
-      // rather than matched against the idle reason's wording, which is prose
-      // and can be reworded without anyone noticing this depended on it.
-      parked: decision.action === "wait_usage" || (decision.action === "idle" && (heldUntil(view.journal) ?? 0) > Date.now()),
-      idle,
-      now: Date.now(),
-    });
-    if (failover) {
-      const summary = `Moving to ${PROVIDER_LABELS[failover.to]}: ${failover.reason}`;
-      note(summary);
-      get().announce(`${view.goal.title}: ${summary}`);
-      await performMove(get, set, sessionId, { kind: "new", agent: failover.to }, summary);
-      return;
-    }
-
-    if (decision.action === "idle") {
-      // A run is mostly waiting, so an idle tick is not news. What is news is
-      // the same reason holding for minutes: the run is wedged and nothing
-      // else would ever say so (docs/plans/odyssey-observability.md §4).
-      const now = Date.now();
-      const previous = runtime ?? EMPTY_RUNTIME;
-      const changed = previous.lastReason !== decision.reason;
-      const since = changed || previous.stalledSince === null ? now : previous.stalledSince;
-      const notified = changed ? false : previous.stallNotified;
-      setRuntime(get, set, sessionId, { lastReason: decision.reason, lastReasonAt: now, ticking: false, stalledSince: since, stallNotified: notified });
-
-      // A turn that has produced nothing for a long time has stopped being a
-      // turn, and nothing else will ever free it. Cancelling is the only exit,
-      // so the runner takes it rather than waiting for a human to notice.
-      // Subagent activity arrives on the same stream, so a turn with a live
-      // subagent is never silent and never cancelled here; the count is for
-      // the record of what a dead one took down.
-      // Jobs the session delegated run in their workers' sessions, so the
-      // orchestrator's own stream is quiet while it waits on them; open jobs
-      // are its turn being alive.
-      const delegating = (get().jobs[sessionId] ?? []).some(isOpen);
-      const dead = deadTurn({
-        running: session.projection.foreground === "running" && !delegating,
-        lastEventAt: session.lastEventAt,
-        now,
-        minutes: view.goal.deadTurnMinutes,
-        workingAgents: [...session.projection.inspector.agents.values()].filter((agent) => agent.status === "working" || agent.status === "starting").length,
-      });
-      if (dead && decision.reason === "a turn is already running") {
-        const silent = stallDuration(dead.silentMs);
-        const agents = dead.workingAgents > 0 ? ` while ${dead.workingAgents} subagent${dead.workingAgents === 1 ? " was" : "s were"} still listed as working` : "";
-        try {
-          await api.sessionCancel(session.handle);
-          await api.odysseyJournalAppend({
-            odysseyId: view.goal.id,
-            kind: "guard",
-            summary: `Cancelled a turn that had produced nothing for ${silent}${agents}`,
-            detail: `No events at all reached the session in that time — not from the turn and not from any subagent — so nothing in it was alive and the turn could not settle on its own. The run continues from the last checkpoint${dead.workingAgents > 0 ? "; whatever those subagents wrote to docs/super-thing/agents/ is read by the next turn" : ""}.`,
-          });
-          get().announce(`${view.goal.title}: cancelled a turn that went silent for ${silent}`);
-        } catch (error) {
-          set({ error: asError(error) });
-        }
-        setRuntime(get, set, sessionId, { lastReason: `cancelled a turn that went silent for ${silent}`, lastReasonAt: now, stalledSince: null, stallNotified: false });
-        await get().refreshOdyssey(sessionId, view.goal.id);
-        return;
-      }
-
-      const notice = stallNotice({ reason: decision.reason, since, now });
-      if (notice && !notified) {
-        setRuntime(get, set, sessionId, { stallNotified: true });
-        // Written to the record as well as announced: a stall that happened
-        // while nobody was looking has to be readable afterwards.
-        await api.odysseyJournalAppend({ odysseyId: view.goal.id, kind: "guard", summary: notice }).catch(() => undefined);
-        await get().refreshOdyssey(sessionId, view.goal.id);
-        get().announce(`${view.goal.title}: ${notice}`);
-      }
-      return;
-    }
-
-    if (decision.action === "await_verification") {
-      // A claim is not a verification. When the milestone has a check Super Thing
-      // can run, run it — that is the desktop-run lane and it decides here
-      // without another turn. When it does not, the claim is a stopping point
-      // and the user's tick is the evidence.
-      if (decision.milestone.checkKind !== "manual" && decision.milestone.checkSpec) {
-        note(`running the check for milestone ${decision.index + 1}`);
-        await get().odysseyRunCheck(sessionId, decision.milestone.id);
-        return;
-      }
-      note(`milestone ${decision.index + 1} is reported complete and waiting for your tick`);
-      if (view.goal.state === "running") {
-        await get().odysseyPause(sessionId, `Milestone ${decision.index + 1} reported complete; verify it to continue`);
-      }
-      return;
-    }
-
-    setRuntime(get, set, sessionId, { lastReason: "working", lastReasonAt: Date.now(), ticking: true, stalledSince: null, stallNotified: false });
-    try {
-      if (decision.action === "block") {
-        await api.odysseySetState(view.goal.id, "blocked");
-        await api.odysseyJournalAppend({ odysseyId: view.goal.id, kind: "guard", summary: decision.reason });
-        await get().refreshOdyssey(sessionId, view.goal.id);
-        note(decision.reason);
-        return;
-      }
-      if (decision.action === "complete") {
-        await api.odysseySetState(view.goal.id, "complete");
-        // Blunt on purpose: a goal can finish with claims nobody checked, and
-        // the record should say how much of it was actually evidenced.
-        const checked = view.milestones.filter((milestone) => milestone.state === "verified").length;
-        const claimed = view.milestones.filter((milestone) => milestone.state === "reported").length;
-        await api.odysseyJournalAppend({
-          odysseyId: view.goal.id,
-          kind: "state",
-          summary:
-            claimed > 0
-              ? `Finished: ${checked} of ${view.milestones.length} milestones were verified, ${claimed} are the agent's word alone`
-              : "Every milestone is verified or skipped",
-        });
-        await get().refreshOdyssey(sessionId, view.goal.id);
-        note("the goal is complete", null);
-        return;
-      }
-      if (decision.action === "wait_usage") {
-        await api.odysseySetState(view.goal.id, "waiting_usage");
-        await api.odysseyJournalAppend({
-          odysseyId: view.goal.id,
-          kind: "wait",
-          summary: `Waiting for usage: ${decision.reason}`,
-          detail: decision.resumeAt ? `resume at ${new Date(decision.resumeAt).toISOString()}` : "the provider reported no reset time",
-        });
-        await get().refreshOdyssey(sessionId, view.goal.id);
-        note(decision.reason, decision.resumeAt);
-        return;
-      }
-
-      // brief | continue: both submit a prompt, so both checkpoint first.
-      const fingerprint = await get().odysseyCheckpoint(sessionId, decision.action === "continue" ? decision.milestone.id : null);
-      // The briefing offers the `super-thing` skill, so it is installed first; a
-      // failure drops the offer rather than pointing at nothing.
-      const skillAvailable = decision.action === "brief" ? await api.odysseyInstallSkill().then(() => true).catch(() => false) : true;
-      // Under a Claude orchestrator a subagent's model is a field on an agent
-      // definition, not a role table, so the delegate has to exist in the
-      // project before the agent is told to use it. Installed at the briefing
-      // because that is the prompt that names it.
-      if (decision.action === "brief" && agent === "claude") {
-        await api.odysseyInstallDelegate(session.workspaceId).catch(() => undefined);
-      }
-      // What the run has written to the workspace, so the prompt can say
-      // truthfully whether the handoff note exists and which subagent notes
-      // are new since the model last worked.
-      const notes = await api.odysseyWorkspaceNotes(session.workspaceId).catch(() => null);
-      set({ odysseyNotes: { ...get().odysseyNotes, [sessionId]: notes } });
-      // Anything the user queued rides on this prompt, whatever kind it is.
-      const carried = await buildAmendmentLines(get, sessionId, view.goal.continuationsUsed);
-      const base =
-        decision.action === "brief"
-          ? buildBriefing(view.goal, view.milestones, { skillAvailable, notes, handedOver: handedOver(view.journal), agent, team: get().teams[sessionId] ?? null })
-          : buildContinuation({
-              milestone: decision.milestone,
-              index: decision.index,
-              total: view.milestones.length,
-              deltas: get().odysseyDeltas(sessionId),
-              planPath: view.goal.planPath ?? null,
-              notes,
-              agentNotes: agentNotesSince(notes, lastPromptAt(view.journal)),
-            });
-      // The "fold it into the plan" instruction goes only with a change; a
-      // note alone needs no answer.
-      const text = carried.lines.length > 0 ? [base, "", ...carried.lines, ...(carried.changes ? ["", AMEND_INSTRUCTION] : [])].join("\n") : base;
-
-      // Read before the submit, so the model's first tokens cannot be
-      // mistaken for the state before it answered.
-      const tokensAtSubmit = await get().odysseySessionTokens(sessionId);
-      const agentMessagesAtSubmit = agentMessages(session).length;
-
-      const requestId = crypto.randomUUID();
-      // Everything the projection already knows about is not this turn's
-      // work; the agent-run lane reads only what appears after this point.
-      set({
-        odysseyToolBaseline: { ...get().odysseyToolBaseline, [sessionId]: [...session.projection.toolCalls.keys()] },
-        sessions: { ...get().sessions, [sessionId]: { ...session, inFlightRequestId: requestId } },
-      });
-      const response = await api.sessionSubmit(session.handle, requestId, text);
-      clearInFlight(get, set, sessionId);
-      if (response.outcome.outcome !== "accepted") {
-        const message = response.outcome.error?.message ?? "unknown";
-        // A session that is mid-prompt is busy, not broken — the user may have
-        // typed one themselves. Blocking the whole goal for that would need a
-        // human to restart a run that was about to be fine on its own.
-        if (/already running a prompt|session is busy/i.test(message)) {
-          note("the session was busy; the next tick will try again");
-          return;
-        }
-        // A transport that is not there is a process mid-restart, not a
-        // broken run. Four of these blocked the first real run and each one
-        // needed a human to press Resume on a goal that was about to be fine.
-        if (looksLikeTransportError(message)) {
-          await api.odysseyJournalAppend({
-            odysseyId: view.goal.id,
-            kind: "guard",
-            summary: `${TRANSPORT_CLOSED}: ${message}`,
-            detail: "The prompt was refused while the session was restarting. It is retried once the session is attached and idle again.",
-          });
-          await get().refreshOdyssey(sessionId, view.goal.id);
-          note("the session was restarting; the next tick will try again");
-          return;
-        }
-        // A spent account is a wait, not a fault — and on this side it
-        // arrives as a *refused prompt* rather than a failed turn.
-        //
-        // Kit accepts the prompt and the turn fails afterwards, which is why
-        // the quota path was only ever wired into the settle. The Claude
-        // adapter refuses the submit outright with `errorKind: rate_limit`,
-        // so a goal that had merely run out of window was blocked and sat
-        // there needing a human, for a condition with a reset time on it
-        // (docs/plans/odyssey-second-orchestrator.md §2.4).
-        if (looksLikeQuotaError(message)) {
-          await get().resampleAccount(sessionId, message);
-          const verdict = usageVerdict(get().usageFor(get().sessionAgent(sessionId)));
-          const resumeAt = verdict.kind === "exhausted" ? verdict.resumeAt : null;
-          const reason = verdict.kind === "exhausted" ? verdict.reason : message;
-          await api.odysseySetState(view.goal.id, "waiting_usage");
-          await api.odysseyJournalAppend({
-            odysseyId: view.goal.id,
-            kind: "wait",
-            summary: `Waiting for usage: ${reason}`,
-            detail: resumeAt ? `resume at ${new Date(resumeAt).toISOString()}\nThe agent refused the prompt rather than failing the turn: ${message}` : message,
-          });
-          await get().refreshOdyssey(sessionId, view.goal.id);
-          note(reason, resumeAt);
-          return;
-        }
-        set({ error: response.outcome.error });
-        await api.odysseySetState(view.goal.id, "blocked");
-        await api.odysseyJournalAppend({ odysseyId: view.goal.id, kind: "guard", summary: `The session refused the prompt: ${message}` });
-        await get().refreshOdyssey(sessionId, view.goal.id);
-        note("the session refused the prompt");
-        return;
-      }
-
-      set({
-        odysseyPendingTurn: {
-          ...get().odysseyPendingTurn,
-          [sessionId]: { kind: decision.action, submittedAt: Date.now(), tokensAtSubmit, agentMessagesAtSubmit },
-        },
-      });
-
-      if (decision.action === "brief") {
-        // The starting token total lives in the briefing entry, so the budget
-        // is measurable after a reload.
-        await api.odysseyJournalAppend({ odysseyId: view.goal.id, kind: "briefing", summary: "Briefed the session on the goal", detail: JSON.stringify({ startTokens: tokensAtSubmit }) });
-      } else {
-        await api.odysseySetMilestoneState(decision.milestone.id, "active");
-        await api.odysseyJournalAppend({
-          odysseyId: view.goal.id,
-          kind: "continuation",
-          milestoneId: decision.milestone.id,
-          summary: `Continued milestone ${decision.index + 1} of ${view.milestones.length}`,
-          detail: text,
-        });
-      }
-      // Clear the deltas we just told the model about, and mark the
-      // amendments as carried so the next prompt does not repeat them. Only a
-      // continuation carries deltas — the briefing does not mention them — so
-      // clearing them there would throw away what the goal still has to say,
-      // which is exactly what a move does: it briefs, and the deltas it
-      // carried over would go with that prompt.
-      if (decision.action === "continue") set({ odysseyPendingDeltas: { ...get().odysseyPendingDeltas, [sessionId]: [] } });
-      for (const id of carried.ids) await api.odysseyAmendMarkTold(id, view.goal.continuationsUsed).catch(() => undefined);
-      if (carried.ids.length > 0) await get().odysseyLoadAmendments(sessionId, view.goal.id);
-      await get().refreshOdyssey(sessionId, view.goal.id);
-      note(decision.action === "brief" ? "briefed the session" : `working milestone ${decision.index + 1}`);
-      void fingerprint;
-    } catch (error) {
-      clearInFlight(get, set, sessionId);
-      const failure = asError(error);
-      set({ error: failure });
-      // Written to the record, not just to a banner: a tick that throws
-      // before it can submit does not clear by being retried, and retrying is
-      // what this did — for ever, at a checkpoint every eleven seconds, on a
-      // fault nobody was watching for. The guard in `decide` blocks the run
-      // once a few of these are in a row.
-      await api
-        .odysseyJournalAppend({
-          odysseyId: view.goal.id,
-          kind: "guard",
-          summary: `${TICK_FAILED}: ${failure.message}`,
-          detail: "The prompt was never sent, so nothing was charged to the budget. The run stops after a few of these rather than retrying a fault that does not clear by itself.",
-        })
-        .catch(() => undefined);
-      await get().refreshOdyssey(sessionId, view.goal.id);
-      setRuntime(get, set, sessionId, { lastReason: `the last tick failed: ${failure.message}`, lastReasonAt: Date.now(), ticking: false });
-    }
-  },
-
-  /**
-   * After a turn settles: record what happened, then tick. A failure that
-   * looks like a quota error re-samples usage first, so a real error is not
-   * mistaken for a limit (docs/plans/odyssey.md §6.1).
-   */
-  async odysseyOnSettle(sessionId, phase, error) {
     const view = get().odyssey[sessionId];
     if (!view) return;
-
-    // A draft goal that asked for a plan is waiting for this turn's reply.
-    // The plan is read before anything else, because a draft has no run to
-    // account for and nothing else to do with a settle.
-    if (view.goal.state === "draft") {
-      const asked = view.journal.find((entry) => entry.kind === "plan");
-      if (phase === "succeeded" && asked?.summary === PLAN_REQUESTED && view.milestones.length === 0) await get().odysseyReadPlanReply(sessionId);
-      return;
-    }
-    if (view.goal.state !== "running" && view.goal.state !== "waiting_usage") return;
-
-    const session = get().sessions[sessionId];
-    const pending = get().odysseyPendingTurn[sessionId];
-    if (pending) {
-      const { [sessionId]: _settled, ...rest } = get().odysseyPendingTurn;
-      set({ odysseyPendingTurn: rest });
-    }
-
-    // Did a model answer at all? Kit accepts a prompt and writes it to the
-    // transcript before anything runs, so a settle is not proof of a turn.
-    // Twenty-five of fifty-four continuations on the first real run settled
-    // with no model output; they are not turns and are not charged.
-    const total = await get().odysseySessionTokens(sessionId);
-    const answered = !pending || (total !== null && pending.tokensAtSubmit !== null ? total > pending.tokensAtSubmit : agentMessages(session).length > pending.agentMessagesAtSubmit);
-    if (!answered) {
-      await api.odysseyJournalAppend({
-        odysseyId: view.goal.id,
-        kind: "guard",
-        summary: PROMPT_UNANSWERED,
-        detail: `The turn ${phase}${error ? `: ${error}` : " with no model output"}. It is not charged to the budget and its checkpoint is not evidence of a stale turn.`,
-      });
-      if (looksLikeQuotaError(error)) await get().resampleAccount(sessionId, error);
-      await get().refreshOdyssey(sessionId, view.goal.id);
-      await get().odysseyTick(sessionId);
-      return;
-    }
-
-    // Charge the turn to the goal's budget from the transcript's own numbers.
-    const start = get().odysseyStartTokens(sessionId);
-    if (total !== null && start !== null) {
-      const target = Math.max(0, total - start);
-      await api.odysseyRecordContinuation(view.goal.id, Math.max(0, target - view.goal.tokensUsed)).catch(() => undefined);
-    } else {
-      await api.odysseyRecordContinuation(view.goal.id, 0).catch(() => undefined);
-    }
-
-    if (phase !== "succeeded") {
-      if (looksLikeQuotaError(error)) {
-        await get().resampleAccount(sessionId, error);
-        await get().refreshOdyssey(sessionId, view.goal.id);
-        await get().odysseyTick(sessionId);
-        return;
-      }
-      // The process went away under the turn. That is a restart: the run
-      // stays running and carries on from the last checkpoint when the
-      // session is back, and the guard's count starts again after it.
-      if (looksLikeTransportError(error)) {
-        await api.odysseyJournalAppend({
-          odysseyId: view.goal.id,
-          kind: "guard",
-          summary: `${TRANSPORT_CLOSED}: ${error}`,
-          detail: "The session's process or channel ended under the turn. That is not the agent's failure; the run continues from the last checkpoint once the session is attached again, and reads docs/super-thing/agents/ for anything a subagent finished before it died.",
-        });
-        await get().refreshOdyssey(sessionId, view.goal.id);
-        await get().odysseyTick(sessionId);
-        return;
-      }
-      await api.odysseySetState(view.goal.id, "blocked");
-      await api.odysseyJournalAppend({ odysseyId: view.goal.id, kind: "guard", summary: `The turn ${phase}${error ? `: ${error}` : ""}` });
-      await get().refreshOdyssey(sessionId, view.goal.id);
-      return;
-    }
-
-    // A turn the Claude account answered: the reading is taken again, so the
-    // runner decides from the account as it is now. Without a reading, the
-    // answered turn is itself the evidence that clears a refusal recorded
-    // earlier.
-    if (get().sessionAgent(sessionId) === "claude") void rereadClaudeUsage(get, set);
-
-    // The model's own claim, read from *this turn's* messages and stored as a
-    // claim. Without a pending turn (a reload, or a prompt the user sent) the
-    // last message is all there is to read.
-    const reply = pending ? agentTextSince(session, pending.agentMessagesAtSubmit) : lastAgentText(session);
-
-    // The model may have folded the user's amendments into the plan in this
-    // reply. That is read before the report, so a milestone the amendment
-    // added is in the list before anything claims to have finished one.
-    await get().odysseyApplyAmendment(sessionId, reply);
-
-    const report = parseReport(reply);
-    if (report) {
-      const milestone = view.milestones[report.milestone - 1];
-      // The same claim journalled twice since the last prompt is the same
-      // reply read twice, not a second report.
-      if (milestone && alreadyReported(view.journal, milestone.id, report.note)) {
-        await get().refreshOdyssey(sessionId, view.goal.id);
-        await get().odysseyTick(sessionId);
-        return;
-      }
-      if (milestone) {
-        if (report.status === "complete") {
-          await api.odysseyRecordReport(milestone.id, report.note);
-          await api.odysseyJournalAppend({ odysseyId: view.goal.id, kind: "report", milestoneId: milestone.id, summary: `Reported milestone ${report.milestone} complete`, detail: report.note });
-          // Agent-run, desktop-read (§5.1): if the model (or a subagent it
-          // raised) ran the check itself, the exit code in Kit's own tool
-          // record decides. The prose never does.
-          if (readableFromToolResults(milestone.checkKind)) {
-            const fresh = newCallIds(session?.projection.toolCalls.keys() ?? [], get().odysseyToolBaseline[sessionId]);
-            const results = (fresh ?? []).flatMap((id) => shellResultsOf(session?.projection.toolCalls.get(id), session?.snapshot.provider));
-            const evidence = fresh === null ? ({ kind: "absent", reason: "this turn was not started by the runner, so its tool results cannot be attributed to it" } as const) : evidenceFor(milestone.checkSpec, results);
-            if (evidence.kind === "found") {
-              const passed = evidence.result.exitCode === 0;
-              const tail = failureTail(evidence.result);
-              await api.odysseyRecordCheck(milestone.id, passed, `${evidence.how} (check run by the agent, exit code read from its tool result)${tail ? `\n\n${tail}` : ""}`, "agent_tool_result");
-              await api.odysseyJournalAppend({
-                odysseyId: view.goal.id,
-                kind: "check",
-                milestoneId: milestone.id,
-                summary: `The agent's own check for milestone ${report.milestone} ${passed ? "passed" : "failed"}`,
-                detail: evidence.how,
-              });
-              if (passed) {
-                get().odysseyQueueDelta(sessionId, { kind: "verified", milestone: report.milestone, title: milestone.title, evidence: evidence.how });
-              } else {
-                get().odysseyQueueDelta(sessionId, {
-                  kind: "check_failed",
-                  milestone: report.milestone,
-                  title: milestone.title,
-                  command: evidence.result.command ?? milestone.checkSpec ?? "the check",
-                  exitCode: evidence.result.exitCode,
-                  tail,
-                });
-              }
-            } else {
-              // Nothing is claimed from an unreadable turn; the milestone
-              // stays reported and the next tick runs the check here.
-              await api.odysseyJournalAppend({
-                odysseyId: view.goal.id,
-                kind: "check",
-                milestoneId: milestone.id,
-                summary: `Nothing in the turn's tool results verified milestone ${report.milestone}`,
-                detail: evidence.reason,
-              });
-            }
-          }
-        } else if (looksLikeQuotaWait(report.note)) {
-          // A wait, not a block. The milestone stays as it is, the goal stays
-          // running, and the runner holds its next prompt until the time the
-          // note names, so nobody has to press Resume on a condition that
-          // clears by itself.
-          const until = quotaWaitUntil(report.note, Date.now());
-          await api.odysseyJournalAppend({
-            odysseyId: view.goal.id,
-            kind: "guard",
-            milestoneId: milestone.id,
-            summary: `${QUOTA_WAIT_HOLD}: ${report.note}`,
-            detail: `until=${until}\nReported as blocked, read as a wait: the run continues and the next continuation goes out at ${new Date(until).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}.`,
-          });
-          get().announce(`${view.goal.title}: the agent is waiting on a quota; Super Thing resumes it at ${new Date(until).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`);
-        } else {
-          await api.odysseySetMilestoneState(milestone.id, "failed");
-          await api.odysseyJournalAppend({ odysseyId: view.goal.id, kind: "report", milestoneId: milestone.id, summary: `Reported milestone ${report.milestone} blocked`, detail: report.note });
-          await api.odysseySetState(view.goal.id, "blocked");
-        }
-      }
-    }
-
-    // A decision the agent handed over. Recorded and surfaced; the run does
-    // not stop, because the agent named what it does meanwhile.
-    const asks = parseAsks(reply);
-    for (const ask of asks) {
-      await api.odysseyQuestionAdd({ odysseyId: view.goal.id, kind: ask.kind, question: ask.question, options: ask.options, ...(ask.fallback ? { fallback: ask.fallback } : {}) }).catch(() => undefined);
-      await api.odysseyJournalAppend({ odysseyId: view.goal.id, kind: "plan", summary: `The agent asked you: ${ask.question}`, detail: ask.fallback ? `Meanwhile: ${ask.fallback}` : null }).catch(() => undefined);
-    }
-    if (asks.length > 0) {
-      await get().odysseyLoadInbox(sessionId, view.goal.id);
-      get().announce(`${view.goal.title}: the agent has a question for you`);
-      const workspace = session ? get().workspaces.find((w) => w.id === session.workspaceId) : undefined;
-      const settings = get().settings;
-      if (session && settings && shouldNotify(settings, "needs_input", session.workspaceId)) void notify("needs_input", workspace ? basenameOf(workspace.displayPath) : "a workspace");
-    }
-
-    // Task moves are the agent's word about its own tasks, and are recorded
-    // as such; the milestone's check is still the only gate. An unknown
-    // number is ignored, never guessed at.
-    for (const line of parseTaskLines(reply)) {
-      const step = view.milestones[line.milestone - 1]?.steps[line.task - 1];
-      if (!step) continue;
-      await api.odysseySetStepState(step.id, line.status, line.note || undefined).catch(() => undefined);
-      if (line.agent) {
-        const seen = [...(session?.projection.inspector.agents.values() ?? [])].find((agent) => agent.name === line.agent);
-        await api.odysseyAssignStep(step.id, line.agent, seen?.harness ?? null, seen?.model ?? null).catch(() => undefined);
-      }
-    }
-    await get().refreshOdyssey(sessionId, view.goal.id);
-    await get().odysseyTick(sessionId);
+    await api.superthingTick(view.goal.id).catch(() => undefined);
   },
 
-  /** Called on a timer: moves waiting goals on when their reset time passes. */
-  async odysseyPoll() {
+  /** What the engine tells the interface (ADR-010). */
+  noteSuperThing(event) {
     const state = get();
-    for (const [sessionId, view] of Object.entries(state.odyssey)) {
-      if (!view) continue;
-      if (view.goal.state === "running") {
-        void get().odysseyTick(sessionId);
-        continue;
+    switch (event.kind) {
+      case "changed": {
+        const key = sessionKeyForGoal(state, event.goalId, event.agentSessionId);
+        if (!key) return;
+        void get().refreshOdyssey(key, event.goalId);
+        void get().odysseyLoadInbox(key, event.goalId);
+        void get().odysseyLoadAmendments(key, event.goalId);
+        void get().odysseyRefreshNotes(key);
+        return;
       }
-      if (view.goal.state !== "waiting_usage") continue;
-      const runtime = state.odysseyRuntime[sessionId];
-      const resumeAt = runtime?.resumeAt ?? null;
-      const agent = get().sessionAgent(sessionId);
-      // The sample the goal was parked with says "no room" for ever, so the
-      // decision has to be made from a fresh one once the window might be
-      // back — deciding from the stale one held the goal past its own reset.
-      if (shouldResample({ usage: get().usageFor(agent), resumeAt, now: Date.now() })) {
-        await get().refreshUsage(agent);
+      case "runtime": {
+        const handle = event.runtime.sessionHandle;
+        const key = handle && state.sessions[handle] ? handle : sessionKeyForGoal(state, event.goalId);
+        if (key) set({ odysseyRuntime: { ...get().odysseyRuntime, [key]: runtimeFrom(event.runtime) } });
+        return;
       }
-      const confirmed = resumeDecision({ goal: view.goal, usage: get().usageFor(agent), resumeAt, now: Date.now(), unsampledMeansRoom: agent === "claude" });
-      if (confirmed.action === "hold") continue;
-      if (confirmed.action === "resume") {
-        await api.odysseyJournalAppend({ odysseyId: view.goal.id, kind: "resume", summary: confirmed.reason });
-        get().odysseyQueueDelta(sessionId, { kind: "resumed", waitedMs: Date.now() - (resumeAt ?? Date.now()), checkpointFiles: null });
-        await get().odysseyStart(sessionId);
-      } else {
-        await api.odysseySetState(view.goal.id, "paused");
-        await api.odysseyJournalAppend({ odysseyId: view.goal.id, kind: "resume", summary: confirmed.reason });
-        await get().refreshOdyssey(sessionId, view.goal.id);
-        if (confirmed.action === "notify") get().announce(`${view.goal.title}: usage reset, ready to resume`);
+      case "announce":
+        get().announce(event.text);
+        return;
+      case "notify": {
+        const settings = state.settings;
+        const kind: AttentionKind = event.attention === "needs_input" ? "needs_input" : event.attention === "blocked" ? "failed" : "completed";
+        const workspace = state.workspaces.find((entry) => entry.id === event.workspaceId);
+        if (settings && shouldNotify(settings, kind, event.workspaceId)) void notify(kind, workspace ? basenameOf(workspace.displayPath) : "a workspace");
+        return;
       }
-    }
-  },
-
-  /**
-   * Reads the plan the model just proposed and writes it into the record.
-   *
-   * The goal stays a draft: a plan that came out of a document has not been
-   * approved by anyone yet, and the checks in it are commands Super Thing would
-   * run, so Start is the user's to press.
-   */
-  async odysseyReadPlanReply(sessionId) {
-    const view = get().odyssey[sessionId];
-    if (!view) return;
-    const plan = parsePlan(lastAgentText(get().sessions[sessionId]));
-    if (!plan) {
-      await api.odysseyJournalAppend({
-        odysseyId: view.goal.id,
-        kind: "plan",
-        summary: "The agent proposed no plan",
-        detail: "Its reply contained no SUPERTHING-PLAN block. Read what it said, then ask again or write the milestones yourself.",
-      });
-      await get().refreshOdyssey(sessionId, view.goal.id);
-      return;
-    }
-
-    try {
-      for (const proposed of plan.milestones) {
-        await api.odysseyAddMilestone({
-          odysseyId: view.goal.id,
-          title: proposed.title,
-          detail: proposed.detail,
-          checkKind: proposed.checkKind,
-          checkSpec: proposed.checkSpec,
-          section: proposed.section,
-        });
+      case "session_opened": {
+        void get().loadRecords(event.workspaceId);
+        if (state.sessions[event.handle]) return;
+        void api
+          .sessionListOpen()
+          .then((open) => open.find((entry) => entry.handle.id === event.handle))
+          .then((entry) => (entry && !get().sessions[event.handle] ? attachLive(get, set, entry.handle, event.workspaceId, false) : undefined))
+          .catch(() => undefined);
+        return;
       }
-      await get().refreshOdyssey(sessionId, view.goal.id);
-      // Steps need the ids the writes just produced, so they go in a second
-      // pass over the refreshed record.
-      const created = get().odyssey[sessionId]?.milestones ?? [];
-      for (const [index, proposed] of plan.milestones.entries()) {
-        const milestone = created[index];
-        if (!milestone) continue;
-        await createTasks(milestone.id, proposed.steps, []);
+      case "moved": {
+        const from = event.fromAgentSessionId ? Object.values(state.sessions).find((session) => session.snapshot.agentSessionId === event.fromAgentSessionId)?.handle.id : sessionKeyForGoal(state, event.goalId);
+        const view = from ? state.odyssey[from] : null;
+        if (from && from !== event.toHandle) {
+          set({
+            odyssey: { ...get().odyssey, [from]: null },
+            odysseyMovedAway: { ...get().odysseyMovedAway, [from]: { goalId: event.goalId, title: view?.goal.title ?? "The run", to: event.toHandle } },
+          });
+        }
+        if (get().sessions[event.toHandle]) void get().loadOdyssey(event.toHandle);
+        return;
       }
-      await api.odysseyJournalAppend({
-        odysseyId: view.goal.id,
-        kind: "plan",
-        summary: `The agent proposed ${plan.milestones.length} milestone${plan.milestones.length === 1 ? "" : "s"} from ${view.goal.planSource ?? "the document"}`,
-        detail: plan.notes.join(" ") || null,
-      });
-      await get().refreshOdyssey(sessionId, view.goal.id);
-      get().announce(`${view.goal.title}: the agent proposed ${plan.milestones.length} milestones — review them and start the run`);
-    } catch (error) {
-      set({ error: asError(error) });
     }
   },
 
   /**
    * Queues something for the model to fold into a goal that is already
-   * running (docs/plans/odyssey.md §3.2).
-   *
-   * Queued, never submitted here: the session is usually mid-turn, and a
-   * second prompt would be refused. The runner carries it on its next prompt
-   * and the model decides where it belongs — which is the point, because it
-   * knows the plan and what it is halfway through.
+   * running. The engine carries it on the next prompt; the model decides
+   * where it belongs.
    */
   async odysseyAddAmendment(sessionId, request) {
     const view = get().odyssey[sessionId];
     if (!view) return;
     try {
-      await api.odysseyAmendAdd(request);
-      await api.odysseyJournalAppend({
-        odysseyId: view.goal.id,
-        kind: "plan",
-        summary: "You asked for a change to the plan",
-        detail: [request.note, ...request.refs.map((reference) => `${reference.path} (${reference.kind}, ${reference.detail})`)].join("\n"),
-      });
+      await api.superthingAmend(request);
       await get().odysseyLoadAmendments(sessionId, view.goal.id);
       await get().refreshOdyssey(sessionId, view.goal.id);
-      // If the session happens to be free, it goes out now rather than waiting
-      // for the heartbeat; if it is busy, the next continuation carries it.
-      if (view.goal.state === "running") void get().odysseyTick(sessionId);
-    } catch (error) {
-      set({ error: asError(error) });
-    }
-  },
-
-  /**
-   * Applies the amendment block from a reply, if there is one.
-   *
-   * Targets are resolved against the list as it stood *before* anything is
-   * applied, so an insert in the middle cannot shift the numbers the model
-   * meant. Verified milestones are refused: a check ran or the user ticked it,
-   * and rewriting that is not an amendment, it is a loss. Every operation —
-   * including every refusal — leaves a journal row.
-   */
-  async odysseyApplyAmendment(sessionId, reply) {
-    const view = get().odyssey[sessionId];
-    if (!view) return;
-    const amendment = parseAmendment(reply);
-    if (!amendment) return;
-    const reason = amendment.ops.map((op) => ("reason" in op ? op.reason : "")).find(Boolean) ?? null;
-
-    // What lands now and what waits. Under the default, only changes to what
-    // a milestone is — added, dropped, retitled, its check changed — are the
-    // user's decision; how the agent cuts its own work into tasks is not.
-    const mode = view.goal.onPlanChange;
-    const heldOps = mode === "auto" ? [] : mode === "review" ? amendment.ops : amendment.ops.filter(isMilestoneScope);
-    const autoOps = amendment.ops.filter((op) => !heldOps.includes(op));
-
-    if (autoOps.length > 0) {
-      const resolved = resolveOps(autoOps, view.milestones);
-      const summary = diffText(planDiff(resolved));
-      // Applied at once; the diff is still recorded so it can be read after.
-      await api.odysseyPlanChangeAdd({ odysseyId: view.goal.id, ops: JSON.stringify(autoOps), summary, reason, state: "applied" }).catch(() => undefined);
-      await applyResolvedOps(get, set, sessionId, view, resolved, heldOps.length > 0 ? [] : amendment.notes);
-      await get().odysseyLoadInbox(sessionId, view.goal.id);
-    }
-    if (heldOps.length === 0) return;
-
-    const held = get().odyssey[sessionId] ?? view;
-    const resolved = resolveOps(heldOps, held.milestones);
-    const summary = diffText(planDiff(resolved));
-
-    // Held: the user reads the diff and decides. The agent keeps working to
-    // the plan it has, and is told so on its next continuation.
-    try {
-      // A model that is told its change is waiting tends to send it again
-      // next turn, reworded. One decision, not three: the newest proposal
-      // stands and the earlier ones are marked superseded.
-      for (const prior of (get().odysseyPlanChanges[sessionId] ?? []).filter((record) => record.state === "proposed")) {
-        await api.odysseyPlanChangeDecide(prior.id, "rejected", "superseded by a newer proposal from the agent").catch(() => undefined);
-      }
-      await api.odysseyPlanChangeAdd({ odysseyId: view.goal.id, ops: JSON.stringify(amendment.ops), summary, reason, state: "proposed" });
-      await api.odysseyJournalAppend({
-        odysseyId: view.goal.id,
-        kind: "plan",
-        summary: `The agent proposed a plan change: ${resolved.length} operation${resolved.length === 1 ? "" : "s"}, waiting for you`,
-        detail: [summary, ...amendment.notes].join("\n"),
-      });
-      get().odysseyQueueDelta(sessionId, { kind: "plan_change_pending", summary: summary.split("\n").slice(0, 3).join("; ") + (resolved.length > 3 ? "; …" : "") });
-      await get().odysseyLoadInbox(sessionId, view.goal.id);
-      await get().refreshOdyssey(sessionId, view.goal.id);
-      get().announce(`${view.goal.title}: the agent proposed a plan change — review it in the Inbox`);
-      const session = get().sessions[sessionId];
-      const workspace = session ? get().workspaces.find((w) => w.id === session.workspaceId) : undefined;
-      const settings = get().settings;
-      if (session && settings && shouldNotify(settings, "needs_input", session.workspaceId)) void notify("needs_input", workspace ? basenameOf(workspace.displayPath) : "a workspace");
     } catch (error) {
       set({ error: asError(error) });
     }
@@ -2466,21 +1332,9 @@ export const useStore = create<State>((set, get) => ({
 
   async odysseyDecidePlanChange(sessionId, id, decision, note) {
     const view = get().odyssey[sessionId];
-    const change = (get().odysseyPlanChanges[sessionId] ?? []).find((record) => record.id === id);
-    if (!view || !change) return;
+    if (!view) return;
     try {
-      if (decision === "reject") {
-        await api.odysseyPlanChangeDecide(id, "rejected", note ?? null);
-        await api.odysseyJournalAppend({ odysseyId: view.goal.id, kind: "plan", summary: "You rejected the agent's plan change", detail: [change.summary, note ?? ""].filter(Boolean).join("\n") });
-        get().odysseyQueueDelta(sessionId, { kind: "plan_change_rejected", summary: change.summary.split("\n").slice(0, 3).join("; "), note: note?.trim() || null });
-      } else {
-        // Resolved again now: the plan may have moved since the proposal, and
-        // a number that no longer fits is refused rather than applied blind.
-        const ops = JSON.parse(change.ops) as AmendOp[];
-        const resolved = resolveOps(ops, view.milestones);
-        await api.odysseyPlanChangeDecide(id, "applied", note ?? null);
-        await applyResolvedOps(get, set, sessionId, view, resolved, []);
-      }
+      await api.superthingDecidePlanChange(view.goal.id, id, decision === "apply", note);
       await get().odysseyLoadInbox(sessionId, view.goal.id);
       await get().refreshOdyssey(sessionId, view.goal.id);
     } catch (error) {
@@ -2490,22 +1344,11 @@ export const useStore = create<State>((set, get) => ({
 
   async odysseyAnswerQuestion(sessionId, id, answer) {
     const view = get().odyssey[sessionId];
-    const question = (get().odysseyQuestions[sessionId] ?? []).find((record) => record.id === id);
-    if (!view || !question) return;
+    if (!view) return;
     try {
-      const trimmed = answer?.trim() || null;
-      await api.odysseyQuestionSettle(id, trimmed ? "answered" : "dismissed", trimmed);
-      await api.odysseyJournalAppend({
-        odysseyId: view.goal.id,
-        kind: "plan",
-        summary: trimmed ? "You answered the agent's question" : "You dismissed the agent's question",
-        detail: `${question.question}\n${trimmed ?? "(no answer: the agent keeps its default)"}`,
-      });
-      get().odysseyQueueDelta(sessionId, { kind: "question_answered", question: question.question, answer: trimmed });
+      await api.superthingAnswer(view.goal.id, id, answer);
       await get().odysseyLoadInbox(sessionId, view.goal.id);
       await get().refreshOdyssey(sessionId, view.goal.id);
-      // An answer is worth a turn now if the session is free.
-      if (view.goal.state === "running") void get().odysseyTick(sessionId);
     } catch (error) {
       set({ error: asError(error) });
     }
@@ -2540,120 +1383,29 @@ export const useStore = create<State>((set, get) => ({
   },
 
   /**
-   * Asks the session's model to turn the goal's plan document into milestones
-   * (docs/plans/odyssey.md §3.1).
-   *
-   * This is the only way a document becomes a plan: Super Thing hands over the
-   * text and reads the block that comes back. It never parses the document
-   * itself, and the goal stays a draft until the user starts it, so a plan
-   * that came out of a file is always seen by a human before it runs.
+   * Asks the session's model to turn the goal's plan document into
+   * milestones. The goal stays a draft until the user starts it.
    */
   async odysseyRequestPlan(sessionId) {
     const view = get().odyssey[sessionId];
-    const session = get().sessions[sessionId];
-    if (!view || !session) return;
-    const runtime = get().odysseyRuntime[sessionId];
-    if (runtime?.ticking) return;
-    if (session.inFlightRequestId || session.projection.foreground === "running") {
-      set({ error: asError({ code: "NOT_READY", message: "The session is busy; wait for the current turn to finish.", retry: "poll" }) });
-      return;
-    }
-
-    setRuntime(get, set, sessionId, { lastReason: "asking the agent to read the plan", lastReasonAt: Date.now(), ticking: true, stalledSince: null, stallNotified: false });
+    if (!view) return;
     try {
-      const document = await api.odysseyPlanDocument(view.goal.id);
-      if (!document) {
-        set({ error: asError({ code: "NOT_READY", message: "This goal has no plan document to read.", retry: "user_action" }) });
-        return;
-      }
-      const requestId = crypto.randomUUID();
-      set({ sessions: { ...get().sessions, [sessionId]: { ...session, inFlightRequestId: requestId } } });
-      const response = await api.sessionSubmit(session.handle, requestId, buildPlanningPrompt({ goal: view.goal, document, source: view.goal.planSource ?? null }));
-      clearInFlight(get, set, sessionId);
-      if (response.outcome.outcome !== "accepted") {
-        set({ error: response.outcome.error });
-        return;
-      }
-      // The request is journalled so the settle that answers it can be
-      // recognised after a reload.
-      await api.odysseyJournalAppend({ odysseyId: view.goal.id, kind: "plan", summary: PLAN_REQUESTED, detail: view.goal.planSource ?? null });
+      await api.superthingRequestPlan(view.goal.id);
       await get().refreshOdyssey(sessionId, view.goal.id);
     } catch (error) {
       set({ error: asError(error) });
-    } finally {
-      clearInFlight(get, set, sessionId);
-      setRuntime(get, set, sessionId, { lastReason: "waiting for the agent's plan", lastReasonAt: Date.now(), ticking: false });
     }
   },
 
-  /**
-   * Runs a milestone's check here (docs/plans/odyssey.md §5.1, desktop-run).
-   *
-   * The verdict is the exit code, recorded with the lane that produced it. A
-   * pass moves the run on; a failure becomes a delta with the command, the
-   * code and a two-line tail, because a model that cannot see why a check
-   * failed will just fail it again.
-   */
+  /** Runs a milestone's check here; the engine records the verdict. */
   async odysseyRunCheck(sessionId, milestoneId) {
     const view = get().odyssey[sessionId];
-    const session = get().sessions[sessionId];
-    if (!view || !session) return;
-    const index = view.milestones.findIndex((entry) => entry.id === milestoneId);
-    const milestone = view.milestones[index];
-    if (!milestone) return;
-    if (milestone.checkKind === "manual") {
-      set({ error: asError({ code: "UNSUPPORTED", message: "This milestone is verified by you, not by a command.", retry: "user_action" }) });
-      return;
-    }
-    // The agent may be running the same suite in its turn; two Unity runs on
-    // one editor collide and fail with a timeout that says nothing about the
-    // code. The check waits for the turn to settle.
-    if (session.projection.foreground === "running" || session.projection.foreground === "cancelling") {
-      set({ error: asError({ code: "NOT_READY", message: "A turn is running; the check would collide with whatever the agent is running. It runs on its own when the turn settles.", retry: "poll" }) });
-      return;
-    }
-
-    setRuntime(get, set, sessionId, { lastReason: `running the check for milestone ${index + 1}`, lastReasonAt: Date.now(), ticking: true, stalledSince: null, stallNotified: false });
+    if (!view) return;
     try {
-      const { outcome } = await api.odysseyRunCheck(session.workspaceId, milestoneId);
-      await api.odysseyJournalAppend({
-        odysseyId: view.goal.id,
-        kind: "check",
-        milestoneId,
-        summary: `Super Thing ran the check for milestone ${index + 1}: ${outcome.passed ? "passed" : "failed"}`,
-        detail: outcome.summary,
-      });
-      if (outcome.passed) {
-        get().odysseyQueueDelta(sessionId, { kind: "verified", milestone: index + 1, title: milestone.title, evidence: `${outcome.summary} (check run by Super Thing)` });
-      } else {
-        get().odysseyQueueDelta(sessionId, {
-          kind: "check_failed",
-          milestone: index + 1,
-          title: milestone.title,
-          command: milestone.checkSpec ?? outcome.summary,
-          exitCode: outcome.exitCode ?? -1,
-          tail: outcome.output.split("\n").filter(Boolean).slice(-2).join("\n"),
-        });
-      }
+      await api.superthingRunCheck(view.goal.id, milestoneId);
       await get().refreshOdyssey(sessionId, view.goal.id);
-      // Release the tick guard before starting: the next tick is the point.
-      setRuntime(get, set, sessionId, { lastReason: outcome.summary, lastReasonAt: Date.now(), ticking: false });
-
-      // The check ran, so the milestone must have moved to verified or failed.
-      // If it is still a bare claim the record did not take the verdict, and
-      // continuing would run the same check for ever.
-      const settled = get().odyssey[sessionId]?.milestones.find((entry) => entry.id === milestoneId);
-      if (settled?.state === "reported") {
-        await get().odysseyPause(sessionId, `The check for milestone ${index + 1} ran (${outcome.summary}) but the milestone is still only reported`);
-        return;
-      }
-
-      // A pass is a stopping point only for a goal set to stop there; a
-      // failure is always worth another turn, so the model can fix it.
-      if (!outcome.passed || !stopsAfterMilestone(view.goal)) await get().odysseyStart(sessionId);
     } catch (error) {
       set({ error: asError(error) });
-      setRuntime(get, set, sessionId, { lastReason: "the check could not be run", lastReasonAt: Date.now(), ticking: false });
     }
   },
 
@@ -2662,13 +1414,8 @@ export const useStore = create<State>((set, get) => ({
     const view = get().odyssey[sessionId];
     if (!view) return;
     try {
-      await api.odysseyRecordCheck(milestoneId, true, "ticked by you", "user");
-      const index = view.milestones.findIndex((milestone) => milestone.id === milestoneId);
-      await api.odysseyJournalAppend({ odysseyId: view.goal.id, kind: "check", milestoneId, summary: `You verified milestone ${index + 1}` });
-      get().odysseyQueueDelta(sessionId, { kind: "verified", milestone: index + 1, title: view.milestones[index]?.title ?? "", evidence: "you ticked it" });
+      await api.superthingVerify(view.goal.id, milestoneId);
       await get().refreshOdyssey(sessionId, view.goal.id);
-      // A goal set to stop after each milestone waits for the user to start it.
-      if (!stopsAfterMilestone(view.goal)) await get().odysseyStart(sessionId);
     } catch (error) {
       set({ error: asError(error) });
     }
@@ -2700,138 +1447,11 @@ export const useStore = create<State>((set, get) => ({
     set({ sessions: { ...get().sessions, [sessionId]: { ...session, projection: { ...session.projection } } } });
   },
 
-  /** Queues a state change to tell the model in the next continuation. */
-  odysseyQueueDelta(sessionId, delta) {
-    const current = get().odysseyPendingDeltas[sessionId] ?? [];
-    // Eight is more than a turn's worth; older ones have been superseded.
-    set({ odysseyPendingDeltas: { ...get().odysseyPendingDeltas, [sessionId]: [...current, delta].slice(-8) } });
-  },
-
-  /** The deltas for the next continuation, plus a budget warning near the end. */
-  odysseyDeltas(sessionId) {
-    const view = get().odyssey[sessionId];
-    const pending = get().odysseyPendingDeltas[sessionId] ?? [];
-    if (!view) return pending;
-    const left = continuationsLeft(view.goal);
-    // Only near the ceiling: a running count every turn would be noise.
-    return left > 0 && left <= 3 ? [...pending, { kind: "budget" as const, continuationsLeft: left }] : pending;
-  },
-
-  /**
-   * Records what the working tree looks like now, and returns the progress
-   * fingerprint the no-progress guard compares (§4.4). Stored in the journal,
-   * so the guard survives a reload.
-   */
-  async odysseyCheckpoint(sessionId, milestoneId) {
-    const view = get().odyssey[sessionId];
-    const session = get().sessions[sessionId];
-    if (!view || !session) return null;
-    try {
-      // The tree now against the tree at the previous checkpoint — what this
-      // turn changed — not a cumulative diff against the session's baseline,
-      // which saturated at the review cap and read "2000 files" for
-      // sixty-three turns (docs/research/odyssey-review.md §1.4).
-      const checkpoint = await api.odysseyCheckpoint(session.workspaceId, view.goal.id);
-      const fingerprint = progressFingerprint({
-        treeHash: checkpoint.treeHash,
-        milestoneStates: view.milestones.map((milestone) => milestone.state),
-        stepStates: view.milestones.flatMap((milestone) => milestone.steps.map((step) => step.state)),
-      });
-      const plural = (count: number, noun: string) => `${count} ${noun}${count === 1 ? "" : "s"}`;
-      const summary = checkpoint.first
-        ? `first checkpoint · ${plural(checkpoint.fileCount, "file")} in the tree`
-        : checkpoint.changed === 0
-          ? "nothing changed since the last checkpoint"
-          : `${plural(checkpoint.changed, "file")} changed · +${checkpoint.additions} −${checkpoint.deletions}${checkpoint.truncated ? " · list cut" : ""}`;
-      await api.odysseyJournalAppend({
-        odysseyId: view.goal.id,
-        kind: "checkpoint",
-        milestoneId,
-        summary,
-        detail: checkpointDetail(
-          fingerprint,
-          checkpoint.files.map((file) => file.path),
-        ),
-      });
-      return fingerprint;
-    } catch {
-      // A workspace that cannot be captured still gets a run; it just has no
-      // checkpoint to show, and the guard has nothing to compare.
-      return null;
-    }
-  },
-
-  /** Paid input plus output for this session, from the agent's own transcript. */
-  async odysseySessionTokens(sessionId) {
-    const session = get().sessions[sessionId];
-    const agentSessionId = session?.snapshot.agentSessionId;
-    if (!session || !agentSessionId) return null;
-    try {
-      const usage = await api.sessionTokenUsage(session.workspaceId, agentSessionId);
-      return usage.totals.paidInputTokens + usage.totals.outputTokens;
-    } catch {
-      return null;
-    }
-  },
-
-  /** The session's token total when the goal was briefed, from the journal. */
-  odysseyStartTokens(sessionId) {
-    const view = get().odyssey[sessionId];
-    const briefing = view?.journal.find((entry) => entry.kind === "briefing" && entry.detail);
-    if (!briefing?.detail) return null;
-    try {
-      const parsed = JSON.parse(briefing.detail) as { startTokens?: unknown };
-      return typeof parsed.startTokens === "number" ? parsed.startTokens : null;
-    } catch {
-      return null;
-    }
-  },
-
   async odysseyRefreshNotes(sessionId) {
     const session = get().sessions[sessionId];
     if (!session) return;
     const notes = await api.odysseyWorkspaceNotes(session.workspaceId).catch(() => null);
     set({ odysseyNotes: { ...get().odysseyNotes, [sessionId]: notes } });
-  },
-
-  /**
-   * One reading per goal that is running or parked: the account's windows as
-   * just fetched, and the session's cumulative token counters from the agent's
-   * transcript at the same moment. Differenced later, these say what the
-   * window charges (docs/research/odyssey-review.md §4.1). A reading that
-   * cannot be taken is dropped: it is evidence, never a decision.
-   */
-  async odysseyRecordUsageSamples(snapshot) {
-    for (const [sessionId, view] of Object.entries(get().odyssey)) {
-      if (!view || (view.goal.state !== "running" && view.goal.state !== "waiting_usage")) continue;
-      const session = get().sessions[sessionId];
-      const agentSessionId = session?.snapshot.agentSessionId;
-      if (!session || !agentSessionId) continue;
-      // The percentages are the OpenAI account's. A goal running on Claude
-      // spends a different subscription, so pairing its token counters with
-      // these windows would fit a spend model out of two unrelated series
-      // (docs/plans/odyssey-second-orchestrator.md §2.6). Its tokens are
-      // still recorded; the windows are left empty until something on that
-      // side reports a percentage.
-      const windows = get().sessionAgent(sessionId) === "claude" ? null : snapshot;
-      try {
-        const { totals } = await api.sessionTokenUsage(session.workspaceId, agentSessionId);
-        await api.odysseyUsageSampleAdd({
-          odysseyId: view.goal.id,
-          ...(windows?.primary ? { primaryUsedPercent: windows.primary.usedPercent } : {}),
-          ...(windows?.primary?.resetAtUnix !== undefined ? { primaryResetAt: windows.primary.resetAtUnix } : {}),
-          ...(windows?.secondary ? { secondaryUsedPercent: windows.secondary.usedPercent } : {}),
-          ...(windows?.secondary?.resetAtUnix !== undefined ? { secondaryResetAt: windows.secondary.resetAtUnix } : {}),
-          calls: totals.calls,
-          paidInputTokens: totals.paidInputTokens,
-          cachedInputTokens: totals.cachedInputTokens,
-          outputTokens: totals.outputTokens,
-          reasoningTokens: totals.reasoningTokens,
-        });
-      } catch {
-        // Nothing to do: the next reading is a minute away.
-      }
-    }
   },
 
   /** Re-reads one goal by id after a write, so the screen shows the record. */
@@ -3226,9 +1846,6 @@ export const useStore = create<State>((set, get) => ({
   noteJob(job) {
     const previous = get().jobs[job.orchestrator]?.find((existing) => existing.id === job.id);
     set({ jobs: { ...get().jobs, [job.orchestrator]: upsertJob(get().jobs[job.orchestrator], job) } });
-    // A job named after a plan task is that task's worker: the run shows who
-    // took it, as it does for a subagent.
-    if (get().odyssey[job.orchestrator] && (!previous || previous.status !== job.status || previous.workerSession !== job.workerSession)) void get().odysseyObserveAgents(job.orchestrator);
     // A new worker session has a row now: the sidebar shows it under its
     // orchestrator.
     if (job.workerSession && previous?.workerSession !== job.workerSession) {

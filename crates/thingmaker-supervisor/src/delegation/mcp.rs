@@ -11,7 +11,7 @@ use std::time::Duration;
 
 use serde_json::{Value, json};
 
-use super::jobs::{DEFAULT_AWAIT, DelegateArgs, Delegation, JobView, MAX_AWAIT};
+use super::jobs::{Caller, DEFAULT_AWAIT, DelegateArgs, Delegation, JobView, MAX_AWAIT};
 
 pub const SERVER_NAME: &str = "team";
 const PROTOCOL_VERSIONS: [&str; 4] = ["2025-11-25", "2025-06-18", "2025-03-26", "2024-11-05"];
@@ -22,6 +22,10 @@ pub const INSTRUCTIONS: &str = "ThingMaker runs a team for this session: workers
 Use `list_workers` to see the team (it can change during the session), `delegate` to hand a worker a self-contained task (it answers with a job id at once), \
 and `await_jobs` to wait for reports. Delegate independent tasks together, then await them. Workers share the workspace but not your conversation. \
 Check a worker's result before you rely on it.";
+
+/// What a worker's reduced server says about itself.
+pub const WORKER_INSTRUCTIONS: &str = "ThingMaker gives this worker the project's shared memory and its run's task board. \
+Read the memory before deciding something the project may already have decided, and write down decisions, conventions and facts the rest of the team will need.";
 
 fn tools() -> Value {
     json!([
@@ -131,12 +135,12 @@ pub fn job_for_model(job: &JobView) -> Value {
     value
 }
 
-fn text_result(value: &Value, is_error: bool) -> Value {
+pub fn text_result(value: &Value, is_error: bool) -> Value {
     let text = serde_json::to_string_pretty(value).unwrap_or_default();
     json!({ "content": [{ "type": "text", "text": text }], "structuredContent": value, "isError": is_error })
 }
 
-fn error_result(message: &str) -> Value {
+pub fn error_result(message: &str) -> Value {
     json!({ "content": [{ "type": "text", "text": message }], "isError": true })
 }
 
@@ -202,9 +206,22 @@ async fn call_tool(delegation: &Delegation, session: &str, name: &str, arguments
     }
 }
 
+/// Every tool this caller may use: the team's own (orchestrators only), then
+/// the extension's.
+fn tools_for(delegation: &Delegation, caller: &Caller) -> Value {
+    let mut list: Vec<Value> = match caller {
+        Caller::Orchestrator { .. } => tools().as_array().cloned().unwrap_or_default(),
+        Caller::Worker { .. } => Vec::new(),
+    };
+    if let Some(extension) = delegation.extension() {
+        list.extend(extension.tools(caller));
+    }
+    Value::Array(list)
+}
+
 /// Answers one JSON-RPC message from the client; `None` for notifications
 /// and for responses to requests this server never makes.
-pub async fn handle(delegation: &Delegation, session: &str, message: &Value) -> Option<Value> {
+pub async fn handle(delegation: &Delegation, caller: &Caller, message: &Value) -> Option<Value> {
     let method = message.get("method").and_then(Value::as_str)?;
     let id = message.get("id").cloned()?;
     let params = message.get("params").cloned().unwrap_or(Value::Null);
@@ -212,19 +229,33 @@ pub async fn handle(delegation: &Delegation, session: &str, message: &Value) -> 
         "initialize" => {
             let asked = params.get("protocolVersion").and_then(Value::as_str).unwrap_or_default();
             let version = PROTOCOL_VERSIONS.iter().find(|known| **known == asked).copied().unwrap_or(PROTOCOL_VERSIONS[1]);
+            let mut instructions = match caller {
+                Caller::Orchestrator { .. } => INSTRUCTIONS.to_string(),
+                Caller::Worker { .. } => WORKER_INSTRUCTIONS.to_string(),
+            };
+            if let Some(extra) = delegation.extension().and_then(|extension| extension.instructions(caller)) {
+                instructions.push(' ');
+                instructions.push_str(&extra);
+            }
             json!({
                 "protocolVersion": version,
                 "capabilities": { "tools": { "listChanged": false } },
                 "serverInfo": { "name": SERVER_NAME, "title": "Team (ThingMaker)", "version": env!("CARGO_PKG_VERSION") },
-                "instructions": INSTRUCTIONS,
+                "instructions": instructions,
             })
         }
         "ping" => json!({}),
-        "tools/list" => json!({ "tools": tools() }),
+        "tools/list" => json!({ "tools": tools_for(delegation, caller) }),
         "tools/call" => {
             let name = params.get("name").and_then(Value::as_str).unwrap_or_default();
             let arguments = params.get("arguments").cloned().unwrap_or_else(|| json!({}));
-            call_tool(delegation, session, name, &arguments).await
+            match delegation.extension().and_then(|extension| extension.call(caller, name, &arguments)) {
+                Some(answer) => answer.await,
+                None => match caller {
+                    Caller::Orchestrator { session, .. } => call_tool(delegation, session, name, &arguments).await,
+                    Caller::Worker { .. } => error_result(&format!("A worker's team server has no tool {name:?}")),
+                },
+            }
         }
         "resources/list" => json!({ "resources": [] }),
         "prompts/list" => json!({ "prompts": [] }),

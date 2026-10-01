@@ -9,6 +9,7 @@
 pub mod artifacts;
 pub mod attachments;
 pub mod drafts;
+pub mod memory;
 pub mod migrations;
 pub mod odyssey;
 pub mod outbox;
@@ -134,4 +135,15 @@ pub fn new_id() -> String {
 /// BLAKE3 hex of arbitrary content, used for payload and content hashes.
 pub fn content_hash(bytes: &[u8]) -> String {
     blake3::hash(bytes).to_hex().to_string()
+}
+
+impl From<StorageError> for crate::DesktopError {
+    fn from(error: StorageError) -> Self {
+        match error {
+            StorageError::Conflict(message) => crate::DesktopError::conflict(message),
+            StorageError::NotFound(message) => crate::DesktopError::not_ready(message),
+            StorageError::NewerSchema { .. } => crate::DesktopError::unsupported(error.to_string()),
+            other => crate::DesktopError::io(other.to_string()),
+        }
+    }
 }

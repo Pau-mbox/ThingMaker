@@ -93,7 +93,8 @@ describe("asking for a change mid-run", () => {
       fireEvent.click(screen.getByRole("button", { name: "Queue for the agent" }));
     });
 
-    const queued = calls.find((entry) => entry.command === "odyssey_amend_add");
+    // Handed to the engine, which queues it and carries it on the next prompt.
+    const queued = calls.find((entry) => entry.command === "superthing_amend");
     expect((queued?.args.request as Record<string, unknown>).note).toBe("Generate the ships and embed them");
     // The point of the whole feature: no prompt goes out from here.
     expect(commands()).not.toContain("session_submit");

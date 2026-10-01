@@ -119,6 +119,8 @@ pub fn run() {
             if let Err(error) = commands::delegation::start(app.handle()) {
                 tracing::warn!(%error, "delegation unavailable");
             }
+            // Super Thing runs in the host, whether or not a window is open.
+            commands::superthing::start(app.handle());
 
             let show = MenuItem::with_id(app, "show", "Show ThingMaker", true, None::<&str>)?;
             let quit = MenuItem::with_id(app, "quit", "Quit and stop local tasks", true, None::<&str>)?;
@@ -230,6 +232,24 @@ pub fn run() {
             commands::session::session_archive,
             commands::session::session_pin,
             commands::session::session_rename,
+            commands::superthing::superthing_start,
+            commands::superthing::superthing_pause,
+            commands::superthing::superthing_tick,
+            commands::superthing::superthing_move,
+            commands::superthing::superthing_verify,
+            commands::superthing::superthing_run_check,
+            commands::superthing::superthing_request_plan,
+            commands::superthing::superthing_amend,
+            commands::superthing::superthing_decide_plan_change,
+            commands::superthing::superthing_answer,
+            commands::superthing::superthing_runtime,
+            commands::superthing::superthing_briefing,
+            commands::superthing::superthing_commits,
+            commands::superthing::superthing_rollback,
+            commands::superthing::superthing_merge,
+            commands::superthing::memory_list,
+            commands::superthing::memory_write,
+            commands::superthing::memory_delete,
             commands::odyssey::odyssey_read_plan,
             commands::odyssey::odyssey_adopt_plan,
             commands::odyssey::odyssey_for_session,
