@@ -13,6 +13,7 @@
   <img alt="Rust" src="https://img.shields.io/badge/Rust-supervisor-B7410E?logo=rust&logoColor=white">
   <img alt="React" src="https://img.shields.io/badge/React-TypeScript-3178C6?logo=react&logoColor=white">
   <img alt="Subscriptions only" src="https://img.shields.io/badge/billing-subscriptions%20only-8A2BE2">
+  <a href="LICENSE"><img alt="MIT license" src="https://img.shields.io/badge/license-MIT-green"></a>
 </p>
 
 ---
@@ -162,3 +163,7 @@ Live tests against the real providers are opt-in and spend a few tokens:
 ThingMaker is young and moving fast. It is built and used daily on macOS
 (Apple silicon). Next up: shared project memory across agents and smarter
 routing between providers.
+
+## License
+
+[MIT](LICENSE)

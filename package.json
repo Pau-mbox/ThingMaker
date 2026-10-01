@@ -3,7 +3,7 @@
   "private": true,
   "version": "0.0.0",
   "description": "ThingMaker: one desktop for Claude Code, Codex and Gemini on your own subscriptions (Tauri 2 / React / Rust supervisor).",
-  "license": "UNLICENSED",
+  "license": "MIT",
   "engines": {
     "node": ">=22.12.0",
     "pnpm": ">=10"
