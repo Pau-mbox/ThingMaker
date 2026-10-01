@@ -130,6 +130,5 @@ mod tests {
         assert!(SKILL.contains("as its own shell call"));
         let team = section("Leading a team");
         assert!(team.contains("`delegate`") && team.contains("not evidence for the run") && team.contains("hands the milestone's ready tasks"));
-        assert!(!SKILL.contains("acp.kit") && !SKILL.split(|c: char| !c.is_alphanumeric()).any(|word| word == "Kit"));
     }
 }

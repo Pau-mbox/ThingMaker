@@ -422,7 +422,7 @@ pub(crate) mod tests {
     #[test]
     fn errors_are_read_for_what_they_hint_at() {
         assert!(looks_like_transport_error(Some("Incoming transport closed: {\"reason\":\"incoming_transport_closed\"}")));
-        assert!(looks_like_transport_error(Some("Kit rejected the request: Internal error: unsupported operation")));
+        assert!(looks_like_transport_error(Some("the agent rejected the request: Internal error: unsupported operation")));
         assert!(!looks_like_transport_error(Some("compile error in src/main.rs")));
         assert!(!looks_like_transport_error(None));
         for message in ["usage limit reached", "Rate limit exceeded", "HTTP 429", "insufficient_quota", "You've hit your limit", "You've hit your session limit"] {

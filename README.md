@@ -21,7 +21,8 @@
 ThingMaker runs **Claude Code**, **Codex** and **Gemini** side by side, on the
 subscriptions you already pay for. Have Claude Opus lead and send image work to
 GPT-6 Luna. Let a Codex orchestrator hand reviews to Sonnet. Run a long goal that
-moves to another account when one runs out. Watch everything — every agent,
+keeps working while you sleep and moves to another account when one runs out.
+Watch everything — every agent,
 every tool call, every image it makes — in one window.
 
 No API keys, ever. ThingMaker drives each provider's **own official program**
@@ -43,11 +44,11 @@ with your own sign-in, and never reads, stores or passes on a token.
 |  |  |
 | --- | --- |
 | 🧑‍🤝‍🧑 **Teams** | Any session can lead a team. Pick the orchestrator (provider, model, effort) and its workers, each with capabilities like `image`, `code` or `review` and a note on when to use it. Change the team mid-session. Save combinations as **presets** and start a session from one. |
-| 🔀 **Cross-provider delegation** | The orchestrator gets `team` tools — `list_workers`, `delegate`, `await_jobs` — and hands self-contained tasks to workers on any provider. Workers are real sessions you can open and watch. |
+| 🔀 **Cross-provider delegation** | The orchestrator gets `team` tools — `list_workers`, `delegate`, `await_jobs` — and hands self-contained tasks to workers on any provider. Workers are real sessions you can open and watch, each marked with its provider's icon. |
 | ⏳ **Limits, handled** | Routing picks the worker whose account has the most headroom. When a worker hits a temporary limit (an image generation cap, a usage window, an overloaded server) the job waits — until the provider's own reset when it names one — then the same worker carries on with its context. |
 | 📊 **Live usage** | Five-hour and weekly windows for Claude and Codex in the sidebar, read from each provider's own program at no cost. |
-| 🧭 **Big Thing** | A long-horizon goal runner that keeps going with the window closed: milestones and tasks, checks that decide what is done, a journal of every decision, failover and a spend forecast across accounts, an optional branch and worktree per run, and a mode where it hands ready tasks to the team's workers itself and has them reviewed on another provider. |
-| 🧠 **Shared memory** | One project memory — decisions, conventions, facts — that the orchestrator, its workers and you read and write. |
+| 🧭 **Big Thing** | A long-horizon goal runner: drop in a plan document and the agent turns it into milestones and tasks with their dependencies and checks; press Start and it runs to the end on its own — see [Big Thing](#big-thing) below. |
+| 🧠 **Shared memory** | One project memory — decisions, conventions, facts — that the orchestrator, its workers and you read and write (`memory_read`, `memory_write`), plus a live task board. |
 | 🖼️ **Inline images** | Images agents generate or read show up right in the transcript, including Codex's generated images. |
 | 🔍 **Review and tools** | Diffs and baselines, git staging and commits, worktrees, an integrated terminal, file browsing, artifacts and skills. |
 | 🔐 **Your accounts, your machine** | Each provider signs in through its own flow and keeps its own credentials. Switch accounts from the Providers panel. Everything runs locally. |
@@ -72,6 +73,47 @@ flowchart LR
   ThingMaker over a private local socket (no network port). Its `delegate`
   calls open worker sessions on whichever provider the team names.
 - Each provider's quota is read the provider's own way and fed to the router.
+- **Big Thing** is an engine inside the supervisor, not the window: it drives
+  sessions through the same actors the tabs attach to and keeps going while
+  ThingMaker sits in the menu bar with no window open.
+
+## Big Thing
+
+Big Thing is for work that takes more than one turn — a roadmap, a feature
+spec, a migration.
+
+1. **Plan.** Create a goal on a session and drop a Markdown plan on it. The
+   agent reads it and proposes ordered milestones, each with the document's
+   substance, a check Big Thing can run (your test command, a command that must
+   exit 0, files that must exist) and three to eight tasks with their
+   dependencies and the kind of worker each needs. The goal stays a draft until
+   you review it and press **Start**.
+2. **Run.** Big Thing briefs the session once, then sends a short continuation
+   after every turn. A milestone is done when its check passes — read from the
+   agent's own tool results or run by Big Thing — never on the agent's word.
+   Every decision goes into the goal's journal first.
+3. **Report.** The agent talks back through tools — `bigthing_report`,
+   `bigthing_task`, `bigthing_ask`, `bigthing_amend` — each checked against the
+   plan on the spot. Questions and plan changes land in the goal's **Inbox**;
+   you answer while the run carries on.
+4. **Stay within the accounts.** Each turn's cost is measured. A turn that
+   would not fit is moved to an account with room or held until the window
+   resets; a spent account parks the run and resumes it by itself. With
+   *spread*, the run moves to the account with the most room at each milestone.
+
+Options per goal:
+
+- **Who hands out the tasks.** The orchestrator delegates, or Big Thing hands
+  every ready task to the team's workers itself, in parallel, by capability —
+  optionally with a review of each result on another provider.
+- **Its own branch.** The run works in a Git worktree on `bigthing/<goal>`.
+  Every turn is a commit; roll back to any checkpoint, then merge back into
+  your checkout when you are happy (conflicts are named, nothing is forced).
+- **A team preset**, so the run starts with the orchestrator and workers you
+  saved, and keeps them on every account it moves to.
+
+The **Team** tab shows who led each milestone on which provider and model,
+which worker did each task, and the project memory.
 
 | Provider | Program it runs | Signs in with | Roles |
 | --- | --- | --- | --- |
@@ -120,6 +162,9 @@ picks up the new build when you reopen it.
 3. In the project, click your preset under **Start with a team** and describe
    the goal. The orchestrator plans, delegates and reports back; follow the
    jobs in the **Agents** tab.
+4. For something bigger, open the session's **Big Thing** tab, drop your plan
+   document on the form, review the milestones it proposes, and press
+   **Start**.
 
 ## Development
 
@@ -144,10 +189,11 @@ Live tests against the real providers are opt-in and spend a few tokens:
 | Where | What |
 | --- | --- |
 | `apps/desktop` | the Tauri app: React interface (`src/`) and the host's commands (`src-tauri/`) |
-| `crates/thingmaker-supervisor` | the engine: transport, ACP client, provider bridges, delegation, session actors, storage |
+| `crates/thingmaker-supervisor` | the engine: transport, ACP client, provider bridges, delegation, Big Thing (`bigthing/`), session actors, storage |
 | `packages/contracts` | the TypeScript types of the desktop API |
 | `packages/test-fixtures` | mock providers, captured from the real programs |
-| `docs/` | [architecture](docs/architecture.md), [decisions](docs/adr/README.md), [release](docs/release.md), plans and research |
+| `runtime/` | the `big-thing` skill the agents load, and the Claude Code delegate definition |
+| `docs/` | [architecture](docs/architecture.md), [decisions](docs/adr/README.md), [release](docs/release.md) |
 
 ## Principles
 
