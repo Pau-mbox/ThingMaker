@@ -1,5 +1,5 @@
 /**
- * A provider's mark at badge size: Claude's starburst, Codex's cloud with a
+ * A provider's mark at badge size: Claude Code's pixel mascot, Codex's cloud with a
  * prompt, Antigravity's arch. Drawn as glyphs rather than the app-icon tiles
  * (`ProviderLogo`), so they sit on the dark theme without a coloured square
  * around each, and read as one set: same box, same weight, each in its own
@@ -9,14 +9,16 @@ import { useId } from "react";
 import { PROVIDER_LABELS, type Provider } from "@thingmaker/contracts";
 
 function Claude() {
-  // Rays of slightly different lengths, the way the mark is drawn.
-  const rays = [10.4, 9, 10, 8.6, 10.6, 9.2, 9.8, 8.8, 10.4, 9, 9.6, 8.6];
+  // Claude Code's pixel mascot, on its own 32-unit grid: a body with two eye
+  // holes, arms either side and four legs.
   return (
-    <g stroke="#d97757" strokeLinecap="round" strokeWidth="2.4">
-      {rays.map((length, index) => {
-        const angle = ((index * 30 + (index % 2 ? 7 : -4)) * Math.PI) / 180;
-        return <line key={index} x1={12 + Math.cos(angle) * 1.4} x2={12 + Math.cos(angle) * length} y1={12 + Math.sin(angle) * 1.4} y2={12 + Math.sin(angle) * length} />;
-      })}
+    <g fill="#d97757" transform="translate(0 -10)">
+      <path d="M64 106H448V362H64ZM128 170V234H160V170ZM352 170V234H384V170Z" fillRule="evenodd" />
+      <rect height="64" width="512" x="0" y="234" />
+      <rect height="64" width="32" x="96" y="362" />
+      <rect height="64" width="32" x="160" y="362" />
+      <rect height="64" width="32" x="320" y="362" />
+      <rect height="64" width="32" x="384" y="362" />
     </g>
   );
 }
@@ -68,7 +70,7 @@ export function ProviderMark({ provider, size = 16 }: { provider: Provider; size
   // React's ids carry characters an SVG `url(#…)` reference cannot.
   const id = `pm${useId().replace(/[^a-zA-Z0-9_-]/g, "")}`;
   return (
-    <svg aria-hidden="true" className="provider-mark-glyph" height={size} viewBox="0 0 24 24" width={size}>
+    <svg aria-hidden="true" className="provider-mark-glyph" height={size} viewBox={provider === "claude" ? "0 0 512 512" : "0 0 24 24"} width={size}>
       {provider === "claude" ? <Claude /> : provider === "codex" ? <Codex id={`${id}-codex`} /> : <Antigravity id={`${id}-agy`} />}
     </svg>
   );
