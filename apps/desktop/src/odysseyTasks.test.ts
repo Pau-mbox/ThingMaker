@@ -36,9 +36,9 @@ describe("the task line", () => {
   });
 
   it("skips a malformed line rather than guessing", () => {
-    expect(parseTaskLines("ODYSSEY-TASK: milestone=6 status=done")).toEqual([]);
-    expect(parseTaskLines("ODYSSEY-TASK: milestone=6 task=2 status=finished")).toEqual([]);
-    expect(parseTaskLines("ODYSSEY-TASK: milestone=0 task=2 status=done")).toEqual([]);
+    expect(parseTaskLines("SUPERTHING-TASK: milestone=6 status=done")).toEqual([]);
+    expect(parseTaskLines("SUPERTHING-TASK: milestone=6 task=2 status=finished")).toEqual([]);
+    expect(parseTaskLines("SUPERTHING-TASK: milestone=0 task=2 status=done")).toEqual([]);
     expect(parseTaskLines("")).toEqual([]);
   });
 });

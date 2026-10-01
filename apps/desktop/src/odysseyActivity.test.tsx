@@ -273,7 +273,7 @@ describe("the run history", () => {
 /**
  * The numbers the usage wait is decided from. The card could say "usage is
  * spent" while showing none of them, so there was no way to tell whether
- * Odyssey was reading what the provider's own meter showed.
+ * Super Thing was reading what the provider's own meter showed.
  */
 describe("the usage readout", () => {
   const at = Date.parse("2026-09-12T16:00:00Z");

@@ -193,7 +193,7 @@ type State = {
   records: Record<string, SessionRecord[]>;
   /** Git head per workspace. `null` means checked and not a repository. */
   repoInfo: Record<string, RepositoryInfo | null>;
-  /** The live Odyssey goal per session. `null` means read and there is none. */
+  /** The live Super Thing goal per session. `null` means read and there is none. */
   odyssey: Record<string, OdysseyView | null>;
   /** Runner bookkeeping that is not worth persisting: the resume time a wait
    *  is counting down to, the last reason a tick did nothing and when it was
@@ -458,9 +458,14 @@ function attentionFor(event: EventEnvelope, current: AttentionKind): AttentionKi
 
 /** Whether a live session is a worker a delegation opened. */
 function isWorkerSession(get: Get, id: string, session: LiveSession): boolean {
-  if (Object.values(get().jobs).some((jobs) => jobs.some((job) => job.workerSession === id))) return true;
-  const agentId = session.snapshot.agentSessionId;
-  return !!agentId && !!(get().records[session.workspaceId] ?? []).find((record) => record.agentSessionId === agentId)?.parentSessionId;
+  return isWorkerIn(get(), id, session);
+}
+
+/** The same, for a component's selector: a worker reports to its orchestrator. */
+export function isWorkerIn(state: Pick<State, "jobs" | "records">, id: string, session: LiveSession | undefined): boolean {
+  if (Object.values(state.jobs).some((jobs) => jobs.some((job) => job.workerSession === id))) return true;
+  const agentId = session?.snapshot.agentSessionId;
+  return !!session && !!agentId && !!(state.records[session.workspaceId] ?? []).find((record) => record.agentSessionId === agentId)?.parentSessionId;
 }
 
 export function basenameOf(path: string): string {
@@ -956,7 +961,7 @@ async function attachLive(get: Get, set: Set, handle: SessionHandle, workspaceId
       if (payload.type === "turn" && payload.effect === "settled" && payload.kind === "foreground") {
         turnStartedAt = null;
         void get().sampleUsage(id, "settle");
-        // Odyssey advances on settled turns; it decides for itself whether
+        // Super Thing advances on settled turns; it decides for itself whether
         // this session has a running goal.
         void get().odysseyOnSettle(id, payload.phase, payload.error);
         announcement = `${sessionTitle(current)}: turn ${payload.phase}`;
@@ -1543,7 +1548,7 @@ export const useStore = create<State>((set, get) => ({
     if (!view || !milestone) return;
     await get().odysseyAddAmendment(sessionId, {
       odysseyId: view.goal.id,
-      note: `Break milestone ${milestoneIndex + 1} ("${milestone.title}") into three to eight tasks, in order, each one thing a subagent can be given; put depends: under a task that has to wait for earlier ones. Send them in an ODYSSEY-AMEND block as revise: ${milestoneIndex + 1} with step: lines. Change nothing else about the milestone.`,
+      note: `Break milestone ${milestoneIndex + 1} ("${milestone.title}") into three to eight tasks, in order, each one thing a subagent can be given; put depends: under a task that has to wait for earlier ones. Send them in an SUPERTHING-AMEND block as revise: ${milestoneIndex + 1} with step: lines. Change nothing else about the milestone.`,
       refs: [],
     });
   },
@@ -1619,7 +1624,7 @@ export const useStore = create<State>((set, get) => ({
    *
    * The record moves, the transcript does not. What survives is what a fresh
    * orchestrator can read: the plan with its milestone states, the journal,
-   * `docs/odyssey/STATE.md` and the subagent notes — which is why the next
+   * `docs/super-thing/STATE.md` and the subagent notes — which is why the next
    * briefing says so and lists what is already done.
    *
    * The current turn is cancelled rather than left running: two orchestrators
@@ -1789,7 +1794,7 @@ export const useStore = create<State>((set, get) => ({
             odysseyId: view.goal.id,
             kind: "guard",
             summary: `Cancelled a turn that had produced nothing for ${silent}${agents}`,
-            detail: `No events at all reached the session in that time — not from the turn and not from any subagent — so nothing in it was alive and the turn could not settle on its own. The run continues from the last checkpoint${dead.workingAgents > 0 ? "; whatever those subagents wrote to docs/odyssey/agents/ is read by the next turn" : ""}.`,
+            detail: `No events at all reached the session in that time — not from the turn and not from any subagent — so nothing in it was alive and the turn could not settle on its own. The run continues from the last checkpoint${dead.workingAgents > 0 ? "; whatever those subagents wrote to docs/super-thing/agents/ is read by the next turn" : ""}.`,
           });
           get().announce(`${view.goal.title}: cancelled a turn that went silent for ${silent}`);
         } catch (error) {
@@ -1813,7 +1818,7 @@ export const useStore = create<State>((set, get) => ({
     }
 
     if (decision.action === "await_verification") {
-      // A claim is not a verification. When the milestone has a check Odyssey
+      // A claim is not a verification. When the milestone has a check Super Thing
       // can run, run it — that is the desktop-run lane and it decides here
       // without another turn. When it does not, the claim is a stopping point
       // and the user's tick is the evidence.
@@ -1871,7 +1876,7 @@ export const useStore = create<State>((set, get) => ({
 
       // brief | continue: both submit a prompt, so both checkpoint first.
       const fingerprint = await get().odysseyCheckpoint(sessionId, decision.action === "continue" ? decision.milestone.id : null);
-      // The briefing offers the `odyssey` skill, so it is installed first; a
+      // The briefing offers the `super-thing` skill, so it is installed first; a
       // failure drops the offer rather than pointing at nothing.
       const skillAvailable = decision.action === "brief" ? await api.odysseyInstallSkill().then(() => true).catch(() => false) : true;
       // Under a Claude orchestrator a subagent's model is a field on an agent
@@ -2098,7 +2103,7 @@ export const useStore = create<State>((set, get) => ({
           odysseyId: view.goal.id,
           kind: "guard",
           summary: `${TRANSPORT_CLOSED}: ${error}`,
-          detail: "The session's process or channel ended under the turn. That is not the agent's failure; the run continues from the last checkpoint once the session is attached again, and reads docs/odyssey/agents/ for anything a subagent finished before it died.",
+          detail: "The session's process or channel ended under the turn. That is not the agent's failure; the run continues from the last checkpoint once the session is attached again, and reads docs/super-thing/agents/ for anything a subagent finished before it died.",
         });
         await get().refreshOdyssey(sessionId, view.goal.id);
         await get().odysseyTick(sessionId);
@@ -2194,7 +2199,7 @@ export const useStore = create<State>((set, get) => ({
             summary: `${QUOTA_WAIT_HOLD}: ${report.note}`,
             detail: `until=${until}\nReported as blocked, read as a wait: the run continues and the next continuation goes out at ${new Date(until).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}.`,
           });
-          get().announce(`${view.goal.title}: the agent is waiting on a quota; Odyssey resumes it at ${new Date(until).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`);
+          get().announce(`${view.goal.title}: the agent is waiting on a quota; Super Thing resumes it at ${new Date(until).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`);
         } else {
           await api.odysseySetMilestoneState(milestone.id, "failed");
           await api.odysseyJournalAppend({ odysseyId: view.goal.id, kind: "report", milestoneId: milestone.id, summary: `Reported milestone ${report.milestone} blocked`, detail: report.note });
@@ -2272,7 +2277,7 @@ export const useStore = create<State>((set, get) => ({
    * Reads the plan the model just proposed and writes it into the record.
    *
    * The goal stays a draft: a plan that came out of a document has not been
-   * approved by anyone yet, and the checks in it are commands Odyssey would
+   * approved by anyone yet, and the checks in it are commands Super Thing would
    * run, so Start is the user's to press.
    */
   async odysseyReadPlanReply(sessionId) {
@@ -2284,7 +2289,7 @@ export const useStore = create<State>((set, get) => ({
         odysseyId: view.goal.id,
         kind: "plan",
         summary: "The agent proposed no plan",
-        detail: "Its reply contained no ODYSSEY-PLAN block. Read what it said, then ask again or write the milestones yourself.",
+        detail: "Its reply contained no SUPERTHING-PLAN block. Read what it said, then ask again or write the milestones yourself.",
       });
       await get().refreshOdyssey(sessionId, view.goal.id);
       return;
@@ -2498,7 +2503,7 @@ export const useStore = create<State>((set, get) => ({
    * Asks the session's model to turn the goal's plan document into milestones
    * (docs/plans/odyssey.md §3.1).
    *
-   * This is the only way a document becomes a plan: Odyssey hands over the
+   * This is the only way a document becomes a plan: Super Thing hands over the
    * text and reads the block that comes back. It never parses the document
    * itself, and the goal stays a draft until the user starts it, so a plan
    * that came out of a file is always seen by a human before it runs.
@@ -2575,11 +2580,11 @@ export const useStore = create<State>((set, get) => ({
         odysseyId: view.goal.id,
         kind: "check",
         milestoneId,
-        summary: `Odyssey ran the check for milestone ${index + 1}: ${outcome.passed ? "passed" : "failed"}`,
+        summary: `Super Thing ran the check for milestone ${index + 1}: ${outcome.passed ? "passed" : "failed"}`,
         detail: outcome.summary,
       });
       if (outcome.passed) {
-        get().odysseyQueueDelta(sessionId, { kind: "verified", milestone: index + 1, title: milestone.title, evidence: `${outcome.summary} (check run by Odyssey)` });
+        get().odysseyQueueDelta(sessionId, { kind: "verified", milestone: index + 1, title: milestone.title, evidence: `${outcome.summary} (check run by Super Thing)` });
       } else {
         get().odysseyQueueDelta(sessionId, {
           kind: "check_failed",
@@ -3440,7 +3445,7 @@ export const useStore = create<State>((set, get) => ({
     if (running || detached > 0 || agents > 0) {
       const parts = [];
       if (running) parts.push("a turn is still running");
-      if (agents > 0) parts.push(`${agents} subagent${agents === 1 ? " is" : "s are"} still working and will be killed with it (only what they wrote to docs/odyssey/agents/ survives)`);
+      if (agents > 0) parts.push(`${agents} subagent${agents === 1 ? " is" : "s are"} still working and will be killed with it (only what they wrote to docs/super-thing/agents/ survives)`);
       if (detached > 0) parts.push(`${detached} detached background call(s) are active`);
       let confirmed = false;
       try {

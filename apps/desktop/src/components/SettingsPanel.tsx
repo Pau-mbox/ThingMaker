@@ -286,7 +286,7 @@ export function SettingsPanel() {
       </section>
 
       <section>
-        <h3>Odyssey</h3>
+        <h3>Super Thing</h3>
         <p className="small muted">
           Defaults for a new goal (docs/plans/odyssey.md). A goal keeps whatever ceiling it was created with, so raising these never loosens a goal that is
           already running.
@@ -342,7 +342,7 @@ export function SettingsPanel() {
             }}
             value={settings?.odysseyMaxContinuations ?? 10}
           />
-          <span className="small muted">Odyssey stops after this many continuations whatever state the goal is in. Keep it low until you have watched a full run.</span>
+          <span className="small muted">Super Thing stops after this many continuations whatever state the goal is in. Keep it low until you have watched a full run.</span>
         </label>
         <label className="field">
           <span className="small">Token budget for a new goal</span>

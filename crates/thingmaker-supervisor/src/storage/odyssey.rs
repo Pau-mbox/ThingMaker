@@ -1,4 +1,4 @@
-//! Odyssey goals: the record behind the long-horizon runner
+//! Super Thing goals: the record behind the long-horizon runner
 //! (docs/plans/odyssey.md).
 //!
 //! This module only stores and reads. It never decides that a milestone is
@@ -488,7 +488,7 @@ pub struct NewOdyssey {
     pub max_continuations: i64,
     #[serde(default)]
     pub token_budget: Option<i64>,
-    /// A plan document to hand to the model, and where it came from. Odyssey
+    /// A plan document to hand to the model, and where it came from. Super Thing
     /// does not read it for milestones; the session's model proposes those.
     #[serde(default)]
     pub plan_source: Option<String>,
@@ -916,7 +916,7 @@ impl Storage {
     ///
     /// `odysseys.session_id` references `sessions(id)` — the desktop record —
     /// not the id the agent uses on the wire. The renderer only knows the
-    /// agent's id, so every Odyssey command resolves it here; passing it
+    /// agent's id, so every Super Thing command resolves it here; passing it
     /// straight through fails the foreign key. `create` upserts the row, under
     /// `provider`, for a session the desktop has not recorded yet.
     pub fn odyssey_session_row(
@@ -971,7 +971,7 @@ impl Storage {
     /// A goal has exactly one session at a time, for the life of that session
     /// — but not for the life of the goal. Re-pointing is what makes a restart
     /// keep its run, and what failover is built out of: the record, the plan,
-    /// the journal and `docs/odyssey/STATE.md` carry the run across, and the
+    /// the journal and `docs/super-thing/STATE.md` carry the run across, and the
     /// transcript does not (it never could — another orchestrator is a
     /// different account and a different program).
     ///

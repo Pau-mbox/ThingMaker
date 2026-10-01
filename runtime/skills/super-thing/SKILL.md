@@ -1,11 +1,11 @@
 ---
-name: odyssey
-description: The protocol for working under Odyssey, ThingMaker's long-horizon goal runner — how to turn a plan document into milestones, how to fold a change the user asks for mid-run into the plan, how continuations arrive, how to report a milestone, which check decides that a milestone is done, how to delegate verification to a subagent, how to keep the handoff note and subagent notes the run reads back, and what the run states mean. Use when a prompt says you are working under Odyssey, when you are asked to plan a goal from a document, when you are asked to continue a milestone, or when you need the exact report or plan line.
+name: super-thing
+description: The protocol for working under Super Thing, ThingMaker's long-horizon goal runner — how to turn a plan document into milestones, how to fold a change the user asks for mid-run into the plan, how continuations arrive, how to report a milestone, which check decides that a milestone is done, how to delegate verification to a subagent, how to keep the handoff note and subagent notes the run reads back, and what the run states mean. Use when a prompt says you are working under Super Thing, when you are asked to plan a goal from a document, when you are asked to continue a milestone, or when you need the exact report or plan line.
 ---
 
-# Working under Odyssey
+# Working under Super Thing
 
-Odyssey is the ThingMaker runner for goals that take longer than one turn.
+Super Thing is the ThingMaker runner for goals that take longer than one turn.
 It holds an ordered list of milestones, submits your continuations, records
 what happened, and parks the run when the account's usage window is spent.
 
@@ -15,20 +15,20 @@ and you must not wait for a human between milestones.
 ## Planning a goal from a document
 
 A goal can be created from a roadmap or tech plan the user dropped on it.
-Odyssey does not parse that document: it hands you the whole thing and you
+Super Thing does not parse that document: it hands you the whole thing and you
 propose the plan. You will get a prompt that says it is planning only.
 
 Reply with nothing but this block:
 
 ```text
-ODYSSEY-PLAN
+SUPERTHING-PLAN
 milestone: <title>
 detail: <one line, optional>
 section: <the heading or line range of the document this milestone comes from, optional>
 check: <manual | command <cmd> | tests_pass <cmd> | files_exist <paths>>
 step: <task title, repeatable — three to eight per milestone, in order>
 depends: <numbers of earlier tasks in this milestone the one above waits for, optional>
-END-ODYSSEY-PLAN
+END-SUPERTHING-PLAN
 ```
 
 Repeat the `milestone:` group once per milestone, in the order the work has to
@@ -45,7 +45,7 @@ above them; `depends:` attaches to the `step:` above it.
   one thing a subagent can be given. `depends: 1, 2` under a task says it
   waits for tasks 1 and 2 of the same milestone. The run tracks tasks — who
   ran each and when — so make them units of work, not headings.
-- **A check is a command Odyssey will run itself**, in the workspace root, and
+- **A check is a command Super Thing will run itself**, in the workspace root, and
   its exit code is what marks the milestone done. The planning prompt names
   the project's test command when the user has set one; use
   `tests_pass <that command>` for every milestone unless the document names a
@@ -65,7 +65,7 @@ seen it.
 
 ## The loop
 
-1. Odyssey submits a **briefing** once per session: the goal, the milestones,
+1. Super Thing submits a **briefing** once per session: the goal, the milestones,
    each milestone's check, the stop condition and the continuation budget. A
    goal can outlive the session it started in — see *You may be picking up
    someone else's run* — and each new session is briefed from the record.
@@ -81,7 +81,7 @@ seen it.
    milestone's check, records the result, and goes round again.
 
 A gap between turns is normal. It usually means the usage window was spent and
-Odyssey is waiting for the provider's quota to reset. Nothing failed.
+Super Thing is waiting for the provider's quota to reset. Nothing failed.
 
 ## When the user changes the plan mid-run
 
@@ -108,7 +108,7 @@ happened.
 Reply with this block, in the same reply as any other work:
 
 ```text
-ODYSSEY-AMEND
+SUPERTHING-AMEND
 add: <title>
 after: <milestone number, or "end">
 detail: <one line, optional>
@@ -136,7 +136,7 @@ step: <each task that replaces it, repeatable>
 depends: <numbers of the milestone's tasks the one above waits for, optional>
 move_task: <task number>
 after: <task number in the same milestone, or "start">
-END-ODYSSEY-AMEND
+END-SUPERTHING-AMEND
 ```
 
 - Use as many `add:` / `revise:` / `drop:` groups as you need; the keys under
@@ -146,7 +146,7 @@ END-ODYSSEY-AMEND
 - **A verified milestone cannot be revised or dropped.** A check ran on it, or
   the user ticked it; that is settled. Add a new milestone instead.
 - `check:` follows the same rule as the plan block: name one of the four kinds
-  or it is read as `manual`. Odyssey runs what you name.
+  or it is read as `manual`. Super Thing runs what you name.
 - If the request needs no change to the plan, say so and send **no block**.
   That is a real answer. Do not invent a milestone to look responsive.
 
@@ -178,7 +178,7 @@ happens to you is the user's problem:
   bounded pieces; note in `STATE.md` that you did and why. Never block or ask for
   this: which account pays is already decided by the configuration you were
   given, and the user would rather the work happened.
-- **A worker died mid-task.** Read `docs/odyssey/agents/` and the tree,
+- **A worker died mid-task.** Read `docs/super-thing/agents/` and the tree,
   finish what it left, and carry on.
 - **A tool is slow or timed out once.** Retry it alone; two suites on one
   editor collide. Never run a check while the runner's own check may be
@@ -200,14 +200,14 @@ conflict, a failure that has recurred after honest attempts, a permission you
 cannot grant yourself. For those, one line in your reply:
 
 ```text
-ODYSSEY-ASK: kind=<ambiguity|architecture|conflict|failure|permission> default=<what you do until you hear back> options=<a | b | c, optional> question=<one line>
+SUPERTHING-ASK: kind=<ambiguity|architecture|conflict|failure|permission> default=<what you do until you hear back> options=<a | b | c, optional> question=<one line>
 ```
 
 Examples:
 
 ```text
-ODYSSEY-ASK: kind=architecture default=continuing with plain C# classes options=ECS | plain classes question=Should the economy simulation move to an ECS layout before milestone 8 builds on it?
-ODYSSEY-ASK: kind=failure default=leaving the PlayMode suite skipped and noting it in STATE.md question=The touch-input PlayMode tests fail only on the CI editor after three fixes; may I mark them known-flaky for M6?
+SUPERTHING-ASK: kind=architecture default=continuing with plain C# classes options=ECS | plain classes question=Should the economy simulation move to an ECS layout before milestone 8 builds on it?
+SUPERTHING-ASK: kind=failure default=leaving the PlayMode suite skipped and noting it in STATE.md question=The touch-input PlayMode tests fail only on the CI editor after three fixes; may I mark them known-flaky for M6?
 ```
 
 - **Never wait for the answer.** Name the default you are following and carry
@@ -227,7 +227,7 @@ ODYSSEY-ASK: kind=failure default=leaving the PlayMode suite skipped and noting 
 End your final message with one line, exactly this shape:
 
 ```text
-ODYSSEY-REPORT: milestone=<n> status=<complete|blocked> note=<one line>
+SUPERTHING-REPORT: milestone=<n> status=<complete|blocked> note=<one line>
 ```
 
 - `milestone` is the 1-based number from the briefing's list.
@@ -244,15 +244,15 @@ ODYSSEY-REPORT: milestone=<n> status=<complete|blocked> note=<one line>
 Examples that parse:
 
 ```text
-ODYSSEY-REPORT: milestone=2 status=complete note=onboarding screens build and render
-ODYSSEY-REPORT: milestone=4 status=blocked note=the staging credentials are missing
+SUPERTHING-REPORT: milestone=2 status=complete note=onboarding screens build and render
+SUPERTHING-REPORT: milestone=4 status=blocked note=the staging credentials are missing
 ```
 
 Rules:
 
 - **Omit the line while you are mid-work.** A missing line means "work
   continued, nothing claimed", which is the correct thing to say when it is
-  true. Odyssey simply continues.
+  true. Super Thing simply continues.
 - Write it once, as the last line. If you restate it, the last one is read.
 - A malformed line is ignored exactly like a missing one. It is never an error
   and never worth a retry.
@@ -277,16 +277,16 @@ The check decides, not your report. Each milestone has one:
 
 Two lanes can produce that evidence:
 
-- **Odyssey runs it.** It runs the milestone's command in the workspace root
+- **Super Thing runs it.** It runs the milestone's command in the workspace root
   and reads the exit code itself. This is the default and needs nothing
   from you.
-- **You run it, Odyssey reads it.** If you run the check yourself, Odyssey
+- **You run it, Super Thing reads it.** If you run the check yourself, Super Thing
   looks in *your tool results* for a shell result whose command is the
   milestone's check and takes that result's exit code.
 
 For the second lane to work, run the check **as its own shell call, with the
 command exactly as the briefing states it**. If a turn runs several commands
-and none of the results reports which command it was, Odyssey can attribute
+and none of the results reports which command it was, Super Thing can attribute
 nothing and claims nothing — the milestone stays `reported` and the check is
 run again by the desktop.
 
@@ -312,15 +312,15 @@ Two habits make the task table true:
 - **Report task moves on a line**, several per reply if several moved:
 
 ```text
-ODYSSEY-TASK: milestone=<m> task=<t> status=<in_progress|done|blocked> agent=<subagent name, optional> note=<one line, optional>
+SUPERTHING-TASK: milestone=<m> task=<t> status=<in_progress|done|blocked> agent=<subagent name, optional> note=<one line, optional>
 ```
 
   Examples:
 
 ```text
-ODYSSEY-TASK: milestone=6 task=3 status=in_progress agent=6.3-pricing-model
-ODYSSEY-TASK: milestone=6 task=3 status=done note=prices converge within 20 ticks
-ODYSSEY-TASK: milestone=6 task=5 status=blocked note=needs the harbour data from 6.4
+SUPERTHING-TASK: milestone=6 task=3 status=in_progress agent=6.3-pricing-model
+SUPERTHING-TASK: milestone=6 task=3 status=done note=prices converge within 20 ticks
+SUPERTHING-TASK: milestone=6 task=5 status=blocked note=needs the harbour data from 6.4
 ```
 
   A task's `done` is your word, like a report; the milestone's check is still
@@ -334,7 +334,7 @@ The transcript compacts, and the session you are in can be replaced by a
 fresh one. The milestone list survives both; your sense of where you are
 *inside* a milestone survives neither. So you keep it on disk.
 
-Keep `docs/odyssey/STATE.md` in the workspace. It holds, in this order:
+Keep `docs/super-thing/STATE.md` in the workspace. It holds, in this order:
 
 1. **Done** — what is finished and verified, one line each.
 2. **In flight** — the active milestone: what is built, what is not, what the
@@ -366,9 +366,9 @@ Nothing of that session's conversation comes with the goal. The record does,
 and so does everything the run wrote to the workspace. So when the briefing
 says you have inherited a run:
 
-1. Read `docs/odyssey/STATE.md` first. It is where the previous session left
+1. Read `docs/super-thing/STATE.md` first. It is where the previous session left
    off, and it was written for exactly this moment.
-2. Read `docs/odyssey/agents/`. Work that finished on disk is finished even if
+2. Read `docs/super-thing/agents/`. Work that finished on disk is finished even if
    the session that ordered it is gone.
 3. Then look at what the plan says is already done. The briefing tags each
    milestone with its state. One tagged **done — its check passed; do not
@@ -387,7 +387,7 @@ wall with their result in memory, and the next turn redid the work. So a
 result lives on disk before it is returned.
 
 - **Every subagent you raise writes its result to
-  `docs/odyssey/agents/<name>.md` before it returns** — what it did, which
+  `docs/super-thing/agents/<name>.md` before it returns** — what it did, which
   files it touched, what passed, what it could not finish. Put that
   instruction in the subagent's prompt; it is not automatic.
 - Give each subagent the handoff note path and the milestone's `section:` so
@@ -407,19 +407,19 @@ way your subagents are your own, on the same subscription as you, so
 delegate for context and independence rather than for budget.
 
 **If you are Claude Code**, raise every subagent with
-`subagent_type: odyssey-delegate`, the definition this project carries in
+`subagent_type: super-thing-delegate`, the definition this project carries in
 `.claude/agents/`. A subagent's model is a field on its definition and nowhere
 else, so the default subagent type runs on whatever the account defaults to,
 which is not what the run intends.
 
 **If you are Codex**, raise subagents the way you normally do.
 
-Whichever you are, the milestone's check is Odyssey's to run: it runs the
+Whichever you are, the milestone's check is Super Thing's to run: it runs the
 check itself rather than reading an exit code out of your tool results, so
-run the check when you want to know, and let Odyssey be the one that decides.
+run the check when you want to know, and let Super Thing be the one that decides.
 
 Everything else is the same: name each subagent after its task, and have it
-write its result to `docs/odyssey/agents/<name>.md` before it returns.
+write its result to `docs/super-thing/agents/<name>.md` before it returns.
 
 A subagent cannot ask for permission. Give a subagent work that runs within
 the permissions it already has, and keep anything that would prompt in your

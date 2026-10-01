@@ -1,5 +1,5 @@
 /**
- * O2's gate: the Odyssey screen renders a seeded goal, and the states the plan
+ * O2's gate: the Super Thing screen renders a seeded goal, and the states the plan
  * says must look different actually do.
  *
  * The screen is a view of the record, so this test seeds the store the way the
@@ -105,7 +105,7 @@ function seed(odyssey: OdysseyView | null | undefined, options: { agent?: "codex
 const openTab = (name: string) => fireEvent.click(screen.getByRole("tab", { name }));
 const openDetails = () => fireEvent.click(screen.getByRole("button", { name: "details" }));
 
-describe("the Odyssey screen", () => {
+describe("the Super Thing screen", () => {
   beforeEach(() => {
     useStore.setState({ sessions: {}, odyssey: {}, odysseyQuestions: {}, odysseyPlanChanges: {}, odysseyAmendments: {}, odysseyNotes: {}, error: null });
   });
@@ -283,9 +283,9 @@ describe("the Odyssey screen", () => {
     seed(view);
     render(<OdysseyPane sessionId={SESSION} />);
     const badges = screen.getAllByRole("button", { name: /Verified/ });
-    // m2 was checked by Odyssey; opening it shows the lane and the output.
+    // m2 was checked by Super Thing; opening it shows the lane and the output.
     fireEvent.click(badges[1] as HTMLElement);
-    expect(screen.getByText("check run by Odyssey", { exact: false })).toBeTruthy();
+    expect(screen.getByText("check run by Super Thing", { exact: false })).toBeTruthy();
     expect(screen.getByText(/Tests 63 passed/)).toBeTruthy();
   });
 
@@ -324,7 +324,7 @@ describe("the Odyssey screen", () => {
     seed(view);
     render(<OdysseyPane sessionId={SESSION} />);
 
-    expect(within(screen.getByRole("status")).getByText("Odyssey has not been able to act for 12m: a turn is already running")).toBeTruthy();
+    expect(within(screen.getByRole("status")).getByText("Super Thing has not been able to act for 12m: a turn is already running")).toBeTruthy();
   });
 
   it("does not warn while the wait is still ordinary", () => {
@@ -439,8 +439,8 @@ describe("the Odyssey screen", () => {
     useStore.setState({
       odysseyNotes: {
         [SESSION]: {
-          state: { path: "docs/odyssey/STATE.md", bytes: 900, modifiedAtUnixMs: Date.now() - 5 * 60_000 },
-          agentNotes: [{ path: "docs/odyssey/agents/a.md", bytes: 1, modifiedAtUnixMs: Date.now() }],
+          state: { path: "docs/super-thing/STATE.md", bytes: 900, modifiedAtUnixMs: Date.now() - 5 * 60_000 },
+          agentNotes: [{ path: "docs/super-thing/agents/a.md", bytes: 1, modifiedAtUnixMs: Date.now() }],
         },
       },
     });
@@ -519,7 +519,7 @@ describe("the Odyssey screen", () => {
     });
     render(<OdysseyPane sessionId={SESSION} />);
     // The question and the plan change; milestone 4's claim has a command
-    // check, which Odyssey runs itself, so it is not the user's decision.
+    // check, which Super Thing runs itself, so it is not the user's decision.
     expect(screen.getByRole("tab", { name: "Inbox (2)" })).toBeTruthy();
     openTab("Inbox (2)");
     expect(screen.getByText("Architectural fork")).toBeTruthy();
@@ -586,7 +586,7 @@ describe("a goal planned from a document", () => {
           milestone({ id: "n2", title: "Phase two", position: 1 }),
         ],
         journal: [
-          { id: "p2", odysseyId: "o1", at: 2, kind: "plan", summary: "The agent proposed 2 milestones from roadmap.md", detail: "1 milestone has a check Odyssey can run." },
+          { id: "p2", odysseyId: "o1", at: 2, kind: "plan", summary: "The agent proposed 2 milestones from roadmap.md", detail: "1 milestone has a check Super Thing can run." },
           { id: "p1", odysseyId: "o1", at: 1, kind: "plan", summary: PLAN_REQUESTED },
         ],
       }),
@@ -596,8 +596,8 @@ describe("a goal planned from a document", () => {
     // Scoped to the card: the journal footer repeats the latest entry too.
     const card = within(screen.getByRole("region", { name: "Plan document" }));
     expect(card.getByText(/The agent proposed 2 milestones from roadmap.md/)).toBeTruthy();
-    expect(card.getByText(/the agent.s reading of the document, not Odyssey.s/)).toBeTruthy();
-    expect(card.getByText(/1 of them has a check Odyssey will run in this workspace/)).toBeTruthy();
+    expect(card.getByText(/the agent.s reading of the document, not Super Thing.s/)).toBeTruthy();
+    expect(card.getByText(/1 of them has a check Super Thing will run in this workspace/)).toBeTruthy();
     // Now it can be started, and starting is the approval.
     expect((screen.getByRole("button", { name: "Start" }) as HTMLButtonElement).disabled).toBe(false);
     expect(screen.getByText(/Starting accepts the plan as it stands/)).toBeTruthy();
@@ -620,7 +620,7 @@ describe("a goal planned from a document", () => {
     seed(
       planned({
         journal: [
-          { id: "p2", odysseyId: "o1", at: 2, kind: "plan", summary: "The agent proposed no plan", detail: "Its reply contained no ODYSSEY-PLAN block." },
+          { id: "p2", odysseyId: "o1", at: 2, kind: "plan", summary: "The agent proposed no plan", detail: "Its reply contained no SUPERTHING-PLAN block." },
           { id: "p1", odysseyId: "o1", at: 1, kind: "plan", summary: PLAN_REQUESTED },
         ],
       }),

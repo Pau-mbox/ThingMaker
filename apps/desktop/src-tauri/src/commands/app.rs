@@ -36,7 +36,7 @@ pub struct NotificationSettings {
     pub quiet_hours_end: String,
     pub muted_workspace_ids: Vec<String>,
     pub close_behavior: CloseBehavior,
-    /// Odyssey defaults for a new goal (docs/plans/odyssey.md §7). Held low
+    /// Super Thing defaults for a new goal (docs/plans/odyssey.md §7). Held low
     /// until a full run has been watched; a goal keeps whatever ceiling it was
     /// created with, so raising this never loosens a running goal.
     pub odyssey_max_continuations: i64,
@@ -102,10 +102,10 @@ pub fn settings_set(settings: NotificationSettings, state: State<'_, AppState>) 
     // A goal that could not continue at all, or a nonsense budget, would be a
     // setting that quietly breaks the runner.
     if settings.odyssey_max_continuations < 1 || settings.odyssey_max_continuations > 10_000 {
-        return Err(DesktopError::io("the Odyssey continuation limit must be between 1 and 10000"));
+        return Err(DesktopError::io("the Super Thing continuation limit must be between 1 and 10000"));
     }
     if settings.odyssey_token_budget.is_some_and(|budget| budget < 1) {
-        return Err(DesktopError::io("an Odyssey token budget must be positive, or unset"));
+        return Err(DesktopError::io("a Super Thing token budget must be positive, or unset"));
     }
     if [&settings.claude_orchestrator_model, &settings.claude_orchestrator_effort].iter().any(|value| value.as_ref().is_some_and(|text| text.len() > 128)) {
         return Err(DesktopError::io("the Claude model or effort is not a valid id"));

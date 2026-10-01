@@ -2,7 +2,7 @@
  * What a run is doing, and what it has done
  * (docs/plans/odyssey-observability.md §2, §3).
  *
- * Odyssey's own screen is a view of the record — what has settled — and the
+ * Super Thing's own screen is a view of the record — what has settled — and the
  * transcript is a view of the stream. A long-horizon run lives between them:
  * it is mostly waiting, and "is it moving, on what, and why" was in neither
  * place. These two panels put it there.
@@ -290,7 +290,7 @@ function resetLabel(window: UsageWindow, now: number): string | null {
  * What is left on the account, in absolute terms.
  *
  * The card could say "usage is spent" while showing no numbers, so there was
- * no way to tell whether Odyssey was reading the same thing the provider's own
+ * no way to tell whether Super Thing was reading the same thing the provider's own
  * meter showed. These are the numbers the wait is decided from.
  */
 export function UsageWindows({ usage, agent = "codex" }: { usage: UsageSnapshot | null | undefined; agent?: Provider }) {

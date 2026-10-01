@@ -49,7 +49,7 @@ vi.mock("./ipc", () => ({
     odysseyEditGoal: vi.fn(async () => ({})),
     odysseyClaudePreflight: vi.fn(async () => ({ available: true })),
     sessionCancel: vi.fn(async () => undefined),
-    odysseyInstallSkill: vi.fn(async () => ({ path: "/home/.agents/skills/odyssey/SKILL.md", changed: false })),
+    odysseyInstallSkill: vi.fn(async () => ({ path: "/home/.agents/skills/super-thing/SKILL.md", changed: false })),
     odysseyRunCheck: vi.fn(async () => ({ outcome: { passed: true, exitCode: 0, summary: "`pnpm test` exited 0", output: "Tests 12 passed (12)", durationMs: 900, timedOut: false }, milestone: {} })),
     sessionSubmit: vi.fn(async () => ({ outcome: { outcome: "accepted" } })),
     sessionTokenUsage: vi.fn(async () => ({ totals: TOTALS(5_000, 500) })),
@@ -188,7 +188,7 @@ describe("the runner's wiring", () => {
     // The briefing offers the skill, so the skill is installed first.
     expect(api.odysseyInstallSkill).toHaveBeenCalled();
     expect(api.sessionSubmit).toHaveBeenCalledTimes(1);
-    expect(api.sessionSubmit.mock.calls[0]?.[3] ?? api.sessionSubmit.mock.calls[0]?.[2]).toContain("You are working under Odyssey");
+    expect(api.sessionSubmit.mock.calls[0]?.[3] ?? api.sessionSubmit.mock.calls[0]?.[2]).toContain("You are working under Super Thing");
     const briefing = api.odysseyJournalAppend.mock.calls.map(([request]) => request).find((request) => request.kind === "briefing");
     expect(JSON.parse(briefing?.detail ?? "{}")).toEqual({ startTokens: 5_500 });
   });
@@ -223,7 +223,7 @@ describe("the runner's wiring", () => {
     expect(api.sessionSubmit).toHaveBeenCalledTimes(1);
     const text = api.sessionSubmit.mock.calls[0]?.[2] as string;
     expect(text).toContain("Continue. Milestone 2/2: Build screens.");
-    expect(text).not.toContain("You are working under Odyssey");
+    expect(text).not.toContain("You are working under Super Thing");
     expect(api.odysseySetMilestoneState).toHaveBeenCalledWith("m2", "active");
     // The checkpoint is written before the prompt goes out.
     expect(api.odysseyJournalAppend.mock.calls.map(([r]) => r.kind)).toContain("checkpoint");
@@ -466,7 +466,7 @@ describe("verifying a milestone", () => {
     session.projection.toolCalls.set(id, { rawOutput: output } as never);
   }
 
-  function reported(text = "ODYSSEY-REPORT: milestone=2 status=complete note=screens built") {
+  function reported(text = "SUPERTHING-REPORT: milestone=2 status=complete note=screens built") {
     const session = useStore.getState().sessions[SESSION]!;
     session.projection.cards.push({
       kind: "message",
@@ -615,7 +615,7 @@ describe("the skill the briefing points at", () => {
     await useStore.getState().odysseyTick(SESSION);
 
     const text = api.sessionSubmit.mock.calls[0]?.[2] as string;
-    expect(text).toContain("You are working under Odyssey");
+    expect(text).toContain("You are working under Super Thing");
     expect(text).not.toContain("odyssey` skill");
   });
 
@@ -628,7 +628,7 @@ describe("the skill the briefing points at", () => {
 
 /**
  * Planning a goal from a document (docs/plans/odyssey.md §3.1). The rule these
- * tests protect: Odyssey never reads the document for milestones, and the plan
+ * tests protect: Super Thing never reads the document for milestones, and the plan
  * the model proposes lands as a draft nobody has started.
  */
 describe("planning a goal from a document", () => {
@@ -658,14 +658,14 @@ describe("planning a goal from a document", () => {
 
   const PLAN_REPLY = `Read it.
 
-ODYSSEY-PLAN
+SUPERTHING-PLAN
 milestone: Phase one
 detail: Do the thing.
 check: tests_pass cargo test
 step: first
 step: second
 milestone: Phase two
-END-ODYSSEY-PLAN`;
+END-SUPERTHING-PLAN`;
 
   it("submits the document to the model rather than parsing it", async () => {
     seed(draft());
@@ -678,7 +678,7 @@ END-ODYSSEY-PLAN`;
     expect(api.odysseyPlanDocument).toHaveBeenCalledWith("o1");
     const text = api.sessionSubmit.mock.calls[0]?.[2] as string;
     expect(text).toContain("## Phase one");
-    expect(text).toContain("ODYSSEY-PLAN");
+    expect(text).toContain("SUPERTHING-PLAN");
     expect(text).toContain("roadmap.md");
     // Planning only: no milestone is written by asking.
     expect(api.odysseyAddMilestone).not.toHaveBeenCalled();
@@ -749,7 +749,7 @@ END-ODYSSEY-PLAN`;
       ...draft(),
       milestones: [{ id: "new1", odysseyId: "o1", position: 0, title: "Phase one", detail: "", state: "planned", checkKind: "manual", steps: [] }],
     } as never);
-    replied("ODYSSEY-PLAN\nmilestone: Phase one\nstep: Model\nstep: Pricing\ndepends: 1\nEND-ODYSSEY-PLAN");
+    replied("SUPERTHING-PLAN\nmilestone: Phase one\nstep: Model\nstep: Pricing\ndepends: 1\nEND-SUPERTHING-PLAN");
     await useStore.getState().odysseyOnSettle(SESSION, "succeeded");
 
     expect(api.odysseyAddStep.mock.calls.map(([, title]) => title)).toEqual(["Model", "Pricing"]);
@@ -843,7 +843,7 @@ describe("a run that cannot act", () => {
     await useStore.getState().odysseyTick(SESSION);
 
     const guard = api.odysseyJournalAppend.mock.calls.map(([request]) => request).find((request) => request.kind === "guard");
-    expect(guard?.summary).toMatch(/^Odyssey has not been able to act for 6m: a turn is already running$/);
+    expect(guard?.summary).toMatch(/^Super Thing has not been able to act for 6m: a turn is already running$/);
     expect(useStore.getState().odysseyRuntime[SESSION]!.stallNotified).toBe(true);
   });
 
@@ -875,7 +875,7 @@ describe("a run that cannot act", () => {
 /**
  * Resuming after a reload. Renderer changes drop every bit of in-memory
  * bookkeeping, so a run has to come back from the record alone — otherwise
- * shipping an improvement to Odyssey would silently stop the goal it was
+ * shipping an improvement to Super Thing would silently stop the goal it was
  * meant to help.
  */
 /**
@@ -1012,7 +1012,7 @@ describe("picking a run back up after a reload", () => {
     await flush();
 
     const text = api.sessionSubmit.mock.calls[0]?.[2] as string;
-    expect(text).not.toContain("You are working under Odyssey");
+    expect(text).not.toContain("You are working under Super Thing");
   });
 
   it("leaves a paused or blocked goal alone, because resuming is the user's call", async () => {
@@ -1142,7 +1142,7 @@ describe("amending a running goal", () => {
         blocks: [
           {
             type: "text",
-            text: "ODYSSEY-AMEND\nadd: Ship art pipeline\nafter: 1\nstep: Import the sprites\nrevise: 2\ntitle: Build screens with ships\nEND-ODYSSEY-AMEND",
+            text: "SUPERTHING-AMEND\nadd: Ship art pipeline\nafter: 1\nstep: Import the sprites\nrevise: 2\ntitle: Build screens with ships\nEND-SUPERTHING-AMEND",
           },
         ],
         contentUnknown: false,
@@ -1164,7 +1164,7 @@ describe("amending a running goal", () => {
     session.projection.cards.push({
       kind: "message",
       key: "m",
-      message: { key: "m", role: "agent", messageId: "1", blocks: [{ type: "text", text: "ODYSSEY-AMEND\ndrop: 1\nreason: no longer needed\nEND-ODYSSEY-AMEND" }], contentUnknown: false },
+      message: { key: "m", role: "agent", messageId: "1", blocks: [{ type: "text", text: "SUPERTHING-AMEND\ndrop: 1\nreason: no longer needed\nEND-SUPERTHING-AMEND" }], contentUnknown: false },
     } as never);
 
     await useStore.getState().odysseyOnSettle(SESSION, "succeeded");
@@ -1198,7 +1198,7 @@ describe("amending a running goal", () => {
     session.projection.cards.push({
       kind: "message",
       key: "m",
-      message: { key: "m", role: "agent", messageId: "1", blocks: [{ type: "text", text: "ODYSSEY-AMEND\nadd: Ship art pipeline\nEND-ODYSSEY-AMEND" }], contentUnknown: false },
+      message: { key: "m", role: "agent", messageId: "1", blocks: [{ type: "text", text: "SUPERTHING-AMEND\nadd: Ship art pipeline\nEND-SUPERTHING-AMEND" }], contentUnknown: false },
     } as never);
     await useStore.getState().odysseyOnSettle(SESSION, "succeeded");
 
@@ -1381,7 +1381,7 @@ describe("reading the report from the turn that produced it", () => {
   it("ignores a report line written before this turn", async () => {
     seed(view());
     const session = useStore.getState().sessions[SESSION]!;
-    session.projection.cards.push(agentCard("old", "ODYSSEY-REPORT: milestone=2 status=complete note=screens built"));
+    session.projection.cards.push(agentCard("old", "SUPERTHING-REPORT: milestone=2 status=complete note=screens built"));
     await useStore.getState().odysseyTick(SESSION);
     api.sessionTokenUsage.mockResolvedValue({ totals: TOTALS(6_000, 800) } as never);
     await useStore.getState().odysseyOnSettle(SESSION, "succeeded");
@@ -1392,7 +1392,7 @@ describe("reading the report from the turn that produced it", () => {
   it("reads a report written during this turn", async () => {
     seed(view());
     const session = useStore.getState().sessions[SESSION]!;
-    session.projection.cards.push(agentCard("old", "ODYSSEY-REPORT: milestone=1 status=complete note=earlier"));
+    session.projection.cards.push(agentCard("old", "SUPERTHING-REPORT: milestone=1 status=complete note=earlier"));
     await useStore.getState().odysseyTick(SESSION);
     session.projection.cards.push(agentCard("new", "done\nODYSSEY-REPORT: milestone=2 status=complete note=screens built"));
     api.sessionTokenUsage.mockResolvedValue({ totals: TOTALS(6_000, 800) } as never);
@@ -1410,7 +1410,7 @@ describe("reading the report from the turn that produced it", () => {
     ];
     seed(current);
     const session = useStore.getState().sessions[SESSION]!;
-    session.projection.cards.push(agentCard("m", "ODYSSEY-REPORT: milestone=2 status=complete note=screens built"));
+    session.projection.cards.push(agentCard("m", "SUPERTHING-REPORT: milestone=2 status=complete note=screens built"));
     await useStore.getState().odysseyOnSettle(SESSION, "succeeded");
 
     expect(api.odysseyRecordReport).not.toHaveBeenCalled();
@@ -1443,16 +1443,16 @@ describe("what a turn is told and what it leaves behind", () => {
   it("tells the model where its handoff note is, and which subagent notes are new", async () => {
     const now = Date.now();
     api.odysseyWorkspaceNotes.mockResolvedValue({
-      state: { path: "docs/odyssey/STATE.md", bytes: 10, modifiedAtUnixMs: now - 2 * 60_000 },
-      agentNotes: [{ path: "docs/odyssey/agents/economy.md", bytes: 5, modifiedAtUnixMs: now }],
+      state: { path: "docs/super-thing/STATE.md", bytes: 10, modifiedAtUnixMs: now - 2 * 60_000 },
+      agentNotes: [{ path: "docs/super-thing/agents/economy.md", bytes: 5, modifiedAtUnixMs: now }],
     } as never);
     seed(view());
     await useStore.getState().odysseyTick(SESSION);
 
     const text = api.sessionSubmit.mock.calls[0]?.[2] as string;
-    expect(text).toContain("Handoff note: `docs/odyssey/STATE.md` (updated 2m ago)");
-    expect(text).toContain("Subagent notes written since your last turn: `docs/odyssey/agents/economy.md`");
-    expect(useStore.getState().odysseyNotes[SESSION]?.state?.path).toBe("docs/odyssey/STATE.md");
+    expect(text).toContain("Handoff note: `docs/super-thing/STATE.md` (updated 2m ago)");
+    expect(text).toContain("Subagent notes written since your last turn: `docs/super-thing/agents/economy.md`");
+    expect(useStore.getState().odysseyNotes[SESSION]?.state?.path).toBe("docs/super-thing/STATE.md");
   });
 
   it("asks for the handoff note to be created when there is none", async () => {
@@ -1593,7 +1593,7 @@ describe("tasks inside milestones", () => {
 
   it("appends tasks named in a revise after the milestone's own, numbering those first", async () => {
     seed(withTasks());
-    await useStore.getState().odysseyApplyAmendment(SESSION, "ODYSSEY-AMEND\nrevise: 2\nstep: Validation\ndepends: 1, 2\nEND-ODYSSEY-AMEND");
+    await useStore.getState().odysseyApplyAmendment(SESSION, "SUPERTHING-AMEND\nrevise: 2\nstep: Validation\ndepends: 1, 2\nEND-SUPERTHING-AMEND");
 
     expect(api.odysseyAddStep).toHaveBeenCalledWith("m2", "Validation");
     expect(api.odysseyEditStep).toHaveBeenCalledWith("step-Validation", { dependsOn: ["t1", "t2"] });
@@ -1628,7 +1628,7 @@ describe("replanning as a diff the user decides on", () => {
   it("holds the agent's block as a proposal, shows the diff, and tells the agent to work to the current plan", async () => {
     seed(reviewed());
     const session = useStore.getState().sessions[SESSION]!;
-    session.projection.cards.push(agentCard("m", "ODYSSEY-AMEND\nsplit_task: 2.2\nstep: Price model\nstep: Slippage\nreason: two owners\nEND-ODYSSEY-AMEND"));
+    session.projection.cards.push(agentCard("m", "SUPERTHING-AMEND\nsplit_task: 2.2\nstep: Price model\nstep: Slippage\nreason: two owners\nEND-SUPERTHING-AMEND"));
     await useStore.getState().odysseyOnSettle(SESSION, "succeeded");
 
     expect(api.odysseyAddStep).not.toHaveBeenCalled();
@@ -1679,7 +1679,7 @@ describe("replanning as a diff the user decides on", () => {
     const current = reviewed();
     current.goal.onPlanChange = "auto";
     seed(current);
-    await useStore.getState().odysseyApplyAmendment(SESSION, "ODYSSEY-AMEND\ndrop_task: 2.2\nreason: folded into 2.1\nmove_task: 2.3\nafter: start\nEND-ODYSSEY-AMEND");
+    await useStore.getState().odysseyApplyAmendment(SESSION, "SUPERTHING-AMEND\ndrop_task: 2.2\nreason: folded into 2.1\nmove_task: 2.3\nafter: start\nEND-SUPERTHING-AMEND");
     expect(api.odysseyEditStep).toHaveBeenCalledWith("t3", { dependsOn: ["t1"] });
     expect(api.odysseyDeleteStep).toHaveBeenCalledWith("t2");
     expect(api.odysseyReorderSteps).toHaveBeenCalledWith("m2", ["t3", "t1", "t2"]);
@@ -1716,7 +1716,7 @@ describe("the default: tasks are the agent's, milestones are the user's", () => 
     const current = view();
     current.goal.onPlanChange = "tasks_auto";
     seed(current);
-    await useStore.getState().odysseyApplyAmendment(SESSION, "ODYSSEY-AMEND\nrevise: 2\nstep: Pricing\nstep: Validation\ndepends: 1\nadd: Risk layer\nafter: 2\nEND-ODYSSEY-AMEND");
+    await useStore.getState().odysseyApplyAmendment(SESSION, "SUPERTHING-AMEND\nrevise: 2\nstep: Pricing\nstep: Validation\ndepends: 1\nadd: Risk layer\nafter: 2\nEND-SUPERTHING-AMEND");
 
     // The tasks exist now; the new milestone waits in the inbox.
     expect(api.odysseyAddStep.mock.calls.map(([, title]) => title)).toEqual(["Pricing", "Validation"]);
@@ -1730,7 +1730,7 @@ describe("the default: tasks are the agent's, milestones are the user's", () => 
     const current = view();
     current.goal.onPlanChange = "tasks_auto";
     seed(current);
-    await useStore.getState().odysseyApplyAmendment(SESSION, "ODYSSEY-AMEND\nrevise: 2\ntitle: Screens and flows\nEND-ODYSSEY-AMEND");
+    await useStore.getState().odysseyApplyAmendment(SESSION, "SUPERTHING-AMEND\nrevise: 2\ntitle: Screens and flows\nEND-SUPERTHING-AMEND");
     expect(api.odysseyEditMilestone).not.toHaveBeenCalled();
     expect(api.odysseyPlanChangeAdd).toHaveBeenCalledWith(expect.objectContaining({ state: "proposed" }));
   });
@@ -1746,7 +1746,7 @@ describe("a blocked report about a quota is a wait, not a block", () => {
   it("keeps the goal running, leaves the milestone alone, and holds the next prompt", async () => {
     seed(view());
     const session = useStore.getState().sessions[SESSION]!;
-    session.projection.cards.push(agentCard("m", "ODYSSEY-REPORT: milestone=2 status=blocked note=Awaiting the delegate quota reset at 00:40; nothing changed."));
+    session.projection.cards.push(agentCard("m", "SUPERTHING-REPORT: milestone=2 status=blocked note=Awaiting the delegate quota reset at 00:40; nothing changed."));
     await useStore.getState().odysseyOnSettle(SESSION, "succeeded");
 
     expect(api.odysseySetState).not.toHaveBeenCalledWith("o1", "blocked");
@@ -1765,7 +1765,7 @@ describe("a blocked report about a quota is a wait, not a block", () => {
   it("still blocks on a reason that is not a wait", async () => {
     seed(view());
     const session = useStore.getState().sessions[SESSION]!;
-    session.projection.cards.push(agentCard("m", "ODYSSEY-REPORT: milestone=2 status=blocked note=the staging credentials are missing"));
+    session.projection.cards.push(agentCard("m", "SUPERTHING-REPORT: milestone=2 status=blocked note=the staging credentials are missing"));
     await useStore.getState().odysseyOnSettle(SESSION, "succeeded");
     expect(api.odysseySetState).toHaveBeenCalledWith("o1", "blocked");
   });
@@ -1870,7 +1870,7 @@ describe("re-pointing a goal at another session", () => {
     expect(api.sessionSubmit).toHaveBeenCalledTimes(1);
     const [handle, , text] = api.sessionSubmit.mock.calls[0] as [{ id: string }, string, string];
     expect(handle.id).toBe(OTHER);
-    expect(text).toContain("You are working under Odyssey");
+    expect(text).toContain("You are working under Super Thing");
     expect(text).toContain("picked up a run another session started");
     // The old session no longer holds the goal, so nothing can tick it.
     expect(useStore.getState().odyssey[SESSION]).toBeNull();

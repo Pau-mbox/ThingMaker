@@ -1,5 +1,5 @@
 /**
- * The documents a run has to read, listed and readable from the Odyssey tab.
+ * The documents a run has to read, listed and readable from the Super Thing tab.
  *
  * Three sources — the plan document, what amendments pointed at, the agent's
  * own notes — were each reachable only from somewhere else. These tests pin
@@ -97,8 +97,8 @@ const amendments: AmendmentRecord[] = [
 ];
 
 const notes: WorkspaceNotes = {
-  state: { path: "docs/odyssey/STATE.md", bytes: 900, modifiedAtUnixMs: NOW - 5 * 60_000 },
-  agentNotes: [{ path: "docs/odyssey/agents/economy.md", bytes: 300, modifiedAtUnixMs: NOW - 90 * 60_000 }],
+  state: { path: "docs/super-thing/STATE.md", bytes: 900, modifiedAtUnixMs: NOW - 5 * 60_000 },
+  agentNotes: [{ path: "docs/super-thing/agents/economy.md", bytes: 300, modifiedAtUnixMs: NOW - 90 * 60_000 }],
 };
 
 describe("what a run has to read", () => {
@@ -125,7 +125,7 @@ describe("what a run has to read", () => {
     expect(entries.find((entry) => entry.label === "Ships")).toMatchObject({ source: null, meta: "Assets/Art/Ships · 48 files · added " + new Date(NOW - 5_000).toLocaleDateString([], { day: "numeric", month: "short" }) });
     expect(entries.find((entry) => entry.label === "SHIP-CANON.md")).toMatchObject({ source: { kind: "file", path: "Docs/SHIP-CANON.md" }, markdown: true });
     expect(entries.find((entry) => entry.label === "ship-library.md")).toMatchObject({ source: { kind: "amendment", amendmentId: "a1" } });
-    expect(entries.find((entry) => entry.label === "STATE.md")?.meta).toBe("docs/odyssey/STATE.md · updated 5m ago");
+    expect(entries.find((entry) => entry.label === "STATE.md")?.meta).toBe("docs/super-thing/STATE.md · updated 5m ago");
   });
 
   it("falls back to the stored copy for a goal planned before plans had a path", () => {
@@ -208,7 +208,7 @@ describe("the documents card", () => {
     render(<DocumentsCard sessionId={SESSION} view={view} />);
     const row = screen.getByText("STATE.md").closest("li") as HTMLElement;
     fireEvent.click(within(row).getByRole("button", { name: "View" }));
-    expect(api.fileRead).toHaveBeenCalledWith("w1", "docs/odyssey/STATE.md", 0, 20_000);
+    expect(api.fileRead).toHaveBeenCalledWith("w1", "docs/super-thing/STATE.md", 0, 20_000);
     const dialog = await screen.findByRole("dialog", { name: "STATE.md" });
     await waitFor(() => expect(within(dialog).getByText(/Milestone 6 in flight/)).toBeTruthy());
   });

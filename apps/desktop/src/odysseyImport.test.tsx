@@ -2,7 +2,7 @@
  * Dropping a Markdown document onto the goal form.
  *
  * The point of the feature is that an existing roadmap can seed a goal, and
- * the point of these tests is *who reads it*: Odyssey stores the document and
+ * the point of these tests is *who reads it*: Super Thing stores the document and
  * hands it to the session's model, which proposes the milestones. Nothing is
  * parsed here, nothing is created until the button is pressed, and nothing
  * runs until the goal is started.
@@ -185,7 +185,7 @@ describe("dropping a Markdown plan on the goal form", () => {
     expect(request.sessionId).toBeUndefined();
     // And the planning turn goes out immediately, carrying the document.
     const submitted = calls.find((entry) => entry.command === "session_submit");
-    expect(submitted?.args.text ?? JSON.stringify(submitted?.args)).toContain("ODYSSEY-PLAN");
+    expect(submitted?.args.text ?? JSON.stringify(submitted?.args)).toContain("SUPERTHING-PLAN");
     expect(JSON.stringify(submitted?.args)).toContain("Build the screens");
   });
 
@@ -201,7 +201,7 @@ describe("dropping a Markdown plan on the goal form", () => {
 
   it("owns the drop while it is showing, so the composer does not also take it", () => {
     // A drop listener is webview-wide; the transcript's own handler bails on
-    // the Odyssey tab, and this is the assertion that keeps that true.
+    // the Super Thing tab, and this is the assertion that keeps that true.
     const here = dirname(fileURLToPath(import.meta.url));
     const panel = readFileSync(resolve(here, "components/SessionPanel.tsx"), "utf8");
     expect(panel).toContain('state.sessionTab === "odyssey"');

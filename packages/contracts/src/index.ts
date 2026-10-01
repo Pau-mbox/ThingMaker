@@ -625,7 +625,7 @@ export type WorktreeRemovePreview = {
 };
 
 // ---------------------------------------------------------------------------
-// Odyssey: long-horizon goals (docs/plans/odyssey.md)
+// Super Thing: long-horizon goals (docs/plans/odyssey.md)
 // ---------------------------------------------------------------------------
 
 export type OdysseyState = "draft" | "running" | "waiting_usage" | "paused" | "blocked" | "complete" | "abandoned";
@@ -639,7 +639,7 @@ export type OnReport = "wait" | "continue";
 export type OnPlanChange = "tasks_auto" | "review" | "auto";
 /** Which orchestrator a goal runs on. `either` starts where it is and moves
  *  when the account it is on is spent; the other two pin it. */
-/** Who runs an Odyssey goal. Gemini cannot lead (it takes no session MCP server). */
+/** Who runs a Super Thing goal. Gemini cannot lead (it takes no session MCP server). */
 export type Orchestrator = "claude" | "codex" | "either";
 
 /** What the Claude account said about itself when it was last asked.
@@ -824,7 +824,7 @@ export type AdoptedPlan = { path: string; copied: boolean };
 
 export type RunCheckResponse = { outcome: CheckOutcome; milestone: MilestoneRecord };
 
-/** Where the `odyssey` skill landed, and whether this call wrote it. */
+/** Where the `super-thing` skill landed, and whether this call wrote it. */
 export type SkillInstall = { path: string; changed: boolean };
 
 export type OdysseyJournalEntry = {
@@ -854,7 +854,7 @@ export type NewOdyssey = {
   onReport?: OnReport;
   maxContinuations: number;
   tokenBudget?: number;
-  /** A plan document to hand to the model, and where it came from. Odyssey
+  /** A plan document to hand to the model, and where it came from. Super Thing
    *  never reads it for milestones; the session's model proposes those. */
   planSource?: string;
   planDocument?: string;
@@ -881,9 +881,9 @@ export type GoalEdit = {
 export type MilestoneEdit = { title?: string; detail?: string; checkKind?: CheckKind; checkSpec?: string | null; section?: string | null };
 
 /** Workspace-relative path of the handoff note the agent keeps for a run. */
-export const ODYSSEY_STATE_NOTE = "docs/odyssey/STATE.md";
+export const ODYSSEY_STATE_NOTE = "docs/super-thing/STATE.md";
 /** Workspace-relative directory subagents write their results into. */
-export const ODYSSEY_AGENT_NOTES_DIR = "docs/odyssey/agents";
+export const ODYSSEY_AGENT_NOTES_DIR = "docs/super-thing/agents";
 
 /** One file a run has written into the workspace, with its age. */
 export type NoteInfo = { path: string; bytes: number; modifiedAtUnixMs: number };
@@ -1184,7 +1184,7 @@ export type NotificationSettings = {
   quietHoursEnd: string;
   mutedWorkspaceIds: string[];
   closeBehavior: CloseBehavior;
-  /** Odyssey defaults for a new goal; a goal keeps the ceiling it was made with. */
+  /** Super Thing defaults for a new goal; a goal keeps the ceiling it was made with. */
   odysseyMaxContinuations: number;
   odysseyTokenBudget?: number;
   /** The model a Claude orchestrator runs on, by the adapter's own selection
@@ -1213,7 +1213,7 @@ export const CLAUDE_SUBAGENT_MODEL = "opus";
 
 /** The agent definition a Claude orchestrator raises its delegates with. Its
  *  `model:` field is the only place a Claude subagent's model can be pinned. */
-export const ODYSSEY_DELEGATE = "odyssey-delegate";
+export const ODYSSEY_DELEGATE = "super-thing-delegate";
 
 /** What a provider's sign-in program printed, streamed as it runs. */
 export type LoginEvent =

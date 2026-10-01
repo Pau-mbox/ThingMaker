@@ -10,7 +10,7 @@ import type { MilestoneRecord, OdysseyJournalEntry, OdysseyRecord, Provider, Usa
 import { ORCHESTRATOR_PROVIDERS, PROVIDER_LABELS } from "@thingmaker/contracts";
 import { briefedThisSession, failedTickRun, heldUntil, lastMoveAt, staleCheckpointRun, unansweredRun } from "./odysseyReport";
 
-/** Percent of a usage window at which Odyssey parks rather than risk a turn. */
+/** Percent of a usage window at which Super Thing parks rather than risk a turn. */
 export const USAGE_FLOOR_PERCENT = 98;
 
 /**
@@ -182,7 +182,7 @@ export function stallNotice(input: { reason: string; since: number | null; now: 
   if (since === null || !reason) return null;
   const waited = now - since;
   if (waited < limit) return null;
-  return `Odyssey has not been able to act for ${stallDuration(waited)}: ${reason}`;
+  return `Super Thing has not been able to act for ${stallDuration(waited)}: ${reason}`;
 }
 
 export type SessionCondition = { attached: boolean; idle: boolean };
@@ -235,7 +235,7 @@ export function usageVerdict(usage: UsageSnapshot | null | undefined, floor = US
   return { kind: "exhausted", resumeAt: resets.length > 0 ? Math.max(...resets) * 1000 : null, reason };
 }
 
-/** Whether Odyssey can settle this milestone itself, without asking anyone. */
+/** Whether Super Thing can settle this milestone itself, without asking anyone. */
 export function hasRunnableCheck(milestone: Pick<MilestoneRecord, "checkKind" | "checkSpec">): boolean {
   return milestone.checkKind !== "manual" && !!milestone.checkSpec?.trim();
 }
@@ -248,7 +248,7 @@ export function hasRunnableCheck(milestone: Pick<MilestoneRecord, "checkKind" | 
  * tick, is stepped over instead of parking the run. It stays `reported` in the
  * record — not verified, and the badge still says so.
  *
- * A claim whose check Odyssey *can* run is never skipped: running it is cheap
+ * A claim whose check Super Thing *can* run is never skipped: running it is cheap
  * and decisive, so the run stops long enough to do that whatever the setting.
  */
 export function activeMilestone(milestones: MilestoneRecord[], skipUncheckedClaims = false): { milestone: MilestoneRecord; index: number } | null {

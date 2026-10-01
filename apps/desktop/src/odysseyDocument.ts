@@ -1,7 +1,7 @@
 /**
  * What a dropped document *is*, not what it says.
  *
- * Odyssey does not read a roadmap for milestones — the session's model does
+ * Super Thing does not read a roadmap for milestones — the session's model does
  * that (`odysseyPlan.ts`). This module only measures the file so the drop can
  * be described honestly before anything is created, and lifts the first
  * heading as a suggested goal name, which is a name and not a plan.
@@ -21,7 +21,7 @@ export type DocumentSummary = {
 
 const EXTENSIONS = /\.(md|markdown|mdx|txt)$/i;
 
-/** Whether a dropped path is a document Odyssey will read at all. */
+/** Whether a dropped path is a document Super Thing will read at all. */
 export function isPlanDocument(path: string): boolean {
   return EXTENSIONS.test(path);
 }
@@ -59,7 +59,7 @@ export function summarize(text: string, filename: string): DocumentSummary {
     headings,
     tooLarge:
       bytes > MAX_PLAN_DOCUMENT_BYTES
-        ? `That document is ${Math.round(bytes / 1024)} KB. Odyssey hands the whole plan to the model in one turn, so it has to be under ${MAX_PLAN_DOCUMENT_BYTES / 1024} KB — point it at the plan itself rather than a whole folder of notes.`
+        ? `That document is ${Math.round(bytes / 1024)} KB. Super Thing hands the whole plan to the model in one turn, so it has to be under ${MAX_PLAN_DOCUMENT_BYTES / 1024} KB — point it at the plan itself rather than a whole folder of notes.`
         : null,
   };
 }

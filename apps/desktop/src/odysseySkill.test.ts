@@ -1,8 +1,8 @@
 /**
- * O6's gate: the `odyssey` skill is the protocol the code actually implements.
+ * O6's gate: the `super-thing` skill is the protocol the code actually implements.
  *
  * A skill that drifts from the parser is worse than no skill — it teaches the
- * model a grammar Odyssey will ignore. So every example line in the document
+ * model a grammar Super Thing will ignore. So every example line in the document
  * is parsed here with the real parser, and the enumerations it documents are
  * compared against the real ones.
  */
@@ -19,7 +19,7 @@ import { TASK_GRAMMAR, parseTaskLines } from "./odysseyTasks";
 import { ASK_GRAMMAR, parseAsks } from "./odysseyAsk";
 
 const here = dirname(fileURLToPath(import.meta.url));
-const path = resolve(here, "../../../runtime/skills/odyssey/SKILL.md");
+const path = resolve(here, "../../../runtime/skills/super-thing/SKILL.md");
 const skill = readFileSync(path, "utf8");
 
 /** Backticked identifiers inside one `##` section of the document. */
@@ -37,7 +37,7 @@ describe("the skill the agents load", () => {
     const front = /^---\n([\s\S]*?)\n---\n/.exec(skill);
     expect(front, "front matter delimited by --- at the top of the file").toBeTruthy();
     const body = front?.[1] ?? "";
-    expect(/^name: odyssey$/m.test(body)).toBe(true);
+    expect(/^name: super-thing$/m.test(body)).toBe(true);
     const description = /^description: (.+)$/m.exec(body)?.[1] ?? "";
     expect(description.length).toBeGreaterThan(40);
     // A description that spans lines does not survive the front matter.
@@ -55,7 +55,7 @@ describe("the report grammar it teaches", () => {
   });
 
   it("parses every example line it gives, to the meaning it claims", () => {
-    const examples = [...skill.matchAll(/^ODYSSEY-REPORT: (?!milestone=<).*$/gm)].map((match) => match[0]);
+    const examples = [...skill.matchAll(/^SUPERTHING-REPORT: (?!milestone=<).*$/gm)].map((match) => match[0]);
     expect(examples.length).toBeGreaterThanOrEqual(2);
     for (const example of examples) {
       const report = parseReport(example);
@@ -97,8 +97,8 @@ describe("the plan grammar it teaches", () => {
     expect(plan?.milestones[0]).toMatchObject({ title: "Phase one", detail: "Do the thing.", checkKind: "tests_pass", checkSpec: "cargo test", steps: [{ title: "first step", depends: [] }] });
   });
 
-  it("says a proposed check is a command Odyssey will run", () => {
-    expect(skill).toMatch(/A check is a command Odyssey will run itself/);
+  it("says a proposed check is a command Super Thing will run", () => {
+    expect(skill).toMatch(/A check is a command Super Thing will run itself/);
     expect(skill).toMatch(/leave it `manual`/);
   });
 
@@ -223,7 +223,7 @@ describe("the task line it teaches", () => {
   });
 
   it("parses every example line it gives", () => {
-    const examples = [...skill.matchAll(/^ODYSSEY-TASK: (?!milestone=<).*$/gm)].map((match) => match[0]);
+    const examples = [...skill.matchAll(/^SUPERTHING-TASK: (?!milestone=<).*$/gm)].map((match) => match[0]);
     expect(examples.length).toBeGreaterThanOrEqual(3);
     for (const example of examples) expect(parseTaskLines(example), example).toHaveLength(1);
     expect(new Set(examples.flatMap((example) => parseTaskLines(example)).map((line) => line.status))).toEqual(new Set(["in_progress", "done", "blocked"]));
@@ -241,7 +241,7 @@ describe("the ask line and replanning it teaches", () => {
   });
 
   it("parses every ask example it gives", () => {
-    const examples = [...skill.matchAll(/^ODYSSEY-ASK: (?!kind=<).*$/gm)].map((match) => match[0]);
+    const examples = [...skill.matchAll(/^SUPERTHING-ASK: (?!kind=<).*$/gm)].map((match) => match[0]);
     expect(examples.length).toBeGreaterThanOrEqual(2);
     for (const example of examples) expect(parseAsks(example), example).toHaveLength(1);
   });

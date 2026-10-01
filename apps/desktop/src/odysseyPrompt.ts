@@ -1,5 +1,5 @@
 /**
- * The text Odyssey submits to the session (docs/plans/odyssey.md §4.2).
+ * The text Super Thing submits to the session (docs/plans/odyssey.md §4.2).
  *
  * Two kinds, sized deliberately. The **briefing** goes in once at the start,
  * so it lands early in the transcript and is served from the provider's prefix
@@ -99,8 +99,8 @@ export function milestoneStateLabel(milestone: Pick<MilestoneRecord, "state">): 
   }
 }
 
-/** The report line Odyssey looks for, quoted in the briefing and parsed back. */
-export const REPORT_GRAMMAR = "ODYSSEY-REPORT: milestone=<n> status=<complete|blocked> note=<one line>";
+/** The report line Super Thing looks for, quoted in the briefing and parsed back. */
+export const REPORT_GRAMMAR = "SUPERTHING-REPORT: milestone=<n> status=<complete|blocked> note=<one line>";
 
 /**
  * Submitted once, before the first continuation. It explains the mechanics the
@@ -149,18 +149,18 @@ export function buildBriefing(
       ]
     : [];
   return [
-    "You are working under Odyssey, ThingMaker's long-horizon runner.",
+    "You are working under Super Thing, ThingMaker's long-horizon runner.",
     "",
     ...inherited,
     "How this works:",
     "- The goal below is broken into ordered milestones. You work the active one.",
-    "- After each of your turns Odyssey takes a checkpoint of the working tree and sends you the next continuation. Do not ask permission to continue and do not wait for a human between milestones.",
-    "- Odyssey pauses the run when the account's usage window is spent and resumes it when the provider's quota resets. A long gap between turns is normal and means nothing failed.",
-    "- A milestone is done when its check passes, not when you say so. Each check is listed below. You may run it yourself, including from a subagent, and Odyssey reads the exit code out of your tool results.",
+    "- After each of your turns Super Thing takes a checkpoint of the working tree and sends you the next continuation. Do not ask permission to continue and do not wait for a human between milestones.",
+    "- Super Thing pauses the run when the account's usage window is spent and resumes it when the provider's quota resets. A long gap between turns is normal and means nothing failed.",
+    "- A milestone is done when its check passes, not when you say so. Each check is listed below. You may run it yourself, including from a subagent, and Super Thing reads the exit code out of your tool results.",
     `- When you finish a milestone, end that reply with a single line: ${REPORT_GRAMMAR}. While you are still working, send no report line.`,
     // Only when the skill is actually installed: pointing at a skill that is
     // not there teaches the model that the briefing is unreliable.
-    ...(options.skillAvailable === false ? [] : ["- Load the `odyssey` skill if you want the full protocol."]),
+    ...(options.skillAvailable === false ? [] : ["- Load the `super-thing` skill if you want the full protocol."]),
     "",
     // The document itself is not re-sent: at 54 KB that would be the whole
     // budget. One line naming it gives the agent the rest on demand, for the
@@ -176,7 +176,7 @@ export function buildBriefing(
     ...(options.agent === "claude"
       ? [`- Raise every subagent with \`subagent_type: ${ODYSSEY_DELEGATE}\`, which this project defines. It pins the model the run is meant to delegate on; the default subagent type does not.`]
       : []),
-    `- When the plan no longer fits what you found, change it with an ODYSSEY-AMEND block — add, revise, drop, split or move tasks and milestones — and give a \`reason:\`. ${goal.onPlanChange === "auto" ? "It is applied at once and the user sees the diff." : goal.onPlanChange === "review" ? "It is shown to the user as a diff and applied when they accept; until then, work to the plan as it stands." : "Task changes land at once. Adding or dropping a milestone, or changing its title or check, is shown to the user as a diff and lands when they accept; until then, work to the plan as it stands."}`,
+    `- When the plan no longer fits what you found, change it with an SUPERTHING-AMEND block — add, revise, drop, split or move tasks and milestones — and give a \`reason:\`. ${goal.onPlanChange === "auto" ? "It is applied at once and the user sees the diff." : goal.onPlanChange === "review" ? "It is shown to the user as a diff and applied when they accept; until then, work to the plan as it stands." : "Task changes land at once. Adding or dropping a milestone, or changing its title or check, is shown to the user as a diff and lands when they accept; until then, work to the plan as it stands."}`,
     `- Decisions only a human can make — an ambiguous requirement, an architectural fork, constraints that conflict, a failure that keeps recurring, a permission you cannot grant yourself — go on one line: ${ASK_GRAMMAR}. Name what you will do meanwhile and carry on; never wait for the answer. Everything else you decide.`,
     `- Milestones are broken into numbered tasks (6.3 is the third task of milestone 6). Name each subagent after its task, \`6.3-<slug>\`, so the run can show which model did it, and when a task starts, finishes or cannot be done, put a line in your reply: ${TASK_GRAMMAR}. Several lines per reply are fine.`,
     "",
@@ -187,7 +187,7 @@ export function buildBriefing(
     ...plan,
     "",
     stop,
-    `Budget: at most ${goal.maxContinuations} continuations${goal.tokenBudget ? `, and ${goal.tokenBudget.toLocaleString()} tokens` : ""}. Odyssey stops the run at the ceiling, so keep turns purposeful.`,
+    `Budget: at most ${goal.maxContinuations} continuations${goal.tokenBudget ? `, and ${goal.tokenBudget.toLocaleString()} tokens` : ""}. Super Thing stops the run at the ceiling, so keep turns purposeful.`,
   ].join("\n");
 }
 

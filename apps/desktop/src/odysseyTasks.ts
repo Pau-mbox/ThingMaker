@@ -4,7 +4,7 @@
  * A milestone's steps were titles with a state that nothing moved. A task is
  * the same row with three more facts on it: who is doing it, what it waits
  * for, and when it moved. Those come from three lanes, the same three the
- * rest of Odyssey uses — the plan proposes tasks, the agent reports their
+ * rest of Super Thing uses — the plan proposes tasks, the agent reports their
  * state on a line, the desktop records the subagent it saw doing them.
  *
  * Pure: parsing, derivation and formatting. The store applies.
@@ -12,7 +12,7 @@
 import type { MilestoneRecord, OdysseyStep } from "@thingmaker/contracts";
 
 /** The task line the agent writes, several per reply, quoted in the briefing and the skill. */
-export const TASK_GRAMMAR = "ODYSSEY-TASK: milestone=<m> task=<t> status=<in_progress|done|blocked> agent=<subagent name, optional> note=<one line, optional>";
+export const TASK_GRAMMAR = "SUPERTHING-TASK: milestone=<m> task=<t> status=<in_progress|done|blocked> agent=<subagent name, optional> note=<one line, optional>";
 
 export type TaskLine = { milestone: number; task: number; status: "in_progress" | "done" | "blocked"; agent: string | null; note: string };
 
@@ -20,7 +20,7 @@ export type TaskLine = { milestone: number; task: number; status: "in_progress" 
 export function parseTaskLines(text: string): TaskLine[] {
   if (!text) return [];
   const lines: TaskLine[] = [];
-  for (const match of text.matchAll(/^\s*ODYSSEY-TASK:\s*(.+)$/gim)) {
+  for (const match of text.matchAll(/^\s*(?:SUPERTHING|ODYSSEY)-TASK:\s*(.+)$/gim)) {
     const body = match[1] ?? "";
     const milestone = /(?:^|\s)milestone\s*=\s*(\d+)/i.exec(body);
     const task = /(?:^|\s)task\s*=\s*(\d+)/i.exec(body);

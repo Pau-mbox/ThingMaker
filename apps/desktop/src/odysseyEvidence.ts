@@ -2,7 +2,7 @@
  * The agent-run, desktop-read verification lane (docs/plans/odyssey.md §5.1).
  *
  * The model — or a subagent it raised, which is the natural use for one — runs
- * the milestone's check itself. Odyssey does not believe the prose about it:
+ * the milestone's check itself. Super Thing does not believe the prose about it:
  * it looks in the settled turn's tool results for a shell result whose command
  * is the milestone's check, and reads that result's exit code.
  *

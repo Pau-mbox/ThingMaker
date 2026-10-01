@@ -203,7 +203,7 @@ async fn an_orchestrator_delegates_over_mcp_and_awaits_the_report() {
     assert_eq!(jobs.len(), 2);
     assert!(jobs.iter().all(|job| job["status"] == "succeeded"), "{done}");
     assert_eq!(jobs[0]["report"], "Looking at it.", "the Codex worker's last message is its report");
-    assert!(jobs[1]["report"].as_str().unwrap().contains("ODYSSEY-REPORT"), "the Claude worker's last message is its report");
+    assert!(jobs[1]["report"].as_str().unwrap().contains("SUPERTHING-REPORT"), "the Claude worker's last message is its report");
     assert!(done["structuredContent"].get("note").is_none());
 
     // The worker was told the task stands alone, and where to start.

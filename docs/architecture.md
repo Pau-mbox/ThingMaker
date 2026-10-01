@@ -56,7 +56,7 @@ Kit is removed; Claude Code and Codex run end to end and either can orchestrate 
 - **Accounts**: the Providers panel's **Switch account** signs a provider out
   through its own CLI, then starts a new sign-in. The launch options also accept
   a separate `CODEX_HOME` for each Codex account; the UI does not offer that yet.
-- **Odyssey** runs on either provider, with N-provider failover.
+- **Super Thing** runs on either provider, with N-provider failover.
 - **Teams and delegation** (`delegation`): every session is an orchestrator.
   - Its agent gets a `team` MCP server with `list_workers`, `delegate`,
     `await_jobs`, `job_status` and `cancel_job`.
@@ -86,7 +86,7 @@ apps/desktop/                 Tauri 2 app: src/ (React), src-tauri/ (thin comman
 crates/thingmaker-supervisor/  privileged engine: transport, acp, agents, supervisor, storage, review, workspace, security
 packages/contracts/           desktop API TypeScript types (mirror the supervisor's serde output)
 packages/test-fixtures/       mock ACP peers for the providers, captured from the real programs
-runtime/skills, runtime/agents  the Odyssey skill and the Claude Code delegate definition
+runtime/skills, runtime/agents  the Super Thing skill and the Claude Code delegate definition
 docs/                         architecture, decisions (adr/), release notes
 ```
 

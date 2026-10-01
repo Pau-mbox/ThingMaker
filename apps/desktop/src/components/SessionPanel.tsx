@@ -2,7 +2,7 @@ import { memo, useCallback, useEffect, useMemo, useRef, useState, type Clipboard
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import type { ContentBlock, Mention, ToolPatch } from "@thingmaker/contracts";
 import { PROVIDER_LABELS } from "@thingmaker/contracts";
-import { useStore, sessionTitle, type SessionTab } from "../store";
+import { useStore, isWorkerIn, sessionTitle, type SessionTab } from "../store";
 import { api } from "../ipc";
 import { ConfigPickers } from "./ConfigPickers";
 import { TeamChip } from "./TeamEditor";
@@ -482,7 +482,7 @@ export function SessionPanel({ sessionId }: { sessionId: string }) {
           const state = useStore.getState();
           if (state.view.kind !== "session") return;
           // A drop listener is webview-wide, so the tab that owns the drop
-          // gets it: the Odyssey tab reads a dropped Markdown plan, and a
+          // gets it: the Super Thing tab reads a dropped Markdown plan, and a
           // file dropped there must not also become an attachment.
           if (state.sessionTab === "odyssey") return;
           api
@@ -569,6 +569,13 @@ export function SessionPanel({ sessionId }: { sessionId: string }) {
   const workspaceRoot = useStore((s) => s.workspaces.find((w) => w.id === s.sessions[sessionId]?.workspaceId)?.canonicalRoot ?? "");
   const lastSequence = session?.projection.lastSequence;
   const sessionJobs = useStore((s) => s.jobs[sessionId] ?? EMPTY_LIST);
+  // A worker does a task for its orchestrator; a Super Thing is led from the
+  // orchestrator's session, so a worker has no Super Thing tab.
+  const isWorker = useStore((s) => isWorkerIn(s, sessionId, s.sessions[sessionId]));
+  const setSessionTab = useStore((s) => s.setSessionTab);
+  useEffect(() => {
+    if (isWorker && tab === "odyssey") setSessionTab("transcript");
+  }, [isWorker, tab, setSessionTab]);
   const cardImages = useMemo(
     () => (session ? assignImages(session.projection.cards, session.projection.toolCalls, workspaceRoot) : new Map<string, ImageRef[]>()),
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -633,8 +640,8 @@ export function SessionPanel({ sessionId }: { sessionId: string }) {
   // without opening it.
   const odysseyView = useStore.getState().odyssey[sessionId];
   const odysseyLabel = odysseyView
-    ? `Odyssey ${odysseyView.milestones.filter((m) => m.state === "verified").length}/${odysseyView.milestones.length}`
-    : "Odyssey";
+    ? `Super Thing ${odysseyView.milestones.filter((m) => m.state === "verified").length}/${odysseyView.milestones.length}`
+    : "Super Thing";
   // Only the views you watch stay in the bar; the rest live behind one menu
   // and the terminal behind one icon, so the bar reads at a glance.
   // Agents is a main tab again, second: delegated jobs and subagents are
@@ -648,7 +655,7 @@ export function SessionPanel({ sessionId }: { sessionId: string }) {
   const tabs: { id: typeof tab; label: string }[] = [
     { id: "transcript", label: "Transcript" },
     { id: "agents", label: agentsLabel },
-    { id: "odyssey", label: odysseyLabel },
+    ...(isWorker ? [] : [{ id: "odyssey" as const, label: odysseyLabel }]),
   ];
 
   return (
@@ -818,7 +825,7 @@ export function SessionPanel({ sessionId }: { sessionId: string }) {
         {/* Between the transcript and the prompt, so anything still running
             stays visible however far the transcript has scrolled. */}
         <ActivityBar onOpenAgents={() => setTab("agents")} sessionId={sessionId} />
-        {/* The Odyssey view has no use for a prompt box: the run submits its
+        {/* The Super Thing view has no use for a prompt box: the run submits its
             own turns. The activity strip above stays, because background work
             outliving a turn is exactly what it is for. */}
         {tab !== "odyssey" && (

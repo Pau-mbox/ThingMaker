@@ -75,7 +75,7 @@ export function App() {
     void bootstrap();
   }, [bootstrap]);
 
-  // Odyssey's heartbeat. A running goal advances on turn settles; this is what
+  // Super Thing's heartbeat. A running goal advances on turn settles; this is what
   // moves a goal that is parked on a usage window, and what picks a run back up
   // after a reload. Ten seconds is fine for a countdown measured in hours.
   useEffect(() => {

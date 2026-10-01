@@ -162,7 +162,7 @@ def run_turn(session_id):
     update(session_id, {"sessionUpdate": "tool_call_update", "toolCallId": "toolu_01", "status": "completed"})
     update(session_id, {
         "sessionUpdate": "agent_message_chunk",
-        "content": {"type": "text", "text": "ODYSSEY-REPORT: milestone=1 status=complete note=done"},
+        "content": {"type": "text", "text": "SUPERTHING-REPORT: milestone=1 status=complete note=done"},
     })
     update(session_id, {
         "sessionUpdate": "usage_update",

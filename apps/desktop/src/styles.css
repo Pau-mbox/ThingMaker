@@ -2715,7 +2715,7 @@ code {
 }
 
 /* ---------------------------------------------------------------------------
-   Odyssey (docs/plans/odyssey.md §8). State before detail; verified and
+   Super Thing (docs/plans/odyssey.md §8). State before detail; verified and
    merely-reported never look the same.
    --------------------------------------------------------------------------- */
 
@@ -3592,7 +3592,7 @@ code {
   margin-bottom: 6px;
 }
 
-/* Odyssey hides the prompt box; without it the footer should not keep the
+/* Super Thing hides the prompt box; without it the footer should not keep the
    padding that framed it, or the space saved is given straight back. */
 .composer:not(:has(.composer-card)) {
   padding-top: 0;
@@ -3665,7 +3665,7 @@ code {
   margin-top: -4px;
 }
 
-/* Odyssey run quality (docs/research/odyssey-review.md items 1–6) */
+/* Super Thing run quality (docs/research/odyssey-review.md items 1–6) */
 .odyssey-section {
   margin: 0 0 4px;
 }
@@ -3687,7 +3687,7 @@ code {
   text-overflow: ellipsis;
 }
 
-/* Odyssey documents: the plan, what amendments added, the agent's notes */
+/* Super Thing documents: the plan, what amendments added, the agent's notes */
 .odyssey-documents-group {
   display: flex;
   flex-direction: column;
@@ -3755,7 +3755,7 @@ code {
   word-break: break-word;
 }
 
-/* Odyssey tasks, run strip and tabs (docs/plans/odyssey.md §11.8) */
+/* Super Thing tasks, run strip and tabs (docs/plans/odyssey.md §11.8) */
 .odyssey-strip .work-head {
   flex-wrap: wrap;
   row-gap: 4px;
@@ -3871,7 +3871,7 @@ code {
 }
 
 
-/* Odyssey roadmap typography: milestone > task > description */
+/* Super Thing roadmap typography: milestone > task > description */
 .odyssey-milestone {
   padding: 14px 0;
 }
@@ -3992,7 +3992,7 @@ button.odyssey-task-title svg {
 }
 
 
-/* Odyssey inbox and plan diffs */
+/* Super Thing inbox and plan diffs */
 .odyssey-inbox {
   list-style: none;
   margin: 0;

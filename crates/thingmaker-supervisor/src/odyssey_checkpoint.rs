@@ -1,4 +1,4 @@
-//! Per-turn checkpoints for Odyssey (docs/research/odyssey-review.md §1.4, §3.5).
+//! Per-turn checkpoints for Super Thing (docs/research/odyssey-review.md §1.4, §3.5).
 //!
 //! A checkpoint used to be the review diff against a baseline captured when
 //! the session opened. On the first real run that baseline pre-dated the

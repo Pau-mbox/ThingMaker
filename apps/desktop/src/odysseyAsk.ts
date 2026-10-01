@@ -11,7 +11,7 @@ export const ASK_KINDS = ["ambiguity", "architecture", "conflict", "failure", "p
 export type AskKind = (typeof ASK_KINDS)[number];
 
 /** Quoted in the briefing and the skill. `question=` is last because it runs to the end of the line. */
-export const ASK_GRAMMAR = "ODYSSEY-ASK: kind=<ambiguity|architecture|conflict|failure|permission> default=<what you do until you hear back> options=<a | b | c, optional> question=<one line>";
+export const ASK_GRAMMAR = "SUPERTHING-ASK: kind=<ambiguity|architecture|conflict|failure|permission> default=<what you do until you hear back> options=<a | b | c, optional> question=<one line>";
 
 export type Ask = { kind: AskKind; fallback: string; options: string[]; question: string };
 
@@ -19,7 +19,7 @@ export type Ask = { kind: AskKind; fallback: string; options: string[]; question
 export function parseAsks(text: string): Ask[] {
   if (!text) return [];
   const asks: Ask[] = [];
-  for (const match of text.matchAll(/^\s*ODYSSEY-ASK:\s*(.+)$/gim)) {
+  for (const match of text.matchAll(/^\s*(?:SUPERTHING|ODYSSEY)-ASK:\s*(.+)$/gim)) {
     const body = match[1] ?? "";
     const question = /(?:^|\s)question\s*=\s*(.+)$/i.exec(body)?.[1]?.trim() ?? "";
     if (!question) continue;
