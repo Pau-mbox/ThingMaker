@@ -1,0 +1,39 @@
+[package]
+name = "thingmaker-supervisor"
+description = "Privileged native engine for ThingMaker: stdio transport, ACP v1 client, provider bridges, delegation, session actors, storage and security policy."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[lib]
+path = "src/lib.rs"
+
+# The ThingMaker MCP child for tests and for running outside the app; the
+# desktop executable is the same relay behind `--thingmaker-mcp`.
+[[bin]]
+name = "thingmaker-mcp"
+path = "src/bin/thingmaker-mcp.rs"
+
+[dependencies]
+tokio = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+tracing = { workspace = true }
+uuid = { workspace = true }
+blake3 = { workspace = true }
+rusqlite = { workspace = true }
+toml = "=1.1.5"
+ignore = "=0.4.33"
+similar = "=3.2.0"
+portable-pty = "=0.9.0"
+toml_edit = "=0.25.13"
+zip = { version = "=8.6.0", default-features = false, features = ["deflate"] }
+reqwest = { version = "=0.13.4", features = ["blocking", "json"] }
+
+[target.'cfg(unix)'.dependencies]
+libc = "=0.2.189"
+
+[dev-dependencies]
+tempfile = { workspace = true }

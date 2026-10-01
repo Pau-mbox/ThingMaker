@@ -1,0 +1,26 @@
+# Node
+node_modules/
+dist/
+*.tsbuildinfo
+.pnpm-store/
+
+# Rust
+target/
+
+# Tauri
+apps/desktop/src-tauri/gen/
+apps/desktop/src-tauri/target/
+
+# Local state
+*.db
+*.db-wal
+*.db-shm
+*.log
+.DS_Store
+.env
+.env.*
+
+# Harness output that is not committed evidence
+
+# Generated images (imagegen sidecar output)
+output/

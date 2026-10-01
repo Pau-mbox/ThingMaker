@@ -1,0 +1,24 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "ThingMaker Dev",
+  "identifier": "dev.thingmaker.desktop.dev",
+  "app": {
+    "windows": [
+      {
+        "label": "main",
+        "title": "ThingMaker Dev",
+        "width": 1280,
+        "height": 820,
+        "minWidth": 900,
+        "minHeight": 600,
+        "resizable": true,
+        "titleBarStyle": "Overlay",
+        "hiddenTitle": true,
+        "trafficLightPosition": {
+          "x": 16,
+          "y": 18
+        }
+      }
+    ]
+  }
+}

@@ -1,0 +1,5 @@
+[toolchain]
+# Kit pins 1.94.0 for its own build. The desktop host tracks the stable channel
+# and is verified against the toolchain recorded in CI. Bump deliberately.
+channel = "stable"
+components = ["rustfmt", "clippy"]

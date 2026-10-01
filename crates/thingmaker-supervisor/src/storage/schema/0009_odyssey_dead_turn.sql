@@ -1,0 +1,13 @@
+-- Cancelling a turn that has stopped being a turn (docs/plans/odyssey.md §4.5).
+--
+-- Six subagents hit a spent quota, stopped writing mid-tool-call, and sat on
+-- open sockets for eighty minutes. The parent turn could not settle while its
+-- children never returned, so the runner saw "a turn is already running" and
+-- correctly refused to act — for eighty minutes, over a quota window that had
+-- since reset.
+--
+-- Minutes of *no events at all* while a turn is running, after which the
+-- runner cancels it. NULL or 0 never cancels. The default is generous because
+-- a long silent tool call — a build, a big test suite — is legitimate; this is
+-- for turns that are dead, not turns that are slow.
+ALTER TABLE odysseys ADD COLUMN dead_turn_minutes INTEGER NOT NULL DEFAULT 30;

@@ -1,0 +1,12 @@
+-- Where the plan document lives, so the agent can read it again
+-- (docs/plans/odyssey.md §3.1).
+--
+-- The document was inlined into the planning prompt and never referenced
+-- again. Once that turn compacted out of context the agent had no way back to
+-- it: a 54 KB specification survived only as the ~9% its milestone details
+-- carried, and a copy sat unused in this database.
+--
+-- A workspace-relative path instead. The agent opens it with its own tools,
+-- whenever a milestone's detail is not enough, for the life of the run — and
+-- it costs the briefing one line instead of 54 KB every turn.
+ALTER TABLE odysseys ADD COLUMN plan_path TEXT;
