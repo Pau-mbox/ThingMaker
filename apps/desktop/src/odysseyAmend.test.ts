@@ -20,7 +20,7 @@ const plan = [
 describe("reading an amendment", () => {
   const reply = `I can fit the ships in after the domain work.
 
-SUPERTHING-AMEND
+BIGTHING-AMEND
 add: Ship art pipeline
 after: 2
 detail: Import the generated ships and wire them to the trading UI.
@@ -32,7 +32,7 @@ title: Economy with ship classes
 detail: Now also covers per-class capacity.
 drop: 3
 reason: folded into the milestone above
-END-SUPERTHING-AMEND`;
+END-BIGTHING-AMEND`;
 
   it("reads each operation with the fields that belong to it", () => {
     const amendment = parseAmendment(reply);
@@ -53,37 +53,37 @@ END-SUPERTHING-AMEND`;
   });
 
   it("defaults an add with no position to the end", () => {
-    const amendment = parseAmendment("SUPERTHING-AMEND\nadd: Something\nEND-SUPERTHING-AMEND");
+    const amendment = parseAmendment("BIGTHING-AMEND\nadd: Something\nEND-BIGTHING-AMEND");
     expect(amendment?.ops[0]).toMatchObject({ op: "add", after: "end" });
   });
 
   it("takes the last block, and tolerates a model's decoration", () => {
-    const decorated = `**SUPERTHING-AMEND**\n- **add:** First\n**END-SUPERTHING-AMEND**\n\nActually:\n\nODYSSEY-AMEND\nadd: Second\nEND-SUPERTHING-AMEND`;
+    const decorated = `**BIGTHING-AMEND**\n- **add:** First\n**END-BIGTHING-AMEND**\n\nActually:\n\nODYSSEY-AMEND\nadd: Second\nEND-BIGTHING-AMEND`;
     expect(parseAmendment(decorated)?.ops).toEqual([expect.objectContaining({ title: "Second" })]);
   });
 
   it("changes nothing when there is no block, or it is unterminated, or it is empty", () => {
     expect(parseAmendment("The plan already covers that, no change needed.")).toBeNull();
-    expect(parseAmendment("SUPERTHING-AMEND\nadd: One")).toBeNull();
-    expect(parseAmendment("SUPERTHING-AMEND\nreason: orphan\nEND-SUPERTHING-AMEND")).toBeNull();
+    expect(parseAmendment("BIGTHING-AMEND\nadd: One")).toBeNull();
+    expect(parseAmendment("BIGTHING-AMEND\nreason: orphan\nEND-BIGTHING-AMEND")).toBeNull();
     expect(parseAmendment("")).toBeNull();
   });
 
   it("ignores an operation that names prose instead of a milestone number", () => {
-    const amendment = parseAmendment("SUPERTHING-AMEND\ndrop: the economy one\nadd: Real one\nEND-SUPERTHING-AMEND");
+    const amendment = parseAmendment("BIGTHING-AMEND\ndrop: the economy one\nadd: Real one\nEND-BIGTHING-AMEND");
     expect(amendment?.ops).toHaveLength(1);
     expect(amendment?.ops[0]).toMatchObject({ op: "add" });
     expect(amendment?.notes.join(" ")).toContain("rather than a milestone number");
   });
 
   it("never turns an unnamed check into a command it would run", () => {
-    const amendment = parseAmendment("SUPERTHING-AMEND\nadd: Clean up\ncheck: `rm -rf ~/.cache`\nEND-SUPERTHING-AMEND");
+    const amendment = parseAmendment("BIGTHING-AMEND\nadd: Clean up\ncheck: `rm -rf ~/.cache`\nEND-BIGTHING-AMEND");
     expect(amendment?.ops[0]).toMatchObject({ checkKind: "manual", checkSpec: null });
     expect(amendment?.notes.join(" ")).toContain("does not name one of");
   });
 
   it("stops at the operation limit and says it did", () => {
-    const many = `SUPERTHING-AMEND\n${Array.from({ length: 23 }, (_, index) => `add: Item ${index}`).join("\n")}\nEND-SUPERTHING-AMEND`;
+    const many = `BIGTHING-AMEND\n${Array.from({ length: 23 }, (_, index) => `add: Item ${index}`).join("\n")}\nEND-BIGTHING-AMEND`;
     const amendment = parseAmendment(many);
     expect(amendment?.ops).toHaveLength(20);
     expect(amendment?.notes.join(" ")).toContain("3 beyond the limit were ignored");
@@ -92,24 +92,24 @@ END-SUPERTHING-AMEND`;
 
 describe("tying operations to milestones", () => {
   it("resolves a target against the list as it was before anything changed", () => {
-    const resolved = resolveOps(parseAmendment("SUPERTHING-AMEND\nrevise: 2\ntitle: New\nEND-SUPERTHING-AMEND")!.ops, plan);
+    const resolved = resolveOps(parseAmendment("BIGTHING-AMEND\nrevise: 2\ntitle: New\nEND-BIGTHING-AMEND")!.ops, plan);
     expect(resolved[0]?.milestone?.id).toBe("m2");
     expect(resolved[0]?.refused).toBeNull();
   });
 
   it("refuses to rewrite verified work", () => {
-    const resolved = resolveOps(parseAmendment("SUPERTHING-AMEND\ndrop: 1\nreason: no longer needed\nEND-SUPERTHING-AMEND")!.ops, plan);
+    const resolved = resolveOps(parseAmendment("BIGTHING-AMEND\ndrop: 1\nreason: no longer needed\nEND-BIGTHING-AMEND")!.ops, plan);
     expect(resolved[0]?.refused).toContain("already verified");
     expect(describeOp(resolved[0]!)).toContain("refused");
   });
 
   it("refuses a target that does not exist", () => {
-    const resolved = resolveOps(parseAmendment("SUPERTHING-AMEND\nrevise: 9\ntitle: x\nEND-SUPERTHING-AMEND")!.ops, plan);
+    const resolved = resolveOps(parseAmendment("BIGTHING-AMEND\nrevise: 9\ntitle: x\nEND-BIGTHING-AMEND")!.ops, plan);
     expect(resolved[0]?.refused).toBe("there is no milestone 9");
   });
 
   it("describes an add without needing a target", () => {
-    const resolved = resolveOps(parseAmendment("SUPERTHING-AMEND\nadd: Ships\nafter: 2\nEND-SUPERTHING-AMEND")!.ops, plan);
+    const resolved = resolveOps(parseAmendment("BIGTHING-AMEND\nadd: Ships\nafter: 2\nEND-BIGTHING-AMEND")!.ops, plan);
     expect(resolved[0]?.refused).toBeNull();
     expect(describeOp(resolved[0]!)).toBe('Add milestone "Ships" after milestone 2');
   });
@@ -208,16 +208,16 @@ describe("carrying an amendment again", () => {
 
 describe("section references in an amendment", () => {
   it("reads a section for an added or revised milestone", () => {
-    const amendment = parseAmendment("SUPERTHING-AMEND\nadd: Ship art\nsection: `## 7. Ships`\nrevise: 2\nsection: lines 40–90\nEND-SUPERTHING-AMEND");
+    const amendment = parseAmendment("BIGTHING-AMEND\nadd: Ship art\nsection: `## 7. Ships`\nrevise: 2\nsection: lines 40–90\nEND-BIGTHING-AMEND");
     expect(amendment?.ops[0]).toMatchObject({ op: "add", title: "Ship art", section: "## 7. Ships" });
     expect(amendment?.ops[1]).toMatchObject({ op: "revise", target: 2, section: "lines 40–90" });
-    expect(parseAmendment("SUPERTHING-AMEND\nadd: Plain\nEND-SUPERTHING-AMEND")?.ops[0]).toMatchObject({ section: null });
+    expect(parseAmendment("BIGTHING-AMEND\nadd: Plain\nEND-BIGTHING-AMEND")?.ops[0]).toMatchObject({ section: null });
   });
 });
 
 describe("a revised detail keeps its lines", () => {
   it("joins several detail lines as lines, the way the plan parser does", () => {
-    const amendment = parseAmendment("SUPERTHING-AMEND\nrevise: 6\ndetail: Twenty cities, ten goods.\ndetail: Prices follow §5.3.\nadd: New\ndetail: First.\ndetail: Second.\nEND-SUPERTHING-AMEND");
+    const amendment = parseAmendment("BIGTHING-AMEND\nrevise: 6\ndetail: Twenty cities, ten goods.\ndetail: Prices follow §5.3.\nadd: New\ndetail: First.\ndetail: Second.\nEND-BIGTHING-AMEND");
     expect(amendment?.ops[0]).toMatchObject({ op: "revise", detail: "Twenty cities, ten goods.\nPrices follow §5.3." });
     expect(amendment?.ops[1]).toMatchObject({ op: "add", detail: "First.\nSecond." });
   });
@@ -225,7 +225,7 @@ describe("a revised detail keeps its lines", () => {
 
 describe("tasks in an amendment", () => {
   it("adds tasks to an existing milestone, with what they wait for", () => {
-    const amendment = parseAmendment("SUPERTHING-AMEND\nrevise: 6\nstep: Author city anchors\nstep: Validate the network\ndepends: 1, 3\nEND-SUPERTHING-AMEND");
+    const amendment = parseAmendment("BIGTHING-AMEND\nrevise: 6\nstep: Author city anchors\nstep: Validate the network\ndepends: 1, 3\nEND-BIGTHING-AMEND");
     expect(amendment?.ops[0]).toMatchObject({
       op: "revise",
       target: 6,
@@ -257,7 +257,7 @@ describe("task operations and the plan diff", () => {
 
   it("reads the four task operations with what belongs to each", () => {
     const amendment = parseAmendment(
-      "SUPERTHING-AMEND\ndrop_task: 2.2\nreason: folded in\nrevise_task: 2.1\ntitle: World model\ndepends: 2\nsplit_task: 2.2\nstep: A\nstep: B\ndepends: 1\nmove_task: 2.2\nafter: start\nEND-SUPERTHING-AMEND",
+      "BIGTHING-AMEND\ndrop_task: 2.2\nreason: folded in\nrevise_task: 2.1\ntitle: World model\ndepends: 2\nsplit_task: 2.2\nstep: A\nstep: B\ndepends: 1\nmove_task: 2.2\nafter: start\nEND-BIGTHING-AMEND",
     );
     expect(amendment?.ops).toEqual([
       { op: "drop_task", ref: { milestone: 2, task: 2 }, reason: "folded in" },
@@ -268,7 +268,7 @@ describe("task operations and the plan diff", () => {
   });
 
   it("refuses what cannot be rewritten and says why in the diff", () => {
-    const amendment = parseAmendment("SUPERTHING-AMEND\ndrop_task: 2.1\nsplit_task: 2.2\nstep: only one\ndrop_task: 2.9\nrevise_task: 1.1\nEND-SUPERTHING-AMEND")!;
+    const amendment = parseAmendment("BIGTHING-AMEND\ndrop_task: 2.1\nsplit_task: 2.2\nstep: only one\ndrop_task: 2.9\nrevise_task: 1.1\nEND-BIGTHING-AMEND")!;
     const lines = planDiff(resolveOps(amendment.ops, withTasks));
     expect(lines.map((line) => line.refused)).toEqual([
       "task 2.1 is done, and done work is not rewritten",
@@ -280,7 +280,7 @@ describe("task operations and the plan diff", () => {
   });
 
   it("renders one readable line per operation", () => {
-    const amendment = parseAmendment("SUPERTHING-AMEND\nsplit_task: 2.2\nstep: Price model\nstep: Slippage\nreason: two owners\nmove_task: 2.2\nafter: 2.1\nadd: Risk\nafter: 2\nEND-SUPERTHING-AMEND")!;
+    const amendment = parseAmendment("BIGTHING-AMEND\nsplit_task: 2.2\nstep: Price model\nstep: Slippage\nreason: two owners\nmove_task: 2.2\nafter: 2.1\nadd: Risk\nafter: 2\nEND-BIGTHING-AMEND")!;
     const text = diffText(planDiff(resolveOps(amendment.ops, withTasks)));
     expect(text.split("\n")).toEqual(['⇄ Split task 2.2 "Pricing" into 2: Price model, Slippage (two owners)', '↕ Move task 2.2 "Pricing" after 2.1', '+ Add milestone "Risk" after milestone 2']);
   });

@@ -66,7 +66,7 @@ describe("the report line", () => {
   });
 
   it("takes the last report when a reply restates it", () => {
-    const text = "SUPERTHING-REPORT: milestone=1 status=blocked note=first\ntext\nODYSSEY-REPORT: milestone=2 status=complete note=second";
+    const text = "BIGTHING-REPORT: milestone=1 status=blocked note=first\ntext\nODYSSEY-REPORT: milestone=2 status=complete note=second";
     expect(parseReport(text)).toMatchObject({ milestone: 2, status: "complete", note: "second" });
   });
 
@@ -76,9 +76,9 @@ describe("the report line", () => {
 
   it("returns null for anything it cannot read, rather than guessing", () => {
     expect(parseReport("I finished the milestone!")).toBeNull();
-    expect(parseReport("SUPERTHING-REPORT: status=complete")).toBeNull();
-    expect(parseReport("SUPERTHING-REPORT: milestone=0 status=complete")).toBeNull();
-    expect(parseReport("SUPERTHING-REPORT: milestone=2 status=nearly")).toBeNull();
+    expect(parseReport("BIGTHING-REPORT: status=complete")).toBeNull();
+    expect(parseReport("BIGTHING-REPORT: milestone=0 status=complete")).toBeNull();
+    expect(parseReport("BIGTHING-REPORT: milestone=2 status=nearly")).toBeNull();
     expect(parseReport("")).toBeNull();
   });
 });
@@ -446,7 +446,7 @@ describe("reporting a stalled run", () => {
 
   it("names the reason and how long it has held once the wait is not ordinary", () => {
     const notice = stallNotice({ reason: "a turn is already running", since: now - STALL_WARNING_MS, now });
-    expect(notice).toBe("Super Thing has not been able to act for 5m: a turn is already running");
+    expect(notice).toBe("Big Thing has not been able to act for 5m: a turn is already running");
   });
 
   it("never trips on a run whose reason keeps changing, because that run is moving", () => {
@@ -890,6 +890,6 @@ describe("counting down a Claude window (docs/plans/odyssey-second-orchestrator.
 describe("reports written before the rename", () => {
   it("are read under either name, so a goal already running keeps working", () => {
     expect(parseReport("Done.\nODYSSEY-REPORT: milestone=2 status=complete note=old")?.milestone).toBe(2);
-    expect(parseReport("Done.\nSUPERTHING-REPORT: milestone=3 status=complete note=new")?.milestone).toBe(3);
+    expect(parseReport("Done.\nBIGTHING-REPORT: milestone=3 status=complete note=new")?.milestone).toBe(3);
   });
 });

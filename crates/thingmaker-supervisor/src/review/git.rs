@@ -454,7 +454,7 @@ pub fn is_clean(root: &Path) -> Result<bool, DesktopError> {
 /// The identity a commit is made under when the repository has none set.
 fn identity_args(root: &Path) -> Vec<&'static str> {
     let has = git(root, &["config", "--get", "user.email"]).map(|output| output.status.success() && !output.stdout.is_empty()).unwrap_or(false);
-    if has { Vec::new() } else { vec!["-c", "user.name=Super Thing", "-c", "user.email=superthing@localhost"] }
+    if has { Vec::new() } else { vec!["-c", "user.name=Big Thing", "-c", "user.email=bigthing@localhost"] }
 }
 
 /// Commits everything in the tree. `None` when there was nothing to commit.

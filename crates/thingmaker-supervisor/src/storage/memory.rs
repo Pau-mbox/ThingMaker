@@ -149,7 +149,7 @@ mod tests {
         let storage = Storage::open(&temp.path().join("t.db")).unwrap();
         let workspace = storage.workspace_upsert("/repo", "/repo", "h1").unwrap();
         let worktree = storage.workspace_upsert("/data/worktrees/h1/run", "run", "h2").unwrap();
-        storage.worktree_insert(&workspace.id, "/data/worktrees/h1/run", "superthing/run", "main").unwrap();
+        storage.worktree_insert(&workspace.id, "/data/worktrees/h1/run", "bigthing/run", "main").unwrap();
         let written = storage.memory_write(&worktree.id, &MemoryWrite { id: None, kind: "Decision".into(), title: "Use SQLite".into(), body: "for the cache".into() }, "claude", None).unwrap();
         assert_eq!(written.workspace_id, workspace.id, "a worktree writes to its repository's memory");
         assert_eq!(storage.memory_list(&workspace.id, Some("sqlite cache")).unwrap().len(), 1);

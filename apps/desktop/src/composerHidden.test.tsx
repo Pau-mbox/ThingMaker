@@ -1,5 +1,5 @@
 /**
- * The prompt box on the Super Thing view.
+ * The prompt box on the Big Thing view.
  *
  * A run submits its own turns, so a prompt box there is height the plan could
  * be using. The activity strip stays: background work outliving a turn is
@@ -15,7 +15,7 @@ const here = dirname(fileURLToPath(import.meta.url));
 const panel = readFileSync(resolve(here, "components/SessionPanel.tsx"), "utf8");
 const styles = readFileSync(resolve(here, "styles.css"), "utf8");
 
-describe("hiding the prompt on the Super Thing view", () => {
+describe("hiding the prompt on the Big Thing view", () => {
   it("hides the prompt box and everything in it", () => {
     const guard = panel.indexOf('{tab !== "odyssey" && (');
     expect(guard).toBeGreaterThan(0);

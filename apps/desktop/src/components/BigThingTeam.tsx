@@ -1,5 +1,5 @@
 /**
- * The parts of a Super Thing run that are about who works and where
+ * The parts of a Big Thing run that are about who works and where
  * (ADR-010): how the plan is handed out, the account policy, the run's own
  * branch, the timeline of who did each milestone, and the project's shared
  * memory. All of it reads the record; actions go to the engine.
@@ -9,7 +9,7 @@ import { PROVIDER_LABELS, type AccountPolicy, type Dispatch, type GoalEdit, type
 import { api } from "../ipc";
 import { useStore } from "../store";
 
-const DISPATCH_LABEL: Record<Dispatch, string> = { agent: "The orchestrator delegates", runner: "Super Thing hands out the tasks" };
+const DISPATCH_LABEL: Record<Dispatch, string> = { agent: "The orchestrator delegates", runner: "Big Thing hands out the tasks" };
 const DISPATCH_HINT: Record<Dispatch, string> = {
   agent: "The orchestrator decides which task goes to which worker, through its team tools.",
   runner: "Ready tasks — nothing they depend on is still open — go to the team's workers in parallel, by the capability each task names. The orchestrator plans, verifies and reports.",
@@ -84,7 +84,7 @@ export function WorktreeCard({ view, sessionId }: { view: OdysseyView; sessionId
   const [merged, setMerged] = useState<string | null>(null);
   const load = useCallback(() => {
     void api
-      .superthingCommits(goal.id)
+      .bigthingCommits(goal.id)
       .then(setCommits)
       .catch(() => setCommits([]));
   }, [goal.id]);
@@ -102,7 +102,7 @@ export function WorktreeCard({ view, sessionId }: { view: OdysseyView; sessionId
     if (!confirmed) return;
     setBusy(true);
     try {
-      await api.superthingRollback(goal.id, commit.commit);
+      await api.bigthingRollback(goal.id, commit.commit);
       await refresh(sessionId, goal.id);
       load();
     } catch (error) {
@@ -115,7 +115,7 @@ export function WorktreeCard({ view, sessionId }: { view: OdysseyView; sessionId
   const merge = async () => {
     setBusy(true);
     try {
-      const outcome = await api.superthingMerge(goal.id);
+      const outcome = await api.bigthingMerge(goal.id);
       setMerged(outcome.outcome === "merged" ? `Merged (${outcome.commit.slice(0, 10)}).` : outcome.outcome === "up_to_date" ? "Nothing to merge." : `It would conflict in ${outcome.files.join(", ")}; nothing was changed.`);
       await refresh(sessionId, goal.id);
     } catch (error) {

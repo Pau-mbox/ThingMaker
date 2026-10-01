@@ -1,6 +1,6 @@
 /**
  * Reads structure out of an agent's tool call so the transcript can render it
- * as something better than a JSON blob, and so Super Thing can read a check's
+ * as something better than a JSON blob, and so Big Thing can read a check's
  * exit code from a command the agent ran.
  *
  * Everything here is derived from what the tool itself reported. Nothing is

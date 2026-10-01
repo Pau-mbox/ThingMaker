@@ -14,15 +14,15 @@ describe("the ask line", () => {
   });
 
   it("skips a line with no question and never invents a kind", () => {
-    expect(parseAsks("SUPERTHING-ASK: kind=failure default=skipping")).toEqual([]);
-    expect(parseAsks("SUPERTHING-ASK: kind=whim question=Why?")[0]?.kind).toBe("ambiguity");
+    expect(parseAsks("BIGTHING-ASK: kind=failure default=skipping")).toEqual([]);
+    expect(parseAsks("BIGTHING-ASK: kind=whim question=Why?")[0]?.kind).toBe("ambiguity");
     expect(parseAsks("")).toEqual([]);
   });
 });
 
 describe("what lands in the inbox", () => {
   const milestone = (overrides: Partial<MilestoneRecord> & { id: string; title: string; position: number }): MilestoneRecord => ({ odysseyId: "o1", detail: "", state: "planned", checkKind: "manual", steps: [], ...overrides });
-  const check = (id: string, milestoneId: string, at: number, passed: boolean): OdysseyJournalEntry => ({ id, odysseyId: "o1", at, kind: "check", milestoneId, summary: `Super Thing ran the check for milestone 2: ${passed ? "passed" : "failed"}`, detail: passed ? "ok" : "2 tests failed" });
+  const check = (id: string, milestoneId: string, at: number, passed: boolean): OdysseyJournalEntry => ({ id, odysseyId: "o1", at, kind: "check", milestoneId, summary: `Big Thing ran the check for milestone 2: ${passed ? "passed" : "failed"}`, detail: passed ? "ok" : "2 tests failed" });
   const amendment = (overrides: Partial<AmendmentRecord> & { id: string }): AmendmentRecord => ({ odysseyId: "o1", at: 1, note: "do it", refs: [], state: "told", tellCount: 1, ...overrides });
   const base = { goal: { state: "running" as const, onReport: "continue" as const }, milestones: [], journal: [], questions: [], planChanges: [], amendments: [], sessionAttention: null, now: 1_000 };
 

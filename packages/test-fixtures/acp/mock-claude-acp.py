@@ -27,7 +27,7 @@ Flags:
   --hang-in-tool   a prompt starts a tool call and then waits in it, the way
                    an orchestrator waits in `await_jobs`; `session/cancel`
                    ends it
-  --follow-plan    plays a Super Thing orchestrator: answers a planning prompt
+  --follow-plan    plays a Big Thing orchestrator: answers a planning prompt
                    with a plan block, a briefing with an acknowledgement, and a
                    continuation by writing a file, running the milestone's
                    check as a shell call and reporting that milestone done
@@ -169,7 +169,7 @@ def run_turn(session_id):
     update(session_id, {"sessionUpdate": "tool_call_update", "toolCallId": "toolu_01", "status": "completed"})
     update(session_id, {
         "sessionUpdate": "agent_message_chunk",
-        "content": {"type": "text", "text": "SUPERTHING-REPORT: milestone=1 status=complete note=done"},
+        "content": {"type": "text", "text": "BIGTHING-REPORT: milestone=1 status=complete note=done"},
     })
     update(session_id, {
         "sessionUpdate": "usage_update",
@@ -188,14 +188,14 @@ def say(session_id, text):
 
 
 def follow_turn(session_id, text):
-    """One turn of a model that does what Super Thing asks, to the protocol."""
+    """One turn of a model that does what Big Thing asks, to the protocol."""
     import os
     import re
     turns["count"] += 1
-    if "setting up a Super Thing goal" in text:
-        say(session_id, "Here is the plan.\n\nSUPERTHING-PLAN\nmilestone: Write the first file\ncheck: command true\nstep: write it\nmilestone: Write the second file\ncheck: command true\nstep: write it\nEND-SUPERTHING-PLAN")
+    if "setting up a Big Thing goal" in text:
+        say(session_id, "Here is the plan.\n\nBIGTHING-PLAN\nmilestone: Write the first file\ncheck: command true\nstep: write it\nmilestone: Write the second file\ncheck: command true\nstep: write it\nEND-BIGTHING-PLAN")
         return
-    if "You are working under Super Thing" in text:
+    if "You are working under Big Thing" in text:
         say(session_id, "Understood. I will work the milestones in order.")
         return
     found = re.search(r"Milestone (\d+)/(\d+)", text)
@@ -212,7 +212,7 @@ def follow_turn(session_id, text):
         call = f"toolu_check_{turns['count']}"
         update(session_id, {"sessionUpdate": "tool_call", "toolCallId": call, "title": check.group(1), "kind": "execute", "status": "in_progress", "rawInput": {"command": check.group(1)}})
         update(session_id, {"sessionUpdate": "tool_call_update", "toolCallId": call, "status": "completed", "rawOutput": "ok"})
-    say(session_id, f"Milestone {number} is done.\nSUPERTHING-REPORT: milestone={number} status=complete note=wrote the file")
+    say(session_id, f"Milestone {number} is done.\nBIGTHING-REPORT: milestone={number} status=complete note=wrote the file")
 
 
 for line in sys.stdin:

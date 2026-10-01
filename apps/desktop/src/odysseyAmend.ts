@@ -14,8 +14,8 @@
 import type { AmendmentRecord, CheckKind, MilestoneRecord, OdysseyStep } from "@thingmaker/contracts";
 import { readDepends, type ProposedTask } from "./odysseyPlan";
 
-/** The block Super Thing looks for, quoted verbatim in the prompt and the skill. */
-export const AMEND_GRAMMAR = `SUPERTHING-AMEND
+/** The block Big Thing looks for, quoted verbatim in the prompt and the skill. */
+export const AMEND_GRAMMAR = `BIGTHING-AMEND
 add: <title>
 after: <milestone number, or "end">
 detail: <one line, optional>
@@ -43,7 +43,7 @@ step: <each task that replaces it, repeatable>
 depends: <numbers of the milestone's tasks the one above waits for, optional>
 move_task: <task number>
 after: <task number in the same milestone, or "start">
-END-SUPERTHING-AMEND`;
+END-BIGTHING-AMEND`;
 
 /** Continuations to leave between tellings of the same amendment. */
 export const RETELL_AFTER_CONTINUATIONS = 3;
@@ -146,7 +146,7 @@ function position(value: string): number | null {
  */
 export function parseAmendment(text: string): Amendment | null {
   if (!text) return null;
-  const blocks = [...text.matchAll(/^[^\S\n]*(?:\*\*)?(?:SUPERTHING|ODYSSEY)-AMEND(?:\*\*)?[^\S\n]*$([\s\S]*?)^[^\S\n]*(?:\*\*)?END-(?:SUPERTHING|ODYSSEY)-AMEND(?:\*\*)?[^\S\n]*$/gm)];
+  const blocks = [...text.matchAll(/^[^\S\n]*(?:\*\*)?(?:BIGTHING|SUPERTHING|ODYSSEY)-AMEND(?:\*\*)?[^\S\n]*$([\s\S]*?)^[^\S\n]*(?:\*\*)?END-(?:BIGTHING|SUPERTHING|ODYSSEY)-AMEND(?:\*\*)?[^\S\n]*$/gm)];
   const body = blocks.at(-1)?.[1];
   if (body === undefined) return null;
 
@@ -358,7 +358,7 @@ export function describeAmendment(record: Pick<AmendmentRecord, "note" | "refs" 
 }
 
 /** The instruction appended once when any amendment is carried. */
-export const AMEND_INSTRUCTION = `Fold the above into the plan when it fits — you decide where and when. Reply with an SUPERTHING-AMEND block to change the milestones, and keep working in the same reply if you have work to do. If it needs no change to the plan, say so and no block.`;
+export const AMEND_INSTRUCTION = `Fold the above into the plan when it fits — you decide where and when. Reply with a BIGTHING-AMEND block to change the milestones, and keep working in the same reply if you have work to do. If it needs no change to the plan, say so and no block.`;
 
 /**
  * Whether this amendment belongs on the next prompt.

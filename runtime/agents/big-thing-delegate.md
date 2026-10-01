@@ -1,10 +1,10 @@
 ---
-name: super-thing-delegate
-description: The subagent a Super Thing run raises when Claude Code is the orchestrator. Use it for every delegated task — implementation, investigation, and independent verification of a milestone's check. Name the call after the task it is doing (for example "7.3-pricing") so the run can tie it to the plan.
+name: big-thing-delegate
+description: The subagent a Big Thing run raises when Claude Code is the orchestrator. Use it for every delegated task — implementation, investigation, and independent verification of a milestone's check. Name the call after the task it is doing (for example "7.3-pricing") so the run can tie it to the plan.
 model: opus
 ---
 
-You are a delegate inside a Super Thing run (docs/plans/odyssey.md). The
+You are a delegate inside a Big Thing run (docs/plans/odyssey.md). The
 orchestrator holds the plan; you hold one task.
 
 Work to these rules:
@@ -13,7 +13,7 @@ Work to these rules:
    next one because it looks easy. The orchestrator is tracking the plan and
    will raise the next delegate itself.
 
-2. **Write your result to `docs/super-thing/agents/<your-name>.md` before you
+2. **Write your result to `docs/big-thing/agents/<your-name>.md` before you
    return.** A delegate that dies with its findings in its head has done
    nothing: the transcript may compact, the session may be replaced, and the
    note on disk is the only part of your work that is certain to survive.

@@ -1,9 +1,9 @@
-//! Super Thing's engine in the host (ADR-010).
+//! Big Thing's engine in the host (ADR-010).
 //!
 //! The engine lives in the supervisor and runs every goal; this is its host:
 //! it finds and opens sessions the way the user's own tabs are opened, asks
 //! the accounts for their usage, and tells the interface what happened on
-//! `thingmaker://superthing`. The commands below are the user's buttons; they
+//! `thingmaker://bigthing`. The commands below are the user's buttons; they
 //! hand the action to the engine, which writes it to the record and acts.
 
 use std::path::Path;
@@ -19,13 +19,13 @@ use thingmaker_supervisor::{
         memory::{MemoryEntry, MemoryWrite},
         odyssey::NewAmendment,
     },
-    superthing::{Engine, EngineEvent, EngineHost, LiveSession, MoveTarget, OpenSpec, RuntimeView, TICK_INTERVAL, worktree::RunCommit},
+    bigthing::{Engine, EngineEvent, EngineHost, LiveSession, MoveTarget, OpenSpec, RuntimeView, TICK_INTERVAL, worktree::RunCommit},
 };
 
 use super::{CommandResult, storage_error};
 use crate::state::AppState;
 
-pub const SUPERTHING_EVENT: &str = "thingmaker://superthing";
+pub const BIGTHING_EVENT: &str = "thingmaker://bigthing";
 
 /// Starts the engine; called once from `setup`, after delegation.
 pub fn start(app: &AppHandle) {
@@ -118,27 +118,27 @@ impl EngineHost for HostEngine {
     }
 
     fn emit(&self, event: EngineEvent) {
-        let _ = self.app.emit(SUPERTHING_EVENT, &event);
+        let _ = self.app.emit(BIGTHING_EVENT, &event);
     }
 }
 
 fn engine(state: &AppState) -> CommandResult<Engine> {
-    state.engine.get().cloned().ok_or_else(|| DesktopError::not_ready("Super Thing's engine did not start"))
+    state.engine.get().cloned().ok_or_else(|| DesktopError::not_ready("Big Thing's engine did not start"))
 }
 
 #[tauri::command]
-pub async fn superthing_start(goal_id: String, state: State<'_, AppState>) -> CommandResult<()> {
+pub async fn bigthing_start(goal_id: String, state: State<'_, AppState>) -> CommandResult<()> {
     engine(&state)?.start_goal(&goal_id).await
 }
 
 #[tauri::command]
-pub async fn superthing_pause(goal_id: String, reason: Option<String>, state: State<'_, AppState>) -> CommandResult<()> {
+pub async fn bigthing_pause(goal_id: String, reason: Option<String>, state: State<'_, AppState>) -> CommandResult<()> {
     engine(&state)?.pause(&goal_id, reason.as_deref()).await
 }
 
 /// Asks the engine to look at a goal now rather than on its next tick.
 #[tauri::command]
-pub fn superthing_tick(goal_id: String, state: State<'_, AppState>) -> CommandResult<()> {
+pub fn bigthing_tick(goal_id: String, state: State<'_, AppState>) -> CommandResult<()> {
     engine(&state)?.nudge(&goal_id);
     Ok(())
 }
@@ -151,7 +151,7 @@ pub struct MoveRequest {
 }
 
 #[tauri::command]
-pub async fn superthing_move(request: MoveRequest, state: State<'_, AppState>) -> CommandResult<()> {
+pub async fn bigthing_move(request: MoveRequest, state: State<'_, AppState>) -> CommandResult<()> {
     engine(&state)?.move_goal(&request.goal_id, request.target).await
 }
 
@@ -163,22 +163,22 @@ pub struct MilestoneRequest {
 }
 
 #[tauri::command]
-pub async fn superthing_verify(request: MilestoneRequest, state: State<'_, AppState>) -> CommandResult<()> {
+pub async fn bigthing_verify(request: MilestoneRequest, state: State<'_, AppState>) -> CommandResult<()> {
     engine(&state)?.verify(&request.goal_id, &request.milestone_id).await
 }
 
 #[tauri::command]
-pub async fn superthing_run_check(request: MilestoneRequest, state: State<'_, AppState>) -> CommandResult<()> {
+pub async fn bigthing_run_check(request: MilestoneRequest, state: State<'_, AppState>) -> CommandResult<()> {
     engine(&state)?.run_check(&request.goal_id, &request.milestone_id).await
 }
 
 #[tauri::command]
-pub async fn superthing_request_plan(goal_id: String, state: State<'_, AppState>) -> CommandResult<()> {
+pub async fn bigthing_request_plan(goal_id: String, state: State<'_, AppState>) -> CommandResult<()> {
     engine(&state)?.request_plan(&goal_id).await
 }
 
 #[tauri::command]
-pub async fn superthing_amend(request: NewAmendment, state: State<'_, AppState>) -> CommandResult<()> {
+pub async fn bigthing_amend(request: NewAmendment, state: State<'_, AppState>) -> CommandResult<()> {
     engine(&state)?.add_amendment(request).await
 }
 
@@ -193,7 +193,7 @@ pub struct PlanChangeDecision {
 }
 
 #[tauri::command]
-pub async fn superthing_decide_plan_change(request: PlanChangeDecision, state: State<'_, AppState>) -> CommandResult<()> {
+pub async fn bigthing_decide_plan_change(request: PlanChangeDecision, state: State<'_, AppState>) -> CommandResult<()> {
     engine(&state)?.decide_plan_change(&request.goal_id, &request.id, request.apply, request.note.as_deref()).await
 }
 
@@ -207,22 +207,22 @@ pub struct AnswerRequest {
 }
 
 #[tauri::command]
-pub async fn superthing_answer(request: AnswerRequest, state: State<'_, AppState>) -> CommandResult<()> {
+pub async fn bigthing_answer(request: AnswerRequest, state: State<'_, AppState>) -> CommandResult<()> {
     engine(&state)?.answer_question(&request.goal_id, &request.id, request.answer.as_deref()).await
 }
 
 #[tauri::command]
-pub fn superthing_runtime(goal_id: String, state: State<'_, AppState>) -> CommandResult<RuntimeView> {
+pub fn bigthing_runtime(goal_id: String, state: State<'_, AppState>) -> CommandResult<RuntimeView> {
     Ok(engine(&state)?.runtime(&goal_id))
 }
 
 #[tauri::command]
-pub async fn superthing_briefing(goal_id: String, state: State<'_, AppState>) -> CommandResult<String> {
+pub async fn bigthing_briefing(goal_id: String, state: State<'_, AppState>) -> CommandResult<String> {
     engine(&state)?.briefing_preview(&goal_id).await
 }
 
 #[tauri::command]
-pub fn superthing_commits(goal_id: String, state: State<'_, AppState>) -> CommandResult<Vec<RunCommit>> {
+pub fn bigthing_commits(goal_id: String, state: State<'_, AppState>) -> CommandResult<Vec<RunCommit>> {
     engine(&state)?.run_commits(&goal_id)
 }
 
@@ -234,12 +234,12 @@ pub struct RollbackRequest {
 }
 
 #[tauri::command]
-pub async fn superthing_rollback(request: RollbackRequest, state: State<'_, AppState>) -> CommandResult<()> {
+pub async fn bigthing_rollback(request: RollbackRequest, state: State<'_, AppState>) -> CommandResult<()> {
     engine(&state)?.rollback(&request.goal_id, &request.commit).await
 }
 
 #[tauri::command]
-pub async fn superthing_merge(goal_id: String, state: State<'_, AppState>) -> CommandResult<MergeOutcome> {
+pub async fn bigthing_merge(goal_id: String, state: State<'_, AppState>) -> CommandResult<MergeOutcome> {
     engine(&state)?.merge_run(&goal_id).await
 }
 

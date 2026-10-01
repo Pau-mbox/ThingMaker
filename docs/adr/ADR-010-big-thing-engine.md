@@ -1,10 +1,10 @@
-# ADR-010: Super Thing runs in the supervisor, and speaks through tools
+# ADR-010: Big Thing runs in the supervisor, and speaks through tools
 
 **Status:** Accepted.
 
 ## Decision
 
-The long-horizon runner is a service in the supervisor (`superthing`), not
+The long-horizon runner is a service in the supervisor (`bigthing`), not
 code in the web view.
 
 - **The engine owns the loop.** It decides, prompts, reads each settled turn,
@@ -16,11 +16,11 @@ code in the web view.
   the interface reloads, and a running goal whose session is not open is
   reopened by the engine when the app starts.
 - **The run protocol is tools.** An orchestrator's `team` MCP server carries
-  `superthing_report`, `superthing_task`, `superthing_ask`,
-  `superthing_propose_plan` and `superthing_amend`. A call is checked against
+  `bigthing_report`, `bigthing_task`, `bigthing_ask`,
+  `bigthing_propose_plan` and `bigthing_amend`. A call is checked against
   the record on the spot (a milestone that does not exist is refused in the
   tool's answer, not discovered later), and the engine applies what the turn
-  sent when it settles. The text lines (`SUPERTHING-REPORT:` and the rest) are
+  sent when it settles. The text lines (`BIGTHING-REPORT:` and the rest) are
   still read, for providers that cannot load the session's MCP server.
 - **Shared memory is tools too.** `memory_read`, `memory_write` and
   `board` give the orchestrator and its workers one project memory and the
@@ -38,7 +38,7 @@ code in the web view.
 ## Consequences
 
 - One decision path, tested in Rust against the mock providers, with a live
-  end-to-end test behind `THINGMAKER_REAL_SUPERTHING=1`.
+  end-to-end test behind `THINGMAKER_REAL_BIGTHING=1`.
 - The model-visible tool set grows. Every tool answers from the record and
   writes only to the goal it belongs to; the token that identifies the session
   also identifies the goal, so one session cannot report on another's run.

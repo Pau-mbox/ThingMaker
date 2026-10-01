@@ -625,7 +625,7 @@ export type WorktreeRemovePreview = {
 };
 
 // ---------------------------------------------------------------------------
-// Super Thing: long-horizon goals (docs/plans/odyssey.md)
+// Big Thing: long-horizon goals (docs/plans/odyssey.md)
 // ---------------------------------------------------------------------------
 
 export type OdysseyState = "draft" | "running" | "waiting_usage" | "paused" | "blocked" | "complete" | "abandoned";
@@ -639,7 +639,7 @@ export type OnReport = "wait" | "continue";
 export type OnPlanChange = "tasks_auto" | "review" | "auto";
 /** Which orchestrator a goal runs on. `either` starts where it is and moves
  *  when the account it is on is spent; the other two pin it. */
-/** Who runs a Super Thing goal. Gemini cannot lead (it takes no session MCP server). */
+/** Who runs a Big Thing goal. Gemini cannot lead (it takes no session MCP server). */
 export type Orchestrator = "claude" | "codex" | "either";
 
 /** What the Claude account said about itself when it was last asked.
@@ -850,7 +850,7 @@ export type AdoptedPlan = { path: string; copied: boolean };
 
 export type RunCheckResponse = { outcome: CheckOutcome; milestone: MilestoneRecord };
 
-/** Where the `super-thing` skill landed, and whether this call wrote it. */
+/** Where the `big-thing` skill landed, and whether this call wrote it. */
 export type SkillInstall = { path: string; changed: boolean };
 
 export type OdysseyJournalEntry = {
@@ -883,7 +883,7 @@ export type NewOdyssey = {
   onReport?: OnReport;
   maxContinuations: number;
   tokenBudget?: number;
-  /** A plan document to hand to the model, and where it came from. Super Thing
+  /** A plan document to hand to the model, and where it came from. Big Thing
    *  never reads it for milestones; the session's model proposes those. */
   planSource?: string;
   planDocument?: string;
@@ -919,7 +919,7 @@ export type GoalEdit = {
 };
 
 /** What the engine is doing for one goal right now (ADR-010). */
-export type SuperThingRuntime = {
+export type BigThingRuntime = {
   resumeAt?: number;
   lastReason: string;
   lastReasonAt: number;
@@ -932,19 +932,19 @@ export type SuperThingRuntime = {
   forecast?: string;
 };
 
-/** What the engine tells the interface, on `SUPERTHING_EVENT`. */
-export type SuperThingEvent =
+/** What the engine tells the interface, on `BIGTHING_EVENT`. */
+export type BigThingEvent =
   | { kind: "changed"; goalId: string; workspaceId: string; agentSessionId?: string | null }
-  | { kind: "runtime"; goalId: string; runtime: SuperThingRuntime }
+  | { kind: "runtime"; goalId: string; runtime: BigThingRuntime }
   | { kind: "announce"; goalId: string; text: string }
   | { kind: "notify"; goalId: string; workspaceId: string; attention: "needs_input" | "blocked" | "done"; text: string }
   | { kind: "session_opened"; workspaceId: string; handle: string; agentSessionId: string }
   | { kind: "moved"; goalId: string; fromAgentSessionId?: string | null; toAgentSessionId: string; toHandle: string };
 
-export const SUPERTHING_EVENT = "thingmaker://superthing";
+export const BIGTHING_EVENT = "thingmaker://bigthing";
 
 /** Where a goal is moved: an open session by handle, or a fresh one. */
-export type SuperThingMoveTarget = { kind: "session"; handle: string } | { kind: "new"; provider: Provider };
+export type BigThingMoveTarget = { kind: "session"; handle: string } | { kind: "new"; provider: Provider };
 
 /** One checkpoint commit on a run's own branch. */
 export type RunCommit = { commit: string; subject: string };
@@ -958,9 +958,9 @@ export type MemoryWrite = { id?: string; kind: MemoryKind; title: string; body: 
 export type MilestoneEdit = { title?: string; detail?: string; checkKind?: CheckKind; checkSpec?: string | null; section?: string | null };
 
 /** Workspace-relative path of the handoff note the agent keeps for a run. */
-export const ODYSSEY_STATE_NOTE = "docs/super-thing/STATE.md";
+export const ODYSSEY_STATE_NOTE = "docs/big-thing/STATE.md";
 /** Workspace-relative directory subagents write their results into. */
-export const ODYSSEY_AGENT_NOTES_DIR = "docs/super-thing/agents";
+export const ODYSSEY_AGENT_NOTES_DIR = "docs/big-thing/agents";
 
 /** One file a run has written into the workspace, with its age. */
 export type NoteInfo = { path: string; bytes: number; modifiedAtUnixMs: number };
@@ -1261,7 +1261,7 @@ export type NotificationSettings = {
   quietHoursEnd: string;
   mutedWorkspaceIds: string[];
   closeBehavior: CloseBehavior;
-  /** Super Thing defaults for a new goal; a goal keeps the ceiling it was made with. */
+  /** Big Thing defaults for a new goal; a goal keeps the ceiling it was made with. */
   odysseyMaxContinuations: number;
   odysseyTokenBudget?: number;
   /** The model a Claude orchestrator runs on, by the adapter's own selection
@@ -1290,7 +1290,7 @@ export const CLAUDE_SUBAGENT_MODEL = "opus";
 
 /** The agent definition a Claude orchestrator raises its delegates with. Its
  *  `model:` field is the only place a Claude subagent's model can be pinned. */
-export const ODYSSEY_DELEGATE = "super-thing-delegate";
+export const ODYSSEY_DELEGATE = "big-thing-delegate";
 
 /** What a provider's sign-in program printed, streamed as it runs. */
 export type LoginEvent =
@@ -1319,21 +1319,21 @@ export const COMMANDS = {
   sessionArchive: "session_archive",
   sessionPin: "session_pin",
   sessionRename: "session_rename",
-  superthingStart: "superthing_start",
-  superthingPause: "superthing_pause",
-  superthingTick: "superthing_tick",
-  superthingMove: "superthing_move",
-  superthingVerify: "superthing_verify",
-  superthingRunCheck: "superthing_run_check",
-  superthingRequestPlan: "superthing_request_plan",
-  superthingAmend: "superthing_amend",
-  superthingDecidePlanChange: "superthing_decide_plan_change",
-  superthingAnswer: "superthing_answer",
-  superthingRuntime: "superthing_runtime",
-  superthingBriefing: "superthing_briefing",
-  superthingCommits: "superthing_commits",
-  superthingRollback: "superthing_rollback",
-  superthingMerge: "superthing_merge",
+  bigthingStart: "bigthing_start",
+  bigthingPause: "bigthing_pause",
+  bigthingTick: "bigthing_tick",
+  bigthingMove: "bigthing_move",
+  bigthingVerify: "bigthing_verify",
+  bigthingRunCheck: "bigthing_run_check",
+  bigthingRequestPlan: "bigthing_request_plan",
+  bigthingAmend: "bigthing_amend",
+  bigthingDecidePlanChange: "bigthing_decide_plan_change",
+  bigthingAnswer: "bigthing_answer",
+  bigthingRuntime: "bigthing_runtime",
+  bigthingBriefing: "bigthing_briefing",
+  bigthingCommits: "bigthing_commits",
+  bigthingRollback: "bigthing_rollback",
+  bigthingMerge: "bigthing_merge",
   memoryList: "memory_list",
   memoryWrite: "memory_write",
   memoryDelete: "memory_delete",

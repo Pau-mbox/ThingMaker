@@ -61,7 +61,9 @@ const JOURNAL_DEPTH: usize = 200;
 const REOPEN_BACKOFF_MS: i64 = 2 * 60_000;
 /// Deltas kept for the next continuation; older ones have been superseded.
 const MAX_DELTAS: usize = 8;
-const DELTAS_KEY: &str = "superthingDeltas";
+const DELTAS_KEY: &str = "bigthingDeltas";
+/// The same, from before the feature was called Big Thing.
+const LEGACY_DELTAS_KEY: &str = "superthingDeltas";
 
 pub fn goal_scope(goal_id: &str) -> String {
     format!("odyssey:{goal_id}")
@@ -113,7 +115,7 @@ pub(crate) struct Inner {
     pub attributed: Mutex<HashMap<String, String>>,
 }
 
-/// The Super Thing service. Cloning shares it.
+/// The Big Thing service. Cloning shares it.
 #[derive(Clone)]
 pub struct Engine {
     pub(crate) inner: Arc<Inner>,
@@ -255,7 +257,8 @@ impl Engine {
     }
 
     pub(crate) fn deltas(&self, goal_id: &str) -> Vec<Delta> {
-        self.db(|storage| storage.setting_get::<Vec<Delta>>(DELTAS_KEY, &goal_scope(goal_id))).ok().flatten().unwrap_or_default()
+        let scope = goal_scope(goal_id);
+        self.db(|storage| Ok(storage.setting_get::<Vec<Delta>>(DELTAS_KEY, &scope)?.or(storage.setting_get::<Vec<Delta>>(LEGACY_DELTAS_KEY, &scope)?))).ok().flatten().unwrap_or_default()
     }
 
     pub(crate) fn set_deltas(&self, goal_id: &str, deltas: &[Delta]) {
@@ -306,7 +309,7 @@ impl Engine {
         let spec = OpenSpec { workspace_id: goal.workspace_id.clone(), provider: row.provider, combo: team_of(goal).map(|team| team.1), resume: Some(row.agent_session_id.clone()), ..OpenSpec::default() };
         match self.inner.host.open(spec).await {
             Ok(live) => {
-                self.journal(&goal.id, JournalKind::State, None, "Reopened the run's session", Some(&format!("The session {} was not open, so Super Thing resumed it to carry on.", live.agent_session_id)));
+                self.journal(&goal.id, JournalKind::State, None, "Reopened the run's session", Some(&format!("The session {} was not open, so Big Thing resumed it to carry on.", live.agent_session_id)));
                 self.inner.host.emit(EngineEvent::SessionOpened { workspace_id: live.workspace_id.clone(), handle: live.handle.clone(), agent_session_id: live.agent_session_id.clone() });
                 self.adopt(goal, &live).await;
                 Some(live)
@@ -596,7 +599,7 @@ impl Engine {
                     &format!("Cancelled a turn that had produced nothing for {silent}{agents}"),
                     Some(&format!(
                         "No events at all reached the session in that time — not from the turn and not from any subagent — so nothing in it was alive and the turn could not settle on its own. The run continues from the last checkpoint{}.",
-                        if working_agents > 0 { "; whatever those subagents wrote to docs/super-thing/agents/ is read by the next turn" } else { "" }
+                        if working_agents > 0 { "; whatever those subagents wrote to docs/big-thing/agents/ is read by the next turn" } else { "" }
                     )),
                 );
                 self.announce(goal, &format!("cancelled a turn that went silent for {silent}"));
@@ -784,7 +787,7 @@ impl Engine {
         // What the tools say from here on belongs to this turn.
         self.inner.inbox.lock().unwrap_or_else(|poisoned| poisoned.into_inner()).remove(&goal.id);
         state.pending = Some(PendingTurn { handle: live.handle.clone(), tokens_at_submit, milestone: index, window_at_submit, provider: live.provider });
-        let outcome = live.actor.submit_text(format!("superthing-{}", uuid::Uuid::new_v4().simple()), &text).await;
+        let outcome = live.actor.submit_text(format!("bigthing-{}", uuid::Uuid::new_v4().simple()), &text).await;
         let refusal = match outcome {
             Ok(SubmissionOutcome::Accepted) => None,
             Ok(SubmissionOutcome::Rejected { error }) | Ok(SubmissionOutcome::OutcomeUnknown { error }) => Some(error.message),
@@ -874,7 +877,7 @@ impl Engine {
         };
         if goal.worktree_path.is_some()
             && checkpoint.changed > 0
-            && let Some(commit) = super::worktree::commit_checkpoint(&live.root, &format!("Super Thing checkpoint: {}", summary))
+            && let Some(commit) = super::worktree::commit_checkpoint(&live.root, &format!("Big Thing checkpoint: {}", summary))
         {
             summary.push_str(&format!(" · commit {}", &commit[..commit.len().min(10)]));
         }
@@ -1017,7 +1020,7 @@ impl Engine {
                     JournalKind::Guard,
                     None,
                     &format!("{TRANSPORT_CLOSED}: {}", error_text.unwrap_or("")),
-                    Some("The session's process or channel ended under the turn. That is not the agent's failure; the run continues from the last checkpoint once the session is attached again, and reads docs/super-thing/agents/ for anything a subagent finished before it died."),
+                    Some("The session's process or channel ended under the turn. That is not the agent's failure; the run continues from the last checkpoint once the session is attached again, and reads docs/big-thing/agents/ for anything a subagent finished before it died."),
                 );
                 self.changed(goal_id);
                 return;
@@ -1108,7 +1111,7 @@ impl Engine {
                     &format!("{QUOTA_WAIT_HOLD}: {}", report.note),
                     Some(&format!("until={until}\nReported as blocked, read as a wait: the run continues and the next continuation goes out at {}.", clock::local_hhmm(until))),
                 );
-                self.announce(goal, &format!("the agent is waiting on a quota; Super Thing resumes it at {}", clock::local_hhmm(until)));
+                self.announce(goal, &format!("the agent is waiting on a quota; Big Thing resumes it at {}", clock::local_hhmm(until)));
             }
             ReportStatus::Blocked => {
                 let _ = self.db(|storage| storage.milestone_set_state(&milestone.id, MilestoneState::Failed));
@@ -1461,9 +1464,9 @@ impl Engine {
         };
         let evidence_text = if outcome.output.trim().is_empty() { outcome.summary.clone() } else { format!("{}\n\n{}", outcome.summary, outcome.output) };
         let _ = self.db(|storage| storage.milestone_record_check(milestone_id, outcome.passed, &evidence_text, CheckSource::Desktop));
-        self.journal(goal_id, JournalKind::Check, Some(milestone_id), &format!("Super Thing ran the check for milestone {}: {}", index + 1, if outcome.passed { "passed" } else { "failed" }), Some(&outcome.summary));
+        self.journal(goal_id, JournalKind::Check, Some(milestone_id), &format!("Big Thing ran the check for milestone {}: {}", index + 1, if outcome.passed { "passed" } else { "failed" }), Some(&outcome.summary));
         if outcome.passed {
-            self.queue_delta(goal_id, Delta::Verified { milestone: index + 1, title: milestone.title.clone(), evidence: format!("{} (check run by Super Thing)", outcome.summary) });
+            self.queue_delta(goal_id, Delta::Verified { milestone: index + 1, title: milestone.title.clone(), evidence: format!("{} (check run by Big Thing)", outcome.summary) });
         } else {
             let lines: Vec<&str> = outcome.output.split('\n').filter(|line| !line.is_empty()).collect();
             self.queue_delta(
@@ -1516,7 +1519,7 @@ impl Engine {
         let text = prompt::build_planning_prompt(&loaded.goal, &document, loaded.goal.plan_source.as_deref(), self.tools_available(&live));
         self.inner.inbox.lock().unwrap_or_else(|poisoned| poisoned.into_inner()).remove(goal_id);
         state.pending = Some(PendingTurn { handle: live.handle.clone(), tokens_at_submit: None, milestone: None, window_at_submit: None, provider: live.provider });
-        match live.actor.submit_text(format!("superthing-plan-{}", uuid::Uuid::new_v4().simple()), &text).await? {
+        match live.actor.submit_text(format!("bigthing-plan-{}", uuid::Uuid::new_v4().simple()), &text).await? {
             SubmissionOutcome::Accepted => {}
             SubmissionOutcome::Rejected { error } | SubmissionOutcome::OutcomeUnknown { error } => {
                 state.pending = None;

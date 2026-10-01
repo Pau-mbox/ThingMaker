@@ -102,7 +102,7 @@ pub trait EngineHost: Send + Sync {
     fn quota(&self, provider: Provider) -> BoxFuture<Option<QuotaSnapshot>>;
     /// Paid input plus output so far, from the provider's own transcript.
     fn session_tokens(&self, session: &LiveSession) -> Option<i64>;
-    /// Installs the `super-thing` skill; whether it is there.
+    /// Installs the `big-thing` skill; whether it is there.
     fn install_skill(&self) -> bool;
     /// Installs the Claude delegate into the workspace; whether it is there.
     fn install_delegate(&self, root: &Path) -> bool;

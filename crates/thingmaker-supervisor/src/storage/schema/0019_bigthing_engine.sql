@@ -1,4 +1,4 @@
--- Super Thing in the supervisor (ADR-010).
+-- Big Thing in the supervisor (ADR-010).
 --
 -- How a goal's plan is worked: `agent` lets the orchestrator delegate the
 -- tasks itself; `runner` has the engine hand ready tasks to the team's

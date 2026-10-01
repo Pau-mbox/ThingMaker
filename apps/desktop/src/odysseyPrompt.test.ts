@@ -64,7 +64,7 @@ describe("the briefing", () => {
 
   it("tells the model the mechanics it cannot infer", () => {
     const text = buildBriefing(goal, milestones);
-    expect(text).toContain("You are working under Super Thing");
+    expect(text).toContain("You are working under Big Thing");
     expect(text).toContain("Do not ask permission to continue");
     expect(text).toContain("A long gap between turns is normal and means nothing failed");
     expect(text).toContain("A milestone is done when its check passes, not when you say so");
@@ -113,14 +113,14 @@ describe("the continuation", () => {
     expect(text).toContain("3.1 [done] Set up components");
     expect(text).toContain("3.2 [in progress] Implement screens");
     expect(text).toContain("3.3 [ready] Add analytics");
-    expect(text).toContain("Report task moves with: SUPERTHING-TASK:");
+    expect(text).toContain("Report task moves with: BIGTHING-TASK:");
     expect(text).toContain("Its check: `pnpm test` must exit 0");
   });
 
   it("stays short: no goal restatement, no plan dump", () => {
     const text = buildContinuation({ milestone: active, index: 2, total: 5, deltas: [] });
     expect(text).not.toContain("Ship onboarding v2");
-    expect(text).not.toContain("You are working under Super Thing");
+    expect(text).not.toContain("You are working under Big Thing");
     expect(text.length).toBeLessThan(700);
   });
 
@@ -192,7 +192,7 @@ describe("the skill the briefing offers", () => {
   const milestones: MilestoneRecord[] = [{ id: "m1", odysseyId: "o1", position: 0, title: "Do it", detail: "", state: "planned", checkKind: "manual", steps: [] }];
 
   it("offers it by default", () => {
-    expect(buildBriefing(goal, milestones)).toContain("Load the `super-thing` skill");
+    expect(buildBriefing(goal, milestones)).toContain("Load the `big-thing` skill");
   });
 
   it("says nothing about it when it could not be installed", () => {
@@ -203,15 +203,15 @@ describe("the skill the briefing offers", () => {
 describe("the run's memory on disk", () => {
   const now = 1_700_000_000_000;
   const kept: WorkspaceNotes = {
-    state: { path: "docs/super-thing/STATE.md", bytes: 900, modifiedAtUnixMs: now - 12 * 60_000 },
+    state: { path: "docs/big-thing/STATE.md", bytes: 900, modifiedAtUnixMs: now - 12 * 60_000 },
     agentNotes: [
-      { path: "docs/super-thing/agents/economy.md", bytes: 200, modifiedAtUnixMs: now - 60_000 },
-      { path: "docs/super-thing/agents/ships.md", bytes: 300, modifiedAtUnixMs: now - 3 * 60 * 60_000 },
+      { path: "docs/big-thing/agents/economy.md", bytes: 200, modifiedAtUnixMs: now - 60_000 },
+      { path: "docs/big-thing/agents/ships.md", bytes: 300, modifiedAtUnixMs: now - 3 * 60 * 60_000 },
     ],
   };
 
   it("says the note exists and how old it is, or asks for it to be created", () => {
-    expect(handoffLine(kept, now)).toBe("Handoff note: `docs/super-thing/STATE.md` (updated 12m ago) — read it if you have lost the thread, update it before you report.");
+    expect(handoffLine(kept, now)).toBe("Handoff note: `docs/big-thing/STATE.md` (updated 12m ago) — read it if you have lost the thread, update it before you report.");
     expect(handoffLine({ agentNotes: [] }, now)).toContain("does not exist yet — create it this turn");
     // When the workspace could not be read the line is generic rather than
     // wrong about a file's existence.
@@ -220,25 +220,25 @@ describe("the run's memory on disk", () => {
   });
 
   it("names only the subagent notes written since the model last worked", () => {
-    expect(agentNotesSince(kept, now - 2 * 60 * 60_000)).toEqual(["docs/super-thing/agents/economy.md"]);
+    expect(agentNotesSince(kept, now - 2 * 60 * 60_000)).toEqual(["docs/big-thing/agents/economy.md"]);
     expect(agentNotesSince(kept, null)).toHaveLength(2);
     expect(agentNotesSince(null, null)).toEqual([]);
   });
 
   it("carries the note, the spec reference and the new subagent notes in a continuation", () => {
     const active = milestone({ title: "Economy", detail: "Twenty cities, ten goods.", section: "§4 Economy", state: "active" });
-    const text = buildContinuation({ milestone: active, index: 3, total: 12, deltas: [], planPath: "docs/GDD.md", notes: kept, agentNotes: ["docs/super-thing/agents/economy.md"], now });
+    const text = buildContinuation({ milestone: active, index: 3, total: 12, deltas: [], planPath: "docs/GDD.md", notes: kept, agentNotes: ["docs/big-thing/agents/economy.md"], now });
     expect(text).toContain("Spec: §4 Economy in `docs/GDD.md`.");
-    expect(text).toContain("Handoff note: `docs/super-thing/STATE.md` (updated 12m ago)");
-    expect(text).toContain("Subagent notes written since your last turn: `docs/super-thing/agents/economy.md`. Read them before raising any of that work again.");
+    expect(text).toContain("Handoff note: `docs/big-thing/STATE.md` (updated 12m ago)");
+    expect(text).toContain("Subagent notes written since your last turn: `docs/big-thing/agents/economy.md`. Read them before raising any of that work again.");
     // Without notes the continuation is exactly what it was.
     expect(buildContinuation({ milestone: active, index: 3, total: 12, deltas: [] })).not.toContain("Handoff note");
   });
 
   it("briefs the model on the note, the subagent notes folder and its own role", () => {
     const text = buildBriefing(goal, [milestone({ title: "Economy", section: "§4 Economy" })], { notes: { agentNotes: [] }, now });
-    expect(text).toContain("Handoff note: `docs/super-thing/STATE.md` does not exist yet");
-    expect(text).toContain("writes its result to `docs/super-thing/agents/<name>.md` before it returns");
+    expect(text).toContain("Handoff note: `docs/big-thing/STATE.md` does not exist yet");
+    expect(text).toContain("writes its result to `docs/big-thing/agents/<name>.md` before it returns");
     expect(text).toContain("routine implementation belongs in a subagent");
     expect(text).toContain("1. Economy  (spec: §4 Economy)  [check: the user ticks it]");
   });

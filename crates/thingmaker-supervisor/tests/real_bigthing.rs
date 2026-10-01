@@ -1,11 +1,11 @@
-//! Super Thing end to end on the real providers, on the user's own plans: a
+//! Big Thing end to end on the real providers, on the user's own plans: a
 //! two-milestone goal in a scratch Git repository, run by the engine on a
 //! Claude orchestrator and on a Codex one, each leading a team so it has the
-//! `superthing_*` tools. Spends a handful of small turns, so it only runs when
+//! `bigthing_*` tools. Spends a handful of small turns, so it only runs when
 //! asked:
 //!
 //! ```text
-//! THINGMAKER_REAL_SUPERTHING=1 cargo test -p thingmaker-supervisor --test real_superthing -- --nocapture --test-threads=1
+//! THINGMAKER_REAL_BIGTHING=1 cargo test -p thingmaker-supervisor --test real_bigthing -- --nocapture --test-threads=1
 //! ```
 //!
 //! What it proves that the mocks cannot: a real model follows the briefing,
@@ -29,7 +29,7 @@ use thingmaker_supervisor::{
         odyssey::{CheckKind, GoalEdit, JournalKind, MilestoneState, NewOdyssey, OdysseyState, Orchestrator},
         workspaces::SessionOrigin,
     },
-    superthing::{Engine, EngineEvent, EngineHost, LiveSession, OpenSpec},
+    bigthing::{Engine, EngineEvent, EngineHost, LiveSession, OpenSpec},
     supervisor::{AgentLaunch, SessionActor, SessionActorConfig},
 };
 
@@ -162,7 +162,7 @@ async fn run(provider: Provider) {
                 workspace_id: workspace.id.clone(),
                 session_id: Some(live.row_id.clone()),
                 title: "Write two greeting files".into(),
-                brief: "A two-milestone test of Super Thing. Keep every turn short; do not explore the repository.".into(),
+                brief: "A two-milestone test of Big Thing. Keep every turn short; do not explore the repository.".into(),
                 max_continuations: 10,
                 ..Default::default()
             })
@@ -191,7 +191,7 @@ async fn run(provider: Provider) {
     for patch in calls.values() {
         eprintln!("tool call: {:?} {:?}", patch.title, patch.raw_input.as_ref().map(|input| input.to_string().chars().take(120).collect::<String>()));
     }
-    let via_tools = calls.values().filter(|patch| patch.title.as_deref().unwrap_or("").contains("superthing_report") || patch.raw_input.as_ref().is_some_and(|input| input.to_string().contains("superthing_report"))).count();
+    let via_tools = calls.values().filter(|patch| patch.title.as_deref().unwrap_or("").contains("bigthing_report") || patch.raw_input.as_ref().is_some_and(|input| input.to_string().contains("bigthing_report"))).count();
     eprintln!("{} reported through the tools {via_tools} time(s)", provider.label());
     assert_eq!(view.goal.state, OdysseyState::Complete, "{provider:?}: {:?}", engine.runtime(&goal.id));
     assert!(view.milestones.iter().all(|milestone| milestone.state == MilestoneState::Verified));
@@ -204,8 +204,8 @@ async fn run(provider: Provider) {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn a_goal_runs_to_complete_on_claude() {
-    if std::env::var("THINGMAKER_REAL_SUPERTHING").as_deref() != Ok("1") {
-        eprintln!("set THINGMAKER_REAL_SUPERTHING=1 to spend real turns; skipping");
+    if std::env::var("THINGMAKER_REAL_BIGTHING").as_deref() != Ok("1") {
+        eprintln!("set THINGMAKER_REAL_BIGTHING=1 to spend real turns; skipping");
         return;
     }
     run(Provider::Claude).await;
@@ -213,8 +213,8 @@ async fn a_goal_runs_to_complete_on_claude() {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn a_goal_runs_to_complete_on_codex() {
-    if std::env::var("THINGMAKER_REAL_SUPERTHING").as_deref() != Ok("1") {
-        eprintln!("set THINGMAKER_REAL_SUPERTHING=1 to spend real turns; skipping");
+    if std::env::var("THINGMAKER_REAL_BIGTHING").as_deref() != Ok("1") {
+        eprintln!("set THINGMAKER_REAL_BIGTHING=1 to spend real turns; skipping");
         return;
     }
     run(Provider::Codex).await;

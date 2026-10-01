@@ -1,6 +1,6 @@
-//! Running a Super Thing milestone's check (docs/plans/odyssey.md §5).
+//! Running a Big Thing milestone's check (docs/plans/odyssey.md §5).
 //!
-//! This is the desktop-run lane: Super Thing chose the command, Super Thing read the
+//! This is the desktop-run lane: Big Thing chose the command, Big Thing read the
 //! exit code, and the agent was not in the loop. That is the whole point, so
 //! this module deliberately does nothing clever — it runs what the milestone
 //! says, bounds it in time and size, and reports the exit code.

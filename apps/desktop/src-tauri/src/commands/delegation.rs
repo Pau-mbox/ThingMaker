@@ -48,7 +48,7 @@ pub fn start(app: &AppHandle) -> Result<(), String> {
     let emitter = app.clone();
     let delegation = Delegation::new(launcher, move |job: &JobView| {
         let _ = emitter.emit(JOB_EVENT, job);
-        // Super Thing follows the jobs it gave out, and the tasks they are named after.
+        // Big Thing follows the jobs it gave out, and the tasks they are named after.
         if let Some(engine) = emitter.try_state::<AppState>().and_then(|state| state.engine.get().cloned()) {
             engine.note_job(job);
         }

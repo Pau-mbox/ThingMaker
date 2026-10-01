@@ -48,7 +48,7 @@ pub mod odyssey_spend;
 pub mod review;
 pub mod security;
 pub mod storage;
-pub mod superthing;
+pub mod bigthing;
 pub mod supervisor;
 pub mod terminal;
 pub mod transport;

@@ -1,4 +1,4 @@
-//! Super Thing end to end: the engine drives a mock Claude Code orchestrator
+//! Big Thing end to end: the engine drives a mock Claude Code orchestrator
 //! through a whole goal — briefing, continuations, checks read out of the
 //! turn's own tool results, completion — and through the ways a run stalls:
 //! a spent account, a session that is not open, a plan asked of a document.
@@ -21,7 +21,7 @@ use thingmaker_supervisor::{
         odyssey::{CheckKind, CheckSource, JournalKind, MilestoneState, NewOdyssey, OdysseyState},
         workspaces::SessionOrigin,
     },
-    superthing::{Engine, EngineEvent, EngineHost, LiveSession, OpenSpec},
+    bigthing::{Engine, EngineEvent, EngineHost, LiveSession, OpenSpec},
     supervisor::{AgentLaunch, SessionActor, SessionActorConfig},
 };
 
@@ -296,16 +296,16 @@ async fn the_protocol_tools_answer_from_the_record_and_the_memory_is_shared() {
         async move { engine.call(&caller, &name, &arguments).expect("an engine tool").await }
     };
     let names: Vec<String> = fixture.engine.tools(&caller).iter().map(|tool| tool["name"].as_str().unwrap().to_string()).collect();
-    assert!(names.contains(&"superthing_report".to_string()) && names.contains(&"memory_write".to_string()));
+    assert!(names.contains(&"bigthing_report".to_string()) && names.contains(&"memory_write".to_string()));
     let worker = Caller::Worker { orchestrator: live.handle.clone(), provider: Provider::Codex, root: live.root.clone(), name: "luna".into(), job_id: "job-1".into() };
     let worker_tools: Vec<String> = fixture.engine.tools(&worker).iter().map(|tool| tool["name"].as_str().unwrap().to_string()).collect();
     assert_eq!(worker_tools, ["memory_read", "memory_write", "board"]);
 
     // Validated on the spot.
-    let wrong = call("superthing_report", json!({"milestone": 9, "status": "complete"})).await;
+    let wrong = call("bigthing_report", json!({"milestone": 9, "status": "complete"})).await;
     assert_eq!(wrong["isError"], true);
     assert!(wrong["content"][0]["text"].as_str().unwrap().contains("the plan has 2"));
-    let task = call("superthing_task", json!({"milestone": 1, "task": 1, "status": "done"})).await;
+    let task = call("bigthing_task", json!({"milestone": 1, "task": 1, "status": "done"})).await;
     assert_eq!(task["isError"], true, "milestone 1 has no tasks");
 
     // The memory, written by the orchestrator and read by a worker.
@@ -318,16 +318,16 @@ async fn the_protocol_tools_answer_from_the_record_and_the_memory_is_shared() {
     assert_eq!(board["structuredContent"]["milestones"].as_array().unwrap().len(), 2);
 
     // A report through the tool is accepted and described.
-    let ok = call("superthing_report", json!({"milestone": 1, "status": "complete", "note": "wrote it"})).await;
+    let ok = call("bigthing_report", json!({"milestone": 1, "status": "complete", "note": "wrote it"})).await;
     assert_eq!(ok["isError"], false);
     assert!(ok["structuredContent"]["note"].as_str().unwrap().contains("verified by its check: `true` must exit 0"), "{ok}");
     // A plan is only for a goal that has none; a running one amends.
-    let plan = call("superthing_propose_plan", json!({"milestones": [{"title": "x"}]})).await;
+    let plan = call("bigthing_propose_plan", json!({"milestones": [{"title": "x"}]})).await;
     assert_eq!(plan["isError"], false, "the goal is still a draft: {plan}");
     fixture.storage.lock().unwrap().odyssey_set_state(&goal_id, OdysseyState::Running).unwrap();
-    let late = call("superthing_propose_plan", json!({"milestones": [{"title": "x"}]})).await;
+    let late = call("bigthing_propose_plan", json!({"milestones": [{"title": "x"}]})).await;
     assert_eq!(late["isError"], true);
-    let amend = call("superthing_amend", json!({"ops": [{"op": "drop", "target": 2}], "reason": "not needed"})).await;
+    let amend = call("bigthing_amend", json!({"ops": [{"op": "drop", "target": 2}], "reason": "not needed"})).await;
     assert!(amend["structuredContent"]["diff"].as_str().unwrap().contains("− Drop milestone 2 \"Write file 2\" (not needed)"), "{amend}");
     assert!(fixture.delegation.combo(&live.handle).is_some(), "the session leads a team, so it has the tools");
 }

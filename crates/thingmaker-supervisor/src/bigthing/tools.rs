@@ -26,7 +26,7 @@ use crate::{
     },
 };
 
-const SUPERTHING_INSTRUCTIONS: &str = "When this session runs a Super Thing goal, report to it with the `superthing_*` tools: `superthing_report` when a milestone is finished or blocked, `superthing_task` as tasks move, `superthing_ask` for a decision only the user can make, `superthing_amend` to change the plan. \
+const BIGTHING_INSTRUCTIONS: &str = "When this session runs a Big Thing goal, report to it with the `bigthing_*` tools: `bigthing_report` when a milestone is finished or blocked, `bigthing_task` as tasks move, `bigthing_ask` for a decision only the user can make, `bigthing_amend` to change the plan. \
 `memory_read` and `memory_write` are the project's shared memory, which every session and worker reads; `board` is the run's task board.";
 
 fn object(properties: Value, required: &[&str]) -> Value {
@@ -57,7 +57,7 @@ fn memory_tools() -> Vec<Value> {
         json!({
             "name": "board",
             "title": "The run's task board",
-            "description": "Every milestone of this session's Super Thing run with its tasks: state, who has each task, and what it waits for.",
+            "description": "Every milestone of this session's Big Thing run with its tasks: state, who has each task, and what it waits for.",
             "inputSchema": object(json!({}), &[]),
             "annotations": { "readOnlyHint": true, "openWorldHint": false }
         }),
@@ -84,9 +84,9 @@ fn run_tools() -> Vec<Value> {
     });
     vec![
         json!({
-            "name": "superthing_report",
+            "name": "bigthing_report",
             "title": "Report a milestone",
-            "description": "Tells Super Thing a milestone is finished (status `complete`) or cannot be finished (`blocked`, with why). A completion is a claim: the milestone's check decides, and Super Thing reads its exit code from your tool results or runs it. Send it when the work is done, not while you are still working.",
+            "description": "Tells Big Thing a milestone is finished (status `complete`) or cannot be finished (`blocked`, with why). A completion is a claim: the milestone's check decides, and Big Thing reads its exit code from your tool results or runs it. Send it when the work is done, not while you are still working.",
             "inputSchema": object(json!({
                 "milestone": { "type": "integer", "minimum": 1 },
                 "status": { "type": "string", "enum": ["complete", "blocked"] },
@@ -95,7 +95,7 @@ fn run_tools() -> Vec<Value> {
             "annotations": { "readOnlyHint": false, "destructiveHint": false, "openWorldHint": false }
         }),
         json!({
-            "name": "superthing_task",
+            "name": "bigthing_task",
             "title": "Move a task",
             "description": "Moves a task of the plan (milestone 6, task 3 is 6.3): `in_progress` when it starts, `done`, or `blocked`. Name the subagent or worker doing it in `agent` so the run shows who did what.",
             "inputSchema": object(json!({
@@ -108,7 +108,7 @@ fn run_tools() -> Vec<Value> {
             "annotations": { "readOnlyHint": false, "destructiveHint": false, "openWorldHint": false }
         }),
         json!({
-            "name": "superthing_ask",
+            "name": "bigthing_ask",
             "title": "Ask the user",
             "description": "Hands the user a decision only a human can make: an ambiguous requirement, an architectural fork, conflicting constraints, a failure that keeps recurring, a permission you cannot grant yourself. Say what you do meanwhile in `default`, and carry on: the answer arrives on a later continuation.",
             "inputSchema": object(json!({
@@ -120,9 +120,9 @@ fn run_tools() -> Vec<Value> {
             "annotations": { "readOnlyHint": false, "destructiveHint": false, "openWorldHint": false }
         }),
         json!({
-            "name": "superthing_propose_plan",
+            "name": "bigthing_propose_plan",
             "title": "Propose a plan",
-            "description": "Sends the milestones for a goal that has none yet, when Super Thing asked you to plan from a document. Each milestone carries the document's substance in `detail`, a check Super Thing can run when there is one, and three to eight tasks. The user reviews the plan before the run starts.",
+            "description": "Sends the milestones for a goal that has none yet, when Big Thing asked you to plan from a document. Each milestone carries the document's substance in `detail`, a check Big Thing can run when there is one, and three to eight tasks. The user reviews the plan before the run starts.",
             "inputSchema": object(json!({
                 "milestones": {
                     "type": "array",
@@ -142,7 +142,7 @@ fn run_tools() -> Vec<Value> {
             "annotations": { "readOnlyHint": false, "destructiveHint": false, "openWorldHint": false }
         }),
         json!({
-            "name": "superthing_amend",
+            "name": "bigthing_amend",
             "title": "Change the plan",
             "description": "Changes the plan when it no longer fits what you found. `ops` is a list of operations, each with `op`: `add` (title, after: a milestone number or \"end\", detail, section, checkKind, checkSpec, steps), `revise` (target, title, detail, section, checkKind, checkSpec, steps to add), `drop` (target, reason), `drop_task` (ref {milestone, task}, reason), `revise_task` (ref, title, detail, depends), `split_task` (ref, steps, reason) and `move_task` (ref, after: a task number or \"start\"). Numbers are as the plan shows them now. Verified milestones and done tasks are not rewritten.",
             "inputSchema": object(json!({
@@ -172,11 +172,11 @@ impl TeamExtension for Engine {
     }
 
     fn instructions(&self, caller: &Caller) -> Option<String> {
-        matches!(caller, Caller::Orchestrator { .. }).then(|| SUPERTHING_INSTRUCTIONS.to_string())
+        matches!(caller, Caller::Orchestrator { .. }).then(|| BIGTHING_INSTRUCTIONS.to_string())
     }
 
     fn call(&self, caller: &Caller, name: &str, arguments: &Value) -> Option<BoxFuture<Value>> {
-        let known = ["memory_read", "memory_write", "board", "superthing_report", "superthing_task", "superthing_ask", "superthing_propose_plan", "superthing_amend"];
+        let known = ["memory_read", "memory_write", "board", "bigthing_report", "bigthing_task", "bigthing_ask", "bigthing_propose_plan", "bigthing_amend"];
         if !known.contains(&name) {
             return None;
         }
@@ -185,8 +185,8 @@ impl TeamExtension for Engine {
         let name = name.to_string();
         let arguments = arguments.clone();
         Some(Box::pin(async move {
-            if name.starts_with("superthing_") && !matches!(caller, Caller::Orchestrator { .. }) {
-                return error_result("Only the run's orchestrator reports to Super Thing.");
+            if name.starts_with("bigthing_") && !matches!(caller, Caller::Orchestrator { .. }) {
+                return error_result("Only the run's orchestrator reports to Big Thing.");
             }
             match engine.answer_tool(&caller, &name, &arguments) {
                 Ok(value) => text_result(&value, false),
@@ -223,7 +223,7 @@ impl Engine {
             "memory_read" => {
                 let workspace = self.workspace_for(caller)?;
                 let entries = self.db(|storage| storage.memory_list(&workspace, string(arguments, "query").as_deref())).map_err(|error| error.message)?;
-                let entries: Vec<Value> = entries.iter().map(|entry| json!({ "id": entry.id, "kind": entry.kind, "title": entry.title, "body": entry.body, "author": entry.author, "updated": crate::superthing::clock::iso8601(entry.updated_at) })).collect();
+                let entries: Vec<Value> = entries.iter().map(|entry| json!({ "id": entry.id, "kind": entry.kind, "title": entry.title, "body": entry.body, "author": entry.author, "updated": crate::bigthing::clock::iso8601(entry.updated_at) })).collect();
                 Ok(json!({ "entries": entries, "note": if entries.is_empty() { "The project memory has nothing on that yet." } else { "Newest first." } }))
             }
             "memory_write" => {
@@ -237,7 +237,7 @@ impl Engine {
                 Ok(json!({ "id": entry.id, "written": true, "note": "Every session and worker of this project can read it now." }))
             }
             "board" => {
-                let goal = self.goal_for_caller(caller).ok_or_else(|| "This session is not running a Super Thing goal, so there is no board.".to_string())?;
+                let goal = self.goal_for_caller(caller).ok_or_else(|| "This session is not running a Big Thing goal, so there is no board.".to_string())?;
                 let loaded = self.load(&goal.id).map_err(|error| error.message)?;
                 let milestones: Vec<Value> = loaded
                     .milestones
@@ -254,10 +254,10 @@ impl Engine {
                     .collect();
                 Ok(json!({ "goal": goal.title, "state": goal.state.as_str(), "milestones": milestones }))
             }
-            "superthing_report" => {
+            "bigthing_report" => {
                 let goal = self.running_goal(caller)?;
                 let loaded = self.load(&goal.id).map_err(|error| error.message)?;
-                let milestone = number(arguments, "milestone").ok_or("superthing_report needs a milestone number")?;
+                let milestone = number(arguments, "milestone").ok_or("bigthing_report needs a milestone number")?;
                 let status = match string(arguments, "status").as_deref() {
                     Some("complete") => ReportStatus::Complete,
                     Some("blocked") => ReportStatus::Blocked,
@@ -272,15 +272,15 @@ impl Engine {
                 Ok(json!({
                     "recorded": true,
                     "note": match status {
-                        ReportStatus::Complete => format!("Milestone {milestone} claimed complete. Super Thing records it when this turn ends; it is verified by its {check}."),
-                        ReportStatus::Blocked => format!("Milestone {milestone} reported blocked. Super Thing records it when this turn ends."),
+                        ReportStatus::Complete => format!("Milestone {milestone} claimed complete. Big Thing records it when this turn ends; it is verified by its {check}."),
+                        ReportStatus::Blocked => format!("Milestone {milestone} reported blocked. Big Thing records it when this turn ends."),
                     }
                 }))
             }
-            "superthing_task" => {
+            "bigthing_task" => {
                 let goal = self.running_goal(caller)?;
                 let loaded = self.load(&goal.id).map_err(|error| error.message)?;
-                let (Some(milestone), Some(task)) = (number(arguments, "milestone"), number(arguments, "task")) else { return Err("superthing_task needs a milestone and a task number".into()) };
+                let (Some(milestone), Some(task)) = (number(arguments, "milestone"), number(arguments, "task")) else { return Err("bigthing_task needs a milestone and a task number".into()) };
                 let status = match string(arguments, "status").as_deref() {
                     Some("in_progress") => TaskStatus::InProgress,
                     Some("done") => TaskStatus::Done,
@@ -302,18 +302,18 @@ impl Engine {
                 self.changed(&goal.id);
                 Ok(json!({ "recorded": true, "task": format!("{milestone}.{task}"), "status": string(arguments, "status") }))
             }
-            "superthing_ask" => {
+            "bigthing_ask" => {
                 let goal = self.running_goal(caller)?;
-                let question = string(arguments, "question").ok_or("superthing_ask needs a question")?;
+                let question = string(arguments, "question").ok_or("bigthing_ask needs a question")?;
                 let options = arguments.get("options").and_then(Value::as_array).map(|options| options.iter().filter_map(Value::as_str).map(str::to_string).collect()).unwrap_or_default();
                 let ask = Ask { kind: ask_kind(string(arguments, "kind").as_deref()), fallback: string(arguments, "default").unwrap_or_default(), options, question };
                 self.with_inbox(&goal.id, |inbox| inbox.asks.push(ask));
                 Ok(json!({ "recorded": true, "note": "The user sees it when this turn ends. Carry on with your default; the answer arrives on a later continuation." }))
             }
-            "superthing_propose_plan" => {
-                let goal = self.goal_for_caller(caller).ok_or("This session is not running a Super Thing goal.")?;
+            "bigthing_propose_plan" => {
+                let goal = self.goal_for_caller(caller).ok_or("This session is not running a Big Thing goal.")?;
                 if goal.state != OdysseyState::Draft {
-                    return Err("The goal already has a plan and is under way; change it with superthing_amend.".into());
+                    return Err("The goal already has a plan and is under way; change it with bigthing_amend.".into());
                 }
                 let milestones = read_milestones(arguments.get("milestones")).ok_or("milestones must be a list of objects with a title")?;
                 let plan = protocol::tidy_plan(milestones).ok_or("The plan has no milestones.")?;
@@ -322,7 +322,7 @@ impl Engine {
                 self.with_inbox(&goal.id, |inbox| inbox.plan = Some(plan));
                 Ok(json!({ "recorded": true, "milestones": count, "notes": notes, "note": "The user reviews the plan when this turn ends, and starts the run." }))
             }
-            "superthing_amend" => {
+            "bigthing_amend" => {
                 let goal = self.running_goal(caller)?;
                 let loaded = self.load(&goal.id).map_err(|error| error.message)?;
                 let ops: Vec<protocol::AmendOp> = serde_json::from_value(arguments.get("ops").cloned().unwrap_or(Value::Null)).map_err(|error| format!("ops could not be read: {error}"))?;
@@ -359,7 +359,7 @@ impl Engine {
     }
 
     fn running_goal(&self, caller: &Caller) -> Result<OdysseyRecord, String> {
-        let goal = self.goal_for_caller(caller).ok_or("This session is not running a Super Thing goal.")?;
+        let goal = self.goal_for_caller(caller).ok_or("This session is not running a Big Thing goal.")?;
         if matches!(goal.state, OdysseyState::Complete | OdysseyState::Abandoned) {
             return Err(format!("The goal is {}.", goal.state.as_str()));
         }
@@ -428,7 +428,7 @@ mod tests {
         }
         let names: Vec<String> = run_tools().iter().map(|tool| tool["name"].as_str().unwrap().to_string()).collect();
         for name in &names {
-            assert!(SUPERTHING_INSTRUCTIONS.contains(name.as_str()) || name == "superthing_propose_plan", "{name} is named in the instructions");
+            assert!(BIGTHING_INSTRUCTIONS.contains(name.as_str()) || name == "bigthing_propose_plan", "{name} is named in the instructions");
         }
     }
 

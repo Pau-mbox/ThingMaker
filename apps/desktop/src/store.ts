@@ -43,7 +43,7 @@ import type {
   ProviderInfo,
   QuotaSnapshot,
 } from "@thingmaker/contracts";
-import { EMPTY_COMBO, JOB_EVENT, ODYSSEY_STATE_NOTE, PROVIDERS, PROVIDER_LABELS, SUPERTHING_EVENT, asConfigOptions, isEffortOption, type Combo, type JobView, type ProviderModel, type SuperThingEvent, type SuperThingRuntime, type TeamPreset } from "@thingmaker/contracts";
+import { EMPTY_COMBO, JOB_EVENT, ODYSSEY_STATE_NOTE, PROVIDERS, PROVIDER_LABELS, BIGTHING_EVENT, asConfigOptions, isEffortOption, type Combo, type JobView, type ProviderModel, type BigThingEvent, type BigThingRuntime, type TeamPreset } from "@thingmaker/contracts";
 import { handoffBrief, readPresets, upsertJob, upsertPreset } from "./team";
 
 /** Preference keys (scope `ui`) for saved teams. */
@@ -169,7 +169,7 @@ type State = {
   records: Record<string, SessionRecord[]>;
   /** Git head per workspace. `null` means checked and not a repository. */
   repoInfo: Record<string, RepositoryInfo | null>;
-  /** The live Super Thing goal per session. `null` means read and there is none. */
+  /** The live Big Thing goal per session. `null` means read and there is none. */
   odyssey: Record<string, OdysseyView | null>;
   /** Runner bookkeeping that is not worth persisting: the resume time a wait
    *  is counting down to, the last reason a tick did nothing and when it was
@@ -349,7 +349,7 @@ type State = {
   /** Asks the engine to look at the goal now. */
   odysseyTick: (sessionId: string) => Promise<void>;
   /** What the engine tells the interface. */
-  noteSuperThing: (event: SuperThingEvent) => void;
+  noteBigThing: (event: BigThingEvent) => void;
   odysseyVerifyManually: (sessionId: string, milestoneId: string) => Promise<void>;
   odysseyRunCheck: (sessionId: string, milestoneId: string) => Promise<void>;
   odysseyRequestPlan: (sessionId: string) => Promise<void>;
@@ -493,7 +493,7 @@ function launchDefaults(defaults: SessionDefaults, provider: Provider): { model?
 export const PLAN_REQUESTED = "Asked the agent to read the plan document";
 
 /** The engine's runtime for a goal, in the shape the screen reads. */
-function runtimeFrom(runtime: SuperThingRuntime): OdysseyRuntime {
+function runtimeFrom(runtime: BigThingRuntime): OdysseyRuntime {
   return {
     resumeAt: runtime.resumeAt ?? null,
     lastReason: runtime.lastReason,
@@ -717,7 +717,7 @@ export const useStore = create<State>((set, get) => ({
       setInterval(readUsage, 5 * 60_000);
       void get().loadTeamPresets();
       void listen<JobView>(JOB_EVENT, (event) => get().noteJob(event.payload));
-      void listen<SuperThingEvent>(SUPERTHING_EVENT, (event) => get().noteSuperThing(event.payload));
+      void listen<BigThingEvent>(BIGTHING_EVENT, (event) => get().noteBigThing(event.payload));
       void listen(CLOSE_REQUESTED_EVENT, async () => {
         let activity: { id: string; active: boolean; detachedCalls: number }[] = [];
         try {
@@ -1069,7 +1069,7 @@ export const useStore = create<State>((set, get) => ({
         await get().odysseyLoadAmendments(sessionId, view.goal.id);
         await get().odysseyLoadInbox(sessionId, view.goal.id);
         // What the engine is doing now; later changes arrive as events.
-        const runtime = await api.superthingRuntime(view.goal.id).catch(() => null);
+        const runtime = await api.bigthingRuntime(view.goal.id).catch(() => null);
         if (runtime && typeof runtime === "object" && "lastReason" in runtime) set({ odysseyRuntime: { ...get().odysseyRuntime, [sessionId]: runtimeFrom(runtime) } });
       }
     } catch (error) {
@@ -1168,7 +1168,7 @@ export const useStore = create<State>((set, get) => ({
     if (!view || !milestone) return;
     await get().odysseyAddAmendment(sessionId, {
       odysseyId: view.goal.id,
-      note: `Break milestone ${milestoneIndex + 1} ("${milestone.title}") into three to eight tasks, in order, each one thing a subagent can be given; put depends: under a task that has to wait for earlier ones. Send them in an SUPERTHING-AMEND block as revise: ${milestoneIndex + 1} with step: lines. Change nothing else about the milestone.`,
+      note: `Break milestone ${milestoneIndex + 1} ("${milestone.title}") into three to eight tasks, in order, each one thing a subagent can be given; put depends: under a task that has to wait for earlier ones. Send them in a BIGTHING-AMEND block as revise: ${milestoneIndex + 1} with step: lines. Change nothing else about the milestone.`,
       refs: [],
     });
   },
@@ -1191,7 +1191,7 @@ export const useStore = create<State>((set, get) => ({
     const view = get().odyssey[sessionId];
     if (!view) return;
     try {
-      await api.superthingStart(view.goal.id);
+      await api.bigthingStart(view.goal.id);
       await get().refreshOdyssey(sessionId, view.goal.id);
     } catch (error) {
       set({ error: asError(error) });
@@ -1234,7 +1234,7 @@ export const useStore = create<State>((set, get) => ({
     }
     set({ busy: "Moving the run" });
     try {
-      await api.superthingMove(view.goal.id, target.kind === "session" ? { kind: "session", handle: target.sessionId } : { kind: "new", provider: target.agent });
+      await api.bigthingMove(view.goal.id, target.kind === "session" ? { kind: "session", handle: target.sessionId } : { kind: "new", provider: target.agent });
       get().announce(`${view.goal.title}: moved to another session`);
     } catch (error) {
       set({ error: asError(error) });
@@ -1248,7 +1248,7 @@ export const useStore = create<State>((set, get) => ({
     const view = get().odyssey[sessionId];
     if (!view) return;
     try {
-      await api.superthingPause(view.goal.id, reason);
+      await api.bigthingPause(view.goal.id, reason);
       await get().refreshOdyssey(sessionId, view.goal.id);
     } catch (error) {
       set({ error: asError(error) });
@@ -1259,11 +1259,11 @@ export const useStore = create<State>((set, get) => ({
   async odysseyTick(sessionId) {
     const view = get().odyssey[sessionId];
     if (!view) return;
-    await api.superthingTick(view.goal.id).catch(() => undefined);
+    await api.bigthingTick(view.goal.id).catch(() => undefined);
   },
 
   /** What the engine tells the interface (ADR-010). */
-  noteSuperThing(event) {
+  noteBigThing(event) {
     const state = get();
     switch (event.kind) {
       case "changed": {
@@ -1325,7 +1325,7 @@ export const useStore = create<State>((set, get) => ({
     const view = get().odyssey[sessionId];
     if (!view) return;
     try {
-      await api.superthingAmend(request);
+      await api.bigthingAmend(request);
       await get().odysseyLoadAmendments(sessionId, view.goal.id);
       await get().refreshOdyssey(sessionId, view.goal.id);
     } catch (error) {
@@ -1337,7 +1337,7 @@ export const useStore = create<State>((set, get) => ({
     const view = get().odyssey[sessionId];
     if (!view) return;
     try {
-      await api.superthingDecidePlanChange(view.goal.id, id, decision === "apply", note);
+      await api.bigthingDecidePlanChange(view.goal.id, id, decision === "apply", note);
       await get().odysseyLoadInbox(sessionId, view.goal.id);
       await get().refreshOdyssey(sessionId, view.goal.id);
     } catch (error) {
@@ -1349,7 +1349,7 @@ export const useStore = create<State>((set, get) => ({
     const view = get().odyssey[sessionId];
     if (!view) return;
     try {
-      await api.superthingAnswer(view.goal.id, id, answer);
+      await api.bigthingAnswer(view.goal.id, id, answer);
       await get().odysseyLoadInbox(sessionId, view.goal.id);
       await get().refreshOdyssey(sessionId, view.goal.id);
     } catch (error) {
@@ -1393,7 +1393,7 @@ export const useStore = create<State>((set, get) => ({
     const view = get().odyssey[sessionId];
     if (!view) return;
     try {
-      await api.superthingRequestPlan(view.goal.id);
+      await api.bigthingRequestPlan(view.goal.id);
       await get().refreshOdyssey(sessionId, view.goal.id);
     } catch (error) {
       set({ error: asError(error) });
@@ -1405,7 +1405,7 @@ export const useStore = create<State>((set, get) => ({
     const view = get().odyssey[sessionId];
     if (!view) return;
     try {
-      await api.superthingRunCheck(view.goal.id, milestoneId);
+      await api.bigthingRunCheck(view.goal.id, milestoneId);
       await get().refreshOdyssey(sessionId, view.goal.id);
     } catch (error) {
       set({ error: asError(error) });
@@ -1417,7 +1417,7 @@ export const useStore = create<State>((set, get) => ({
     const view = get().odyssey[sessionId];
     if (!view) return;
     try {
-      await api.superthingVerify(view.goal.id, milestoneId);
+      await api.bigthingVerify(view.goal.id, milestoneId);
       await get().refreshOdyssey(sessionId, view.goal.id);
     } catch (error) {
       set({ error: asError(error) });
@@ -2108,7 +2108,7 @@ export const useStore = create<State>((set, get) => ({
     if (running || detached > 0 || agents > 0) {
       const parts = [];
       if (running) parts.push("a turn is still running");
-      if (agents > 0) parts.push(`${agents} subagent${agents === 1 ? " is" : "s are"} still working and will be killed with it (only what they wrote to docs/super-thing/agents/ survives)`);
+      if (agents > 0) parts.push(`${agents} subagent${agents === 1 ? " is" : "s are"} still working and will be killed with it (only what they wrote to docs/big-thing/agents/ survives)`);
       if (detached > 0) parts.push(`${detached} detached background call(s) are active`);
       let confirmed = false;
       try {

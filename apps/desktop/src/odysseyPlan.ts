@@ -3,7 +3,7 @@
  *
  * A dropped roadmap is not parsed for milestones. It is handed to the session's
  * model, which reads it and proposes the plan in a block this module parses
- * back. The division is the same one the rest of Super Thing keeps: the model
+ * back. The division is the same one the rest of Big Thing keeps: the model
  * proposes, the record decides, and a human presses Start before anything runs.
  *
  * Everything here is pure. `parsePlan` is a refusal machine like
@@ -12,15 +12,15 @@
  */
 import type { CheckKind, MilestoneRecord, OdysseyRecord } from "@thingmaker/contracts";
 
-/** The block Super Thing looks for, quoted verbatim in the prompt and the skill. */
-export const PLAN_GRAMMAR = `SUPERTHING-PLAN
+/** The block Big Thing looks for, quoted verbatim in the prompt and the skill. */
+export const PLAN_GRAMMAR = `BIGTHING-PLAN
 milestone: <title>
 detail: <one line, optional>
 section: <the heading or line range of the document this milestone comes from, optional>
 check: <manual | command <cmd> | tests_pass <cmd> | files_exist <paths>>
 step: <task title, repeatable — three to eight per milestone, in order>
 depends: <numbers of earlier tasks in this milestone the one above waits for, optional>
-END-SUPERTHING-PLAN`;
+END-BIGTHING-PLAN`;
 
 /** Largest document handed to a model in one planning turn. */
 export const MAX_PLAN_DOCUMENT_BYTES = 64 * 1024;
@@ -121,7 +121,7 @@ function readCheck(value: string): { checkKind: CheckKind; checkSpec: string | n
  */
 export function parsePlan(text: string): ProposedPlan | null {
   if (!text) return null;
-  const blocks = [...text.matchAll(/^[^\S\n]*(?:\*\*)?(?:SUPERTHING|ODYSSEY)-PLAN(?:\*\*)?[^\S\n]*$([\s\S]*?)^[^\S\n]*(?:\*\*)?END-(?:SUPERTHING|ODYSSEY)-PLAN(?:\*\*)?[^\S\n]*$/gm)];
+  const blocks = [...text.matchAll(/^[^\S\n]*(?:\*\*)?(?:BIGTHING|SUPERTHING|ODYSSEY)-PLAN(?:\*\*)?[^\S\n]*$([\s\S]*?)^[^\S\n]*(?:\*\*)?END-(?:BIGTHING|SUPERTHING|ODYSSEY)-PLAN(?:\*\*)?[^\S\n]*$/gm)];
   const body = blocks.at(-1)?.[1];
   if (body === undefined) return null;
 
@@ -171,7 +171,7 @@ export function parsePlan(text: string): ProposedPlan | null {
   if (milestones.length === 0) return null;
   if (dropped > 0) notes.push(`The plan proposed more than ${MAX_MILESTONES} milestones; ${dropped} beyond the limit were dropped.`);
   const runnable = milestones.filter((entry) => entry.checkSpec).length;
-  if (runnable > 0) notes.push(`${runnable} milestone${runnable === 1 ? " has a check" : "s have checks"} Super Thing can run. Read the commands before you start the run.`);
+  if (runnable > 0) notes.push(`${runnable} milestone${runnable === 1 ? " has a check" : "s have checks"} Big Thing can run. Read the commands before you start the run.`);
   else notes.push(ALL_MANUAL_NOTE);
   return { milestones, notes };
 }
@@ -183,7 +183,7 @@ export function parsePlan(text: string): ProposedPlan | null {
  */
 export const ALL_MANUAL_NOTE = "Every milestone is manual, so the run will stop at each claim until you tick it. Set a test command in Settings and ask again, or edit the checks.";
 
-/** Whether a plan has nothing Super Thing can verify by itself. */
+/** Whether a plan has nothing Big Thing can verify by itself. */
 export function allManual(milestones: { checkKind: CheckKind; checkSpec?: string | null }[]): boolean {
   return milestones.length > 0 && milestones.every((milestone) => milestone.checkKind === "manual" || !milestone.checkSpec);
 }
@@ -198,10 +198,10 @@ export function buildPlanningPrompt(input: { goal: Pick<OdysseyRecord, "title" |
   const { goal, document, source } = input;
   const defaultCheck = goal.defaultCheck?.trim();
   const checkRule = defaultCheck
-    ? `- **Every milestone gets a check Super Thing can run.** The project's test command is \`${defaultCheck}\`; use \`check: tests_pass ${defaultCheck}\` unless the document names a better command for that milestone (\`command <cmd>\` for something else that must exit 0, \`files_exist <paths>\` for artefacts). Super Thing runs these commands itself, so do not invent one that is not there. \`manual\` stalls the run at that milestone until a human ticks it; use it only when nothing can be run.`
-    : "- **Prefer a check Super Thing can run.** If the repository has a test command you can see — a package script, a Makefile target, `cargo test`, a script under `Tools/` — use `tests_pass <cmd>` for milestones whose work it covers, and `command <cmd>` or `files_exist <paths>` where the document names something else that must hold. Super Thing runs these commands itself, so do not invent one. `manual` stalls the run at that milestone until a human ticks it; use it only when nothing can be run.";
+    ? `- **Every milestone gets a check Big Thing can run.** The project's test command is \`${defaultCheck}\`; use \`check: tests_pass ${defaultCheck}\` unless the document names a better command for that milestone (\`command <cmd>\` for something else that must exit 0, \`files_exist <paths>\` for artefacts). Big Thing runs these commands itself, so do not invent one that is not there. \`manual\` stalls the run at that milestone until a human ticks it; use it only when nothing can be run.`
+    : "- **Prefer a check Big Thing can run.** If the repository has a test command you can see — a package script, a Makefile target, `cargo test`, a script under `Tools/` — use `tests_pass <cmd>` for milestones whose work it covers, and `command <cmd>` or `files_exist <paths>` where the document names something else that must hold. Big Thing runs these commands itself, so do not invent one. `manual` stalls the run at that milestone until a human ticks it; use it only when nothing can be run.";
   return [
-    "You are setting up a Super Thing goal, ThingMaker's long-horizon runner. This turn is planning only: do not start the work, do not edit any files, and do not run anything.",
+    "You are setting up a Big Thing goal, ThingMaker's long-horizon runner. This turn is planning only: do not start the work, do not edit any files, and do not run anything.",
     "",
     `Goal: ${goal.title}`,
     ...(goal.brief ? [goal.brief] : []),

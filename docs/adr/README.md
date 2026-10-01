@@ -10,7 +10,7 @@ holds the tests that protect the decision.
 | [ADR-004](ADR-004-local-acp-no-listener.md) | Agents are driven locally, with no network listener | Accepted |
 | [ADR-007](ADR-007-convenience-vs-enforcement.md) | Distinguish convenience from enforcement | Accepted |
 | [ADR-009](ADR-009-providers-through-official-programs.md) | Providers run through their own official programs, on subscriptions | Accepted |
-| [ADR-010](ADR-010-super-thing-engine.md) | Super Thing runs in the supervisor, and speaks through tools | Accepted |
+| [ADR-010](ADR-010-big-thing-engine.md) | Big Thing runs in the supervisor, and speaks through tools | Accepted |
 
 The missing numbers belong to records from the runtime ThingMaker started on,
 retired when it moved to Claude Code, Codex and Gemini.

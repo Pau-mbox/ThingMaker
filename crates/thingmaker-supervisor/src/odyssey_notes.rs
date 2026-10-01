@@ -1,13 +1,13 @@
-//! The notes a Super Thing run keeps in the workspace
+//! The notes a Big Thing run keeps in the workspace
 //! (docs/research/odyssey-review.md §3.3, §2.3).
 //!
 //! Two files the agent writes and the runner only reads:
 //!
-//! * `docs/super-thing/STATE.md` — the handoff note: what is done, what is in
+//! * `docs/big-thing/STATE.md` — the handoff note: what is done, what is in
 //!   flight, which files it owns, what it learned that the plan does not say.
 //!   The transcript compacts and a session can be replaced; this is what a
 //!   cold session or a subagent starts from.
-//! * `docs/super-thing/agents/<name>.md` — a subagent's result, written before it
+//! * `docs/big-thing/agents/<name>.md` — a subagent's result, written before it
 //!   returns. Half the subagent spend on the first run went into agents that
 //!   died at a quota wall with their result in memory; a note on disk is what
 //!   the next turn recovers instead of redoing the work.
@@ -23,15 +23,15 @@ use serde::{Deserialize, Serialize};
 use crate::error::DesktopError;
 
 /// Workspace-relative path of the handoff note.
-pub const STATE_NOTE_PATH: &str = "docs/super-thing/STATE.md";
+pub const STATE_NOTE_PATH: &str = "docs/big-thing/STATE.md";
 /// Workspace-relative directory subagents write their results into.
-pub const AGENT_NOTES_DIR: &str = "docs/super-thing/agents";
+pub const AGENT_NOTES_DIR: &str = "docs/big-thing/agents";
 
-/// Where a run kept its notes before the feature was called Super Thing. A
+/// Where a run kept its notes before the feature was called Big Thing. A
 /// workspace that has them is still read from there, so a goal already under
 /// way keeps its memory.
-const LEGACY_STATE_NOTE_PATH: &str = "docs/odyssey/STATE.md";
-const LEGACY_AGENT_NOTES_DIR: &str = "docs/odyssey/agents";
+const LEGACY_STATE_NOTE_PATHS: [&str; 2] = ["docs/super-thing/STATE.md", "docs/odyssey/STATE.md"];
+const LEGACY_AGENT_NOTES_DIRS: [&str; 2] = ["docs/super-thing/agents", "docs/odyssey/agents"];
 
 /// Notes listed per read; a folder of more than this is a folder, not notes.
 const MAX_AGENT_NOTES: usize = 100;
@@ -74,9 +74,9 @@ fn info(root: &Path, relative: &str) -> Option<NoteInfo> {
 
 /// What the run has written to the workspace so far.
 pub fn read_notes(root: &Path) -> Result<WorkspaceNotes, DesktopError> {
-    let state = info(root, STATE_NOTE_PATH).or_else(|| info(root, LEGACY_STATE_NOTE_PATH));
+    let state = info(root, STATE_NOTE_PATH).or_else(|| LEGACY_STATE_NOTE_PATHS.iter().find_map(|path| info(root, path)));
     let mut agent_notes = Vec::new();
-    for dir in [AGENT_NOTES_DIR, LEGACY_AGENT_NOTES_DIR] {
+    for dir in std::iter::once(AGENT_NOTES_DIR).chain(LEGACY_AGENT_NOTES_DIRS) {
         let Ok(entries) = fs::read_dir(root.join(dir)) else { continue };
         for entry in entries.flatten() {
             let name = entry.file_name().to_string_lossy().into_owned();
@@ -103,15 +103,17 @@ mod tests {
         fs::create_dir_all(temp.path().join("docs/odyssey/agents")).unwrap();
         fs::write(temp.path().join("docs/odyssey/STATE.md"), "# State\n").unwrap();
         fs::write(temp.path().join("docs/odyssey/agents/old.md"), "done").unwrap();
+        fs::create_dir_all(temp.path().join("docs/big-thing/agents")).unwrap();
+        fs::write(temp.path().join("docs/big-thing/agents/new.md"), "done").unwrap();
         fs::create_dir_all(temp.path().join("docs/super-thing/agents")).unwrap();
-        fs::write(temp.path().join("docs/super-thing/agents/new.md"), "done").unwrap();
+        fs::write(temp.path().join("docs/super-thing/agents/middle.md"), "done").unwrap();
         let notes = read_notes(temp.path()).unwrap();
         assert_eq!(notes.state.unwrap().path, "docs/odyssey/STATE.md");
         let mut paths: Vec<String> = notes.agent_notes.into_iter().map(|note| note.path).collect();
         paths.sort();
-        assert_eq!(paths, ["docs/odyssey/agents/old.md", "docs/super-thing/agents/new.md"]);
-        fs::write(temp.path().join("docs/super-thing/STATE.md"), "# State\n").unwrap();
-        assert_eq!(read_notes(temp.path()).unwrap().state.unwrap().path, "docs/super-thing/STATE.md", "the new note wins once it exists");
+        assert_eq!(paths, ["docs/big-thing/agents/new.md", "docs/odyssey/agents/old.md", "docs/super-thing/agents/middle.md"]);
+        fs::write(temp.path().join("docs/big-thing/STATE.md"), "# State\n").unwrap();
+        assert_eq!(read_notes(temp.path()).unwrap().state.unwrap().path, "docs/big-thing/STATE.md", "the new note wins once it exists");
     }
 
     #[test]
@@ -125,23 +127,23 @@ mod tests {
     #[test]
     fn the_handoff_note_and_agent_notes_are_found_with_their_ages() {
         let temp = tempfile::tempdir().unwrap();
-        fs::create_dir_all(temp.path().join("docs/super-thing/agents")).unwrap();
-        fs::write(temp.path().join("docs/super-thing/STATE.md"), "# State\n").unwrap();
-        fs::write(temp.path().join("docs/super-thing/agents/economy.md"), "done").unwrap();
-        fs::write(temp.path().join("docs/super-thing/agents/notes.txt"), "not a note").unwrap();
-        fs::write(temp.path().join("docs/super-thing/agents/.hidden.md"), "no").unwrap();
+        fs::create_dir_all(temp.path().join("docs/big-thing/agents")).unwrap();
+        fs::write(temp.path().join("docs/big-thing/STATE.md"), "# State\n").unwrap();
+        fs::write(temp.path().join("docs/big-thing/agents/economy.md"), "done").unwrap();
+        fs::write(temp.path().join("docs/big-thing/agents/notes.txt"), "not a note").unwrap();
+        fs::write(temp.path().join("docs/big-thing/agents/.hidden.md"), "no").unwrap();
         let notes = read_notes(temp.path()).unwrap();
         let state = notes.state.expect("the handoff note");
         assert_eq!(state.path, STATE_NOTE_PATH);
         assert_eq!(state.bytes, 8);
         assert!(state.modified_at_unix_ms > 0);
-        assert_eq!(notes.agent_notes.iter().map(|note| note.path.as_str()).collect::<Vec<_>>(), ["docs/super-thing/agents/economy.md"]);
+        assert_eq!(notes.agent_notes.iter().map(|note| note.path.as_str()).collect::<Vec<_>>(), ["docs/big-thing/agents/economy.md"]);
     }
 
     #[test]
     fn a_directory_named_like_the_note_is_not_a_note() {
         let temp = tempfile::tempdir().unwrap();
-        fs::create_dir_all(temp.path().join("docs/super-thing/STATE.md")).unwrap();
+        fs::create_dir_all(temp.path().join("docs/big-thing/STATE.md")).unwrap();
         assert_eq!(read_notes(temp.path()).unwrap().state, None);
     }
 }

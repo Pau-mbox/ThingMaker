@@ -183,7 +183,7 @@ pub fn write_plan(storage: &Storage, goal_id: &str, plan: &ProposedPlan) -> Resu
 mod tests {
     use super::*;
     use crate::storage::odyssey::{CheckKind, NewOdyssey, StepState};
-    use crate::superthing::protocol::{TaskRef, parse_amendment, parse_plan, resolve_ops};
+    use crate::bigthing::protocol::{TaskRef, parse_amendment, parse_plan, resolve_ops};
 
     fn storage_with_goal() -> (tempfile::TempDir, Storage, String) {
         let temp = tempfile::tempdir().unwrap();
@@ -200,7 +200,7 @@ mod tests {
     #[test]
     fn a_plan_is_written_with_its_tasks_and_their_dependencies() {
         let (_temp, storage, goal) = storage_with_goal();
-        let plan = parse_plan("SUPERTHING-PLAN\nmilestone: One\ncheck: tests_pass cargo test\nstep: a\nstep: b\ndepends: 1\ncapability: image\nmilestone: Two\nEND-SUPERTHING-PLAN").unwrap();
+        let plan = parse_plan("BIGTHING-PLAN\nmilestone: One\ncheck: tests_pass cargo test\nstep: a\nstep: b\ndepends: 1\ncapability: image\nmilestone: Two\nEND-BIGTHING-PLAN").unwrap();
         assert_eq!(write_plan(&storage, &goal, &plan).unwrap(), 2);
         let list = milestones(&storage, &goal);
         assert_eq!(list[0].check_kind, CheckKind::TestsPass);
@@ -211,13 +211,13 @@ mod tests {
     #[test]
     fn an_amendment_lands_in_order_and_refusals_change_nothing() {
         let (_temp, storage, goal) = storage_with_goal();
-        let plan = parse_plan("SUPERTHING-PLAN\nmilestone: One\nstep: a\nstep: b\ndepends: 1\nstep: c\ndepends: 2\nmilestone: Two\nmilestone: Three\nEND-SUPERTHING-PLAN").unwrap();
+        let plan = parse_plan("BIGTHING-PLAN\nmilestone: One\nstep: a\nstep: b\ndepends: 1\nstep: c\ndepends: 2\nmilestone: Two\nmilestone: Three\nEND-BIGTHING-PLAN").unwrap();
         write_plan(&storage, &goal, &plan).unwrap();
         let before = milestones(&storage, &goal);
         storage.step_set_state(&before[0].steps[0].id, StepState::Done, None).unwrap();
         let before = milestones(&storage, &goal);
         let amendment = parse_amendment(
-            "SUPERTHING-AMEND\nadd: Between\nafter: 1\nstep: x\ndrop: 3\nreason: not needed\nsplit_task: 1.2\nstep: b1\nstep: b2\ndrop_task: 1.1\nreason: done already\nEND-SUPERTHING-AMEND",
+            "BIGTHING-AMEND\nadd: Between\nafter: 1\nstep: x\ndrop: 3\nreason: not needed\nsplit_task: 1.2\nstep: b1\nstep: b2\ndrop_task: 1.1\nreason: done already\nEND-BIGTHING-AMEND",
         )
         .unwrap();
         let resolved = resolve_ops(&amendment.ops, &before);
@@ -231,7 +231,7 @@ mod tests {
         let c = &after[0].steps[3];
         assert_eq!(c.depends_on, vec![after[0].steps[2].id.clone()], "what waited on the whole waits on the last piece");
         assert_eq!(after[0].steps[1].depends_on, vec![after[0].steps[0].id.clone()], "the pieces inherit what the whole waited on");
-        let moved = resolve_ops(&[AmendOp::MoveTask { task: TaskRef { milestone: 1, task: 4 }, after: Place::Named(crate::superthing::protocol::PlaceName::Start), reason: String::new() }], &after);
+        let moved = resolve_ops(&[AmendOp::MoveTask { task: TaskRef { milestone: 1, task: 4 }, after: Place::Named(crate::bigthing::protocol::PlaceName::Start), reason: String::new() }], &after);
         apply_ops(&storage, &goal, &after, &moved).unwrap();
         assert_eq!(milestones(&storage, &goal)[0].steps[0].title, "c");
     }

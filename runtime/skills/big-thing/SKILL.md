@@ -1,31 +1,31 @@
 ---
-name: super-thing
-description: The protocol for working under Super Thing, ThingMaker's long-horizon goal runner — how to turn a plan document into milestones, how to fold a change the user asks for mid-run into the plan, how continuations arrive, how to report a milestone, which check decides that a milestone is done, how to delegate verification to a subagent, how to keep the handoff note and subagent notes the run reads back, and what the run states mean. Use when a prompt says you are working under Super Thing, when you are asked to plan a goal from a document, when you are asked to continue a milestone, or when you need the exact report or plan line.
+name: big-thing
+description: The protocol for working under Big Thing, ThingMaker's long-horizon goal runner — how to turn a plan document into milestones, how to fold a change the user asks for mid-run into the plan, how continuations arrive, how to report a milestone, which check decides that a milestone is done, how to delegate verification to a subagent, how to keep the handoff note and subagent notes the run reads back, and what the run states mean. Use when a prompt says you are working under Big Thing, when you are asked to plan a goal from a document, when you are asked to continue a milestone, or when you need the exact report or plan line.
 ---
 
-# Working under Super Thing
+# Working under Big Thing
 
-Super Thing is the ThingMaker runner for goals that take longer than one turn.
+Big Thing is the ThingMaker runner for goals that take longer than one turn.
 It holds an ordered list of milestones, submits your continuations, records
 what happened, and parks the run when the account's usage window is spent.
 
 You are being driven. That is the point: you do not need to ask to continue,
 and you must not wait for a human between milestones.
 
-## Talking to Super Thing: tools first, lines second
+## Talking to Big Thing: tools first, lines second
 
-When your session leads a team, its `team` MCP server carries Super Thing's
+When your session leads a team, its `team` MCP server carries Big Thing's
 tools. Use them; each call is checked against the plan and answered at once,
 so a mistake (a milestone that does not exist) comes back to you in the tool's
 answer instead of being silently ignored:
 
 | Tool | Instead of |
 | --- | --- |
-| `superthing_report` (milestone, status, note) | the `SUPERTHING-REPORT:` line |
-| `superthing_task` (milestone, task, status, agent, note) | a `SUPERTHING-TASK:` line |
-| `superthing_ask` (question, kind, default, options) | a `SUPERTHING-ASK:` line |
-| `superthing_amend` (ops, reason) | a `SUPERTHING-AMEND` block |
-| `superthing_propose_plan` (milestones) | a `SUPERTHING-PLAN` block |
+| `bigthing_report` (milestone, status, note) | the `BIGTHING-REPORT:` line |
+| `bigthing_task` (milestone, task, status, agent, note) | a `BIGTHING-TASK:` line |
+| `bigthing_ask` (question, kind, default, options) | a `BIGTHING-ASK:` line |
+| `bigthing_amend` (ops, reason) | a `BIGTHING-AMEND` block |
+| `bigthing_propose_plan` (milestones) | a `BIGTHING-PLAN` block |
 
 What a tool call says is applied when your turn ends, exactly as the lines are;
 if you send both, the tool call wins. The lines and blocks below stay valid for
@@ -46,13 +46,13 @@ tools: their results come back to you through their jobs.
 ## Planning a goal from a document
 
 A goal can be created from a roadmap or tech plan the user dropped on it.
-Super Thing does not parse that document: it hands you the whole thing and you
+Big Thing does not parse that document: it hands you the whole thing and you
 propose the plan. You will get a prompt that says it is planning only.
 
 Reply with nothing but this block:
 
 ```text
-SUPERTHING-PLAN
+BIGTHING-PLAN
 milestone: <title>
 detail: <one line, optional>
 section: <the heading or line range of the document this milestone comes from, optional>
@@ -60,7 +60,7 @@ check: <manual | command <cmd> | tests_pass <cmd> | files_exist <paths>>
 step: <task title, repeatable — three to eight per milestone, in order>
 depends: <numbers of earlier tasks in this milestone the one above waits for, optional>
 capability: <what the task needs from a worker, e.g. image or review, optional>
-END-SUPERTHING-PLAN
+END-BIGTHING-PLAN
 ```
 
 Repeat the `milestone:` group once per milestone, in the order the work has to
@@ -77,7 +77,7 @@ above them; `depends:` and `capability:` attach to the `step:` above it.
   one thing a subagent can be given. `depends: 1, 2` under a task says it
   waits for tasks 1 and 2 of the same milestone. The run tracks tasks — who
   ran each and when — so make them units of work, not headings.
-- **A check is a command Super Thing will run itself**, in the workspace root, and
+- **A check is a command Big Thing will run itself**, in the workspace root, and
   its exit code is what marks the milestone done. The planning prompt names
   the project's test command when the user has set one; use
   `tests_pass <that command>` for every milestone unless the document names a
@@ -97,7 +97,7 @@ seen it.
 
 ## The loop
 
-1. Super Thing submits a **briefing** once per session: the goal, the milestones,
+1. Big Thing submits a **briefing** once per session: the goal, the milestones,
    each milestone's check, the stop condition and the continuation budget. A
    goal can outlive the session it started in — see *You may be picking up
    someone else's run* — and each new session is briefed from the record.
@@ -113,7 +113,7 @@ seen it.
    milestone's check, records the result, and goes round again.
 
 A gap between turns is normal. It usually means the usage window was spent and
-Super Thing is waiting for the provider's quota to reset. Nothing failed.
+Big Thing is waiting for the provider's quota to reset. Nothing failed.
 
 ## When the user changes the plan mid-run
 
@@ -140,7 +140,7 @@ happened.
 Reply with this block, in the same reply as any other work:
 
 ```text
-SUPERTHING-AMEND
+BIGTHING-AMEND
 add: <title>
 after: <milestone number, or "end">
 detail: <one line, optional>
@@ -168,7 +168,7 @@ step: <each task that replaces it, repeatable>
 depends: <numbers of the milestone's tasks the one above waits for, optional>
 move_task: <task number>
 after: <task number in the same milestone, or "start">
-END-SUPERTHING-AMEND
+END-BIGTHING-AMEND
 ```
 
 - Use as many `add:` / `revise:` / `drop:` groups as you need; the keys under
@@ -178,7 +178,7 @@ END-SUPERTHING-AMEND
 - **A verified milestone cannot be revised or dropped.** A check ran on it, or
   the user ticked it; that is settled. Add a new milestone instead.
 - `check:` follows the same rule as the plan block: name one of the four kinds
-  or it is read as `manual`. Super Thing runs what you name.
+  or it is read as `manual`. Big Thing runs what you name.
 - If the request needs no change to the plan, say so and send **no block**.
   That is a real answer. Do not invent a milestone to look responsive.
 
@@ -210,7 +210,7 @@ happens to you is the user's problem:
   bounded pieces; note in `STATE.md` that you did and why. Never block or ask for
   this: which account pays is already decided by the configuration you were
   given, and the user would rather the work happened.
-- **A worker died mid-task.** Read `docs/super-thing/agents/` and the tree,
+- **A worker died mid-task.** Read `docs/big-thing/agents/` and the tree,
   finish what it left, and carry on.
 - **A tool is slow or timed out once.** Retry it alone; two suites on one
   editor collide. Never run a check while the runner's own check may be
@@ -232,14 +232,14 @@ conflict, a failure that has recurred after honest attempts, a permission you
 cannot grant yourself. For those, one line in your reply:
 
 ```text
-SUPERTHING-ASK: kind=<ambiguity|architecture|conflict|failure|permission> default=<what you do until you hear back> options=<a | b | c, optional> question=<one line>
+BIGTHING-ASK: kind=<ambiguity|architecture|conflict|failure|permission> default=<what you do until you hear back> options=<a | b | c, optional> question=<one line>
 ```
 
 Examples:
 
 ```text
-SUPERTHING-ASK: kind=architecture default=continuing with plain C# classes options=ECS | plain classes question=Should the economy simulation move to an ECS layout before milestone 8 builds on it?
-SUPERTHING-ASK: kind=failure default=leaving the PlayMode suite skipped and noting it in STATE.md question=The touch-input PlayMode tests fail only on the CI editor after three fixes; may I mark them known-flaky for M6?
+BIGTHING-ASK: kind=architecture default=continuing with plain C# classes options=ECS | plain classes question=Should the economy simulation move to an ECS layout before milestone 8 builds on it?
+BIGTHING-ASK: kind=failure default=leaving the PlayMode suite skipped and noting it in STATE.md question=The touch-input PlayMode tests fail only on the CI editor after three fixes; may I mark them known-flaky for M6?
 ```
 
 - **Never wait for the answer.** Name the default you are following and carry
@@ -259,7 +259,7 @@ SUPERTHING-ASK: kind=failure default=leaving the PlayMode suite skipped and noti
 End your final message with one line, exactly this shape:
 
 ```text
-SUPERTHING-REPORT: milestone=<n> status=<complete|blocked> note=<one line>
+BIGTHING-REPORT: milestone=<n> status=<complete|blocked> note=<one line>
 ```
 
 - `milestone` is the 1-based number from the briefing's list.
@@ -276,15 +276,15 @@ SUPERTHING-REPORT: milestone=<n> status=<complete|blocked> note=<one line>
 Examples that parse:
 
 ```text
-SUPERTHING-REPORT: milestone=2 status=complete note=onboarding screens build and render
-SUPERTHING-REPORT: milestone=4 status=blocked note=the staging credentials are missing
+BIGTHING-REPORT: milestone=2 status=complete note=onboarding screens build and render
+BIGTHING-REPORT: milestone=4 status=blocked note=the staging credentials are missing
 ```
 
 Rules:
 
 - **Omit the line while you are mid-work.** A missing line means "work
   continued, nothing claimed", which is the correct thing to say when it is
-  true. Super Thing simply continues.
+  true. Big Thing simply continues.
 - Write it once, as the last line. If you restate it, the last one is read.
 - A malformed line is ignored exactly like a missing one. It is never an error
   and never worth a retry.
@@ -309,16 +309,16 @@ The check decides, not your report. Each milestone has one:
 
 Two lanes can produce that evidence:
 
-- **Super Thing runs it.** It runs the milestone's command in the workspace root
+- **Big Thing runs it.** It runs the milestone's command in the workspace root
   and reads the exit code itself. This is the default and needs nothing
   from you.
-- **You run it, Super Thing reads it.** If you run the check yourself, Super Thing
+- **You run it, Big Thing reads it.** If you run the check yourself, Big Thing
   looks in *your tool results* for a shell result whose command is the
   milestone's check and takes that result's exit code.
 
 For the second lane to work, run the check **as its own shell call, with the
 command exactly as the briefing states it**. If a turn runs several commands
-and none of the results reports which command it was, Super Thing can attribute
+and none of the results reports which command it was, Big Thing can attribute
 nothing and claims nothing — the milestone stays `reported` and the check is
 run again by the desktop.
 
@@ -344,15 +344,15 @@ Two habits make the task table true:
 - **Report task moves on a line**, several per reply if several moved:
 
 ```text
-SUPERTHING-TASK: milestone=<m> task=<t> status=<in_progress|done|blocked> agent=<subagent name, optional> note=<one line, optional>
+BIGTHING-TASK: milestone=<m> task=<t> status=<in_progress|done|blocked> agent=<subagent name, optional> note=<one line, optional>
 ```
 
   Examples:
 
 ```text
-SUPERTHING-TASK: milestone=6 task=3 status=in_progress agent=6.3-pricing-model
-SUPERTHING-TASK: milestone=6 task=3 status=done note=prices converge within 20 ticks
-SUPERTHING-TASK: milestone=6 task=5 status=blocked note=needs the harbour data from 6.4
+BIGTHING-TASK: milestone=6 task=3 status=in_progress agent=6.3-pricing-model
+BIGTHING-TASK: milestone=6 task=3 status=done note=prices converge within 20 ticks
+BIGTHING-TASK: milestone=6 task=5 status=blocked note=needs the harbour data from 6.4
 ```
 
   A task's `done` is your word, like a report; the milestone's check is still
@@ -366,7 +366,7 @@ The transcript compacts, and the session you are in can be replaced by a
 fresh one. The milestone list survives both; your sense of where you are
 *inside* a milestone survives neither. So you keep it on disk.
 
-Keep `docs/super-thing/STATE.md` in the workspace. It holds, in this order:
+Keep `docs/big-thing/STATE.md` in the workspace. It holds, in this order:
 
 1. **Done** — what is finished and verified, one line each.
 2. **In flight** — the active milestone: what is built, what is not, what the
@@ -398,9 +398,9 @@ Nothing of that session's conversation comes with the goal. The record does,
 and so does everything the run wrote to the workspace. So when the briefing
 says you have inherited a run:
 
-1. Read `docs/super-thing/STATE.md` first. It is where the previous session left
+1. Read `docs/big-thing/STATE.md` first. It is where the previous session left
    off, and it was written for exactly this moment.
-2. Read `docs/super-thing/agents/`. Work that finished on disk is finished even if
+2. Read `docs/big-thing/agents/`. Work that finished on disk is finished even if
    the session that ordered it is gone.
 3. Then look at what the plan says is already done. The briefing tags each
    milestone with its state. One tagged **done — its check passed; do not
@@ -419,7 +419,7 @@ wall with their result in memory, and the next turn redid the work. So a
 result lives on disk before it is returned.
 
 - **Every subagent you raise writes its result to
-  `docs/super-thing/agents/<name>.md` before it returns** — what it did, which
+  `docs/big-thing/agents/<name>.md` before it returns** — what it did, which
   files it touched, what passed, what it could not finish. Put that
   instruction in the subagent's prompt; it is not automatic.
 - Give each subagent the handoff note path and the milestone's `section:` so
@@ -439,7 +439,7 @@ way your subagents are your own, on the same subscription as you, so
 delegate for context and independence rather than for budget.
 
 **If you are Claude Code**, raise every subagent with
-`subagent_type: super-thing-delegate`, the definition this project carries in
+`subagent_type: big-thing-delegate`, the definition this project carries in
 `.claude/agents/`. A subagent's model is a field on its definition and nowhere
 else, so the default subagent type runs on whatever the account defaults to,
 which is not what the run intends.
@@ -447,13 +447,13 @@ which is not what the run intends.
 **If you are Codex**, raise subagents the way you normally do.
 
 Whichever you are, a milestone's check decides it, never a claim. When you
-(or a subagent of yours) run the check as its own shell call, Super Thing
+(or a subagent of yours) run the check as its own shell call, Big Thing
 reads its exit code out of that tool result; when nothing in the turn ran it,
-Super Thing runs the check itself. Run it when you want to know, and let the
+Big Thing runs the check itself. Run it when you want to know, and let the
 exit code be the one that decides.
 
 Everything else is the same: name each subagent after its task, and have it
-write its result to `docs/super-thing/agents/<name>.md` before it returns.
+write its result to `docs/big-thing/agents/<name>.md` before it returns.
 
 A subagent cannot ask for permission. Give a subagent work that runs within
 the permissions it already has, and keep anything that would prompt in your
@@ -470,21 +470,21 @@ tool is turned off, every delegated task goes to a worker.
 - A worker sees only the task you give it, not this protocol. Start the task
   with its plan number and a short name (`6.3-pricing: …`) so the run ties the
   job to the plan, give it the milestone's `section:` and the handoff note's
-  path, and tell it to write its result to `docs/super-thing/agents/<name>.md`
+  path, and tell it to write its result to `docs/big-thing/agents/<name>.md`
   before it finishes.
 - Pick workers by capability: `image` for image generation, `fast` for
   mechanical edits, `review` for a second opinion.
 - A job may wait out a temporary limit and resume by itself; `await_jobs`
   says so. Carry on with other work meanwhile.
 - A check a worker runs is in the worker's session, not yours, so it is not
-  evidence for the run. Run the milestone's check yourself, or let Super Thing
+  evidence for the run. Run the milestone's check yourself, or let Big Thing
   run it.
-- When the briefing says **Super Thing hands the milestone's ready tasks to the
+- When the briefing says **Big Thing hands the milestone's ready tasks to the
   workers itself**, it does: a task whose dependencies are done goes to a
   worker chosen by its `capability:`, several at once, and may be reviewed by a
   worker on another provider. You are not prompted while they run; the next
   continuation lists every result. Read them, verify, and report — and do not
-  delegate a task Super Thing already gave out.
+  delegate a task Big Thing already gave out.
 
 ## Delegating verification
 

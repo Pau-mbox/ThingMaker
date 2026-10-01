@@ -1,5 +1,5 @@
 /**
- * The documents a run reads and writes, listed in the Super Thing rail and
+ * The documents a run reads and writes, listed in the Big Thing rail and
  * readable in place.
  *
  * The plan document, the files and documents the user's amendments pointed

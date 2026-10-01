@@ -154,7 +154,7 @@ impl Caller {
     }
 }
 
-/// Tools another service answers on the same `team` server: Super Thing's
+/// Tools another service answers on the same `team` server: Big Thing's
 /// protocol, the shared memory and the board (ADR-010).
 pub trait TeamExtension: Send + Sync {
     fn tools(&self, caller: &Caller) -> Vec<serde_json::Value>;

@@ -139,7 +139,7 @@ async fn a_claude_orchestrator_delegates_to_a_gemini_worker() {
 }
 
 /// What a shell command's result looks like on `agy`'s stream, bridged: the
-/// shape Super Thing reads a check's exit code from.
+/// shape Big Thing reads a check's exit code from.
 #[tokio::test]
 async fn a_shell_commands_result_carries_what_a_check_needs() {
     if !enabled() {

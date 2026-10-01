@@ -1,7 +1,7 @@
 //! The agent-run, desktop-read verification lane.
 //!
 //! The model (or a subagent it raised) runs the milestone's check itself, and
-//! Super Thing does not believe the prose about it: it looks in the turn's own
+//! Big Thing does not believe the prose about it: it looks in the turn's own
 //! tool results for a shell result whose command is the check, and reads its
 //! exit code. A refusal machine: an ambiguous turn claims nothing.
 

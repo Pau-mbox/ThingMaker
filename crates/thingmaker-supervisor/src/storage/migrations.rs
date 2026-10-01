@@ -131,8 +131,8 @@ const MIGRATIONS: &[Migration] = &[
     },
     Migration {
         version: 19,
-        name: "superthing_engine",
-        sql: include_str!("schema/0019_superthing_engine.sql"),
+        name: "bigthing_engine",
+        sql: include_str!("schema/0019_bigthing_engine.sql"),
         rebuilds: false,
     },
 ];
@@ -252,7 +252,7 @@ mod tests {
 
     #[test]
     fn a_version_5_database_with_a_goal_keeps_it_across_the_plan_migration() {
-        // The plan columns were added after Super Thing shipped, so an existing
+        // The plan columns were added after Big Thing shipped, so an existing
         // goal has to survive the upgrade and read back as "no document".
         let temp = tempfile::tempdir().unwrap();
         let path = temp.path().join("v5.db");

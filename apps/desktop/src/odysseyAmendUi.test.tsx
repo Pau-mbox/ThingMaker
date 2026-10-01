@@ -94,7 +94,7 @@ describe("asking for a change mid-run", () => {
     });
 
     // Handed to the engine, which queues it and carries it on the next prompt.
-    const queued = calls.find((entry) => entry.command === "superthing_amend");
+    const queued = calls.find((entry) => entry.command === "bigthing_amend");
     expect((queued?.args.request as Record<string, unknown>).note).toBe("Generate the ships and embed them");
     // The point of the whole feature: no prompt goes out from here.
     expect(commands()).not.toContain("session_submit");

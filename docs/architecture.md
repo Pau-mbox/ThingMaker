@@ -56,15 +56,15 @@ Kit is removed; Claude Code and Codex run end to end and either can orchestrate 
 - **Accounts**: the Providers panel's **Switch account** signs a provider out
   through its own CLI, then starts a new sign-in. The launch options also accept
   a separate `CODEX_HOME` for each Codex account; the UI does not offer that yet.
-- **Super Thing** (`superthing`, ADR-010) is an engine in the supervisor that
+- **Big Thing** (`bigthing`, ADR-010) is an engine in the supervisor that
   runs every long-horizon goal, whether or not a window is open.
   - It decides, briefs, continues, reads each settled turn, checkpoints, runs
     checks, parks on a spent window, resumes after it, and moves a run to
     another account. Every decision goes into the goal's record before it
     acts, and a running goal's session is reopened after a restart.
-  - The protocol is `team` tools (`superthing_report`, `superthing_task`,
-    `superthing_ask`, `superthing_amend`, `superthing_propose_plan`), checked
-    against the record when they are called; the `SUPERTHING-*` lines are the
+  - The protocol is `team` tools (`bigthing_report`, `bigthing_task`,
+    `bigthing_ask`, `bigthing_amend`, `bigthing_propose_plan`), checked
+    against the record when they are called; the `BIGTHING-*` lines are the
     fallback.
   - Shared project memory (`memory_read`, `memory_write`) and the run's
     `board`, for the orchestrator and, on a reduced server, its workers.
@@ -73,7 +73,7 @@ Kit is removed; Claude Code and Codex run end to end and either can orchestrate 
     a review on another provider; a spend forecast from measured turn costs,
     and a spread policy across accounts.
   - A live test runs a goal end to end on Claude and on Codex:
-    `THINGMAKER_REAL_SUPERTHING=1`.
+    `THINGMAKER_REAL_BIGTHING=1`.
 - **Teams and delegation** (`delegation`): every session is an orchestrator.
   - Its agent gets a `team` MCP server with `list_workers`, `delegate`,
     `await_jobs`, `job_status` and `cancel_job`.
@@ -103,7 +103,7 @@ apps/desktop/                 Tauri 2 app: src/ (React), src-tauri/ (thin comman
 crates/thingmaker-supervisor/  privileged engine: transport, acp, agents, supervisor, storage, review, workspace, security
 packages/contracts/           desktop API TypeScript types (mirror the supervisor's serde output)
 packages/test-fixtures/       mock ACP peers for the providers, captured from the real programs
-runtime/skills, runtime/agents  the Super Thing skill and the Claude Code delegate definition
+runtime/skills, runtime/agents  the Big Thing skill and the Claude Code delegate definition
 docs/                         architecture, decisions (adr/), release notes
 ```
 

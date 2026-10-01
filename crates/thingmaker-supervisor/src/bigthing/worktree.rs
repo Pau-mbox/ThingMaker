@@ -1,7 +1,7 @@
 //! A run in its own branch and worktree (ADR-010).
 //!
 //! With isolation on, starting a goal in a Git repository gives it a branch
-//! (`superthing/<slug>`) and a worktree under the app's data directory, and
+//! (`bigthing/<slug>`) and a worktree under the app's data directory, and
 //! opens the run's orchestrator there. Two runs never edit the same tree, the
 //! user's checkout is untouched until they merge, every checkpoint is a commit
 //! on the branch, and a rollback is a reset to one of them.
@@ -27,7 +27,7 @@ pub fn commit_checkpoint(root: &Path, message: &str) -> Option<String> {
     git::commit_all(root, message).ok().flatten()
 }
 
-/// A branch name from a goal's title: `superthing/ship-onboarding-v2-3f2a`.
+/// A branch name from a goal's title: `bigthing/ship-onboarding-v2-3f2a`.
 pub fn branch_for(title: &str, goal_id: &str) -> String {
     let words: Vec<String> = title
         .to_lowercase()
@@ -39,7 +39,7 @@ pub fn branch_for(title: &str, goal_id: &str) -> String {
         .map(str::to_string)
         .collect();
     let slug = if words.is_empty() { "run".to_string() } else { words.join("-") };
-    format!("superthing/{slug}-{}", &goal_id[..goal_id.len().min(6)])
+    format!("bigthing/{slug}-{}", &goal_id[..goal_id.len().min(6)])
 }
 
 /// One checkpoint commit on a run's branch.
@@ -62,7 +62,7 @@ impl Engine {
         }
         let base = git::head_commit(&root).map_err(|_| DesktopError::unsupported("The repository has no commits yet, so there is nothing to branch the run from."))?;
         let branch = branch_for(&goal.title, &goal.id);
-        let path = self.inner.data_dir.join("worktrees").join(&source.workspace_hash).join(branch.trim_start_matches("superthing/"));
+        let path = self.inner.data_dir.join("worktrees").join(&source.workspace_hash).join(branch.trim_start_matches("bigthing/"));
         let worktree = {
             let root = root.clone();
             let path = path.clone();
@@ -145,9 +145,9 @@ impl Engine {
         let source = goal.source_workspace_id.as_deref().and_then(|id| self.db(|storage| storage.workspace_get(id)).ok().flatten()).ok_or_else(|| DesktopError::not_ready("the checkout this run branched from is gone"))?;
         // Anything the last turn left uncommitted goes in first.
         if let Some(path) = goal.worktree_path.as_deref() {
-            commit_checkpoint(Path::new(path), &format!("Super Thing: {}", goal.title));
+            commit_checkpoint(Path::new(path), &format!("Big Thing: {}", goal.title));
         }
-        let message = format!("Merge Super Thing run: {}", goal.title);
+        let message = format!("Merge Big Thing run: {}", goal.title);
         let root = source.canonical_root.clone();
         let outcome = tokio::task::spawn_blocking(move || git::merge_branch(Path::new(&root), &branch, &message)).await.map_err(|_| DesktopError::io("the merge did not finish"))??;
         let summary = match &outcome {
@@ -171,8 +171,8 @@ mod tests {
 
     #[test]
     fn a_branch_name_is_readable_and_unique_to_the_goal() {
-        assert_eq!(branch_for("Ship onboarding v2!", "3f2a9b77"), "superthing/ship-onboarding-v2-3f2a9b");
-        assert_eq!(branch_for("???", "abc"), "superthing/run-abc");
+        assert_eq!(branch_for("Ship onboarding v2!", "3f2a9b77"), "bigthing/ship-onboarding-v2-3f2a9b");
+        assert_eq!(branch_for("???", "abc"), "bigthing/run-abc");
         assert!(git::valid_branch_name(&branch_for("A very long title with many many words", "0123456789")));
     }
 
@@ -207,19 +207,19 @@ mod tests {
         }
         std::fs::write(root.join("a.txt"), "base\n").unwrap();
         commit_checkpoint(root, "base").unwrap();
-        assert!(run(&["branch", "superthing/run"]));
+        assert!(run(&["branch", "bigthing/run"]));
         let worktree = tempfile::tempdir().unwrap();
         let tree = worktree.path().join("run");
-        assert!(run(&["worktree", "add", "-q", tree.to_str().unwrap(), "superthing/run"]));
+        assert!(run(&["worktree", "add", "-q", tree.to_str().unwrap(), "bigthing/run"]));
         std::fs::write(tree.join("b.txt"), "from the run\n").unwrap();
         commit_checkpoint(&tree, "run work").unwrap();
-        assert!(matches!(git::merge_branch(root, "superthing/run", "merge").unwrap(), MergeOutcome::Merged { .. }));
-        assert_eq!(git::merge_branch(root, "superthing/run", "merge").unwrap(), MergeOutcome::UpToDate);
+        assert!(matches!(git::merge_branch(root, "bigthing/run", "merge").unwrap(), MergeOutcome::Merged { .. }));
+        assert_eq!(git::merge_branch(root, "bigthing/run", "merge").unwrap(), MergeOutcome::UpToDate);
         std::fs::write(tree.join("a.txt"), "run says\n").unwrap();
         commit_checkpoint(&tree, "run edit").unwrap();
         std::fs::write(root.join("a.txt"), "main says\n").unwrap();
         commit_checkpoint(root, "main edit").unwrap();
-        assert_eq!(git::merge_branch(root, "superthing/run", "merge").unwrap(), MergeOutcome::Conflicts { files: vec!["a.txt".into()] });
+        assert_eq!(git::merge_branch(root, "bigthing/run", "merge").unwrap(), MergeOutcome::Conflicts { files: vec!["a.txt".into()] });
         assert!(git::is_clean(root).unwrap(), "an aborted merge leaves the checkout as it was");
     }
 }

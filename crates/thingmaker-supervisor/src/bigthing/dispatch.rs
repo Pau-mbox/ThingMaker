@@ -50,7 +50,7 @@ pub fn worker_task(goal_plan_path: Option<&str>, milestone: &MilestoneRecord, mi
     let mut lines = vec![
         format!("{slug}: {}", step.title),
         String::new(),
-        format!("This is task {} of milestone {} (\"{}\") in a Super Thing run, ThingMaker's long-horizon runner.", task_number(milestone_index, task_index), milestone_index + 1, milestone.title),
+        format!("This is task {} of milestone {} (\"{}\") in a Big Thing run, ThingMaker's long-horizon runner.", task_number(milestone_index, task_index), milestone_index + 1, milestone.title),
     ];
     if !step.detail.is_empty() {
         lines.push(step.detail.clone());
@@ -348,7 +348,7 @@ mod tests {
     use super::*;
     use crate::delegation::WorkerSlot;
     use crate::storage::odyssey::MilestoneState;
-    use crate::superthing::tests::{milestone, step};
+    use crate::bigthing::tests::{milestone, step};
 
     #[test]
     fn a_task_is_named_and_written_for_a_worker_who_sees_nothing_else() {
@@ -367,7 +367,7 @@ mod tests {
         assert!(text.contains("Spec: ## Economy in `docs/plan.md`."));
         assert!(text.contains("6.1 Model (done)"));
         assert!(text.contains("round the prices"));
-        assert!(text.contains("docs/super-thing/agents/6.2-price-the-ships.md"));
+        assert!(text.contains("docs/big-thing/agents/6.2-price-the-ships.md"));
     }
 
     #[test]

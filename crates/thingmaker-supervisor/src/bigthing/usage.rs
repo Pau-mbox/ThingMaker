@@ -341,7 +341,7 @@ impl UsageBook {
 pub(crate) mod tests {
     use super::*;
     use crate::agents::events::QuotaWindow;
-    use crate::superthing::tests::goal;
+    use crate::bigthing::tests::goal;
 
     pub fn window(used: f64, reset: Option<u64>) -> UsageWindow {
         UsageWindow { used_percent: used, window_seconds: 18_000, reset_at_unix: reset }

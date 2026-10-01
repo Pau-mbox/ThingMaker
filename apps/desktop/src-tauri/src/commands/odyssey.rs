@@ -1,4 +1,4 @@
-//! Super Thing goals (docs/plans/odyssey.md): the command surface over the record.
+//! Big Thing goals (docs/plans/odyssey.md): the command surface over the record.
 //!
 //! These commands read and write the record. They never submit a prompt and
 //! never decide anything: the runner in the renderer chooses, writes its
@@ -24,7 +24,7 @@ use crate::state::AppState;
 
 /// The protocol the briefing points the model at. Kept next to the code that
 /// implements it, and gated by `odysseySkill.test.ts` against drifting from it.
-const SKILL_MD: &str = include_str!("../../../../../runtime/skills/super-thing/SKILL.md");
+const SKILL_MD: &str = include_str!("../../../../../runtime/skills/big-thing/SKILL.md");
 
 /// The delegate a Claude orchestrator raises
 /// (docs/plans/odyssey.md §12.9).
@@ -35,10 +35,10 @@ const SKILL_MD: &str = include_str!("../../../../../runtime/skills/super-thing/S
 /// than the user's home, because it is a fact about this project's run and
 /// should be visible and reviewable in the repository rather than changing
 /// every Claude Code session on the machine.
-const DELEGATE_MD: &str = include_str!("../../../../../runtime/agents/super-thing-delegate.md");
+const DELEGATE_MD: &str = include_str!("../../../../../runtime/agents/big-thing-delegate.md");
 
 /// Where Claude Code looks for a project's agent definitions.
-const DELEGATE_PATH: &str = ".claude/agents/super-thing-delegate.md";
+const DELEGATE_PATH: &str = ".claude/agents/big-thing-delegate.md";
 
 /// Largest Markdown document read for a plan. A roadmap is prose; anything
 /// this size is not one, and the parser bounds what it produces anyway.
@@ -102,7 +102,7 @@ pub fn odyssey_run_check(request: RunCheckRequest, state: State<'_, AppState>) -
         .map_err(storage_error)?
         .ok_or_else(|| thingmaker_supervisor::DesktopError::not_ready("workspace not found"))?;
     if workspace.trust_state == TrustState::Untrusted {
-        return Err(thingmaker_supervisor::DesktopError::untrusted("Choose an execution profile for this workspace before Super Thing runs checks in it."));
+        return Err(thingmaker_supervisor::DesktopError::untrusted("Choose an execution profile for this workspace before Big Thing runs checks in it."));
     }
     let milestone = state
         .with_storage(|storage| storage.milestone_get(&request.milestone_id))
@@ -272,7 +272,7 @@ pub struct SkillInstall {
     pub changed: bool,
 }
 
-/// Installs the `super-thing` skill into the user's skills directory.
+/// Installs the `big-thing` skill into the user's skills directory.
 ///
 /// The briefing tells the model it can load this skill, so the skill has to
 /// exist for that sentence to be true. Idempotent: an identical copy is left
@@ -281,12 +281,14 @@ pub struct SkillInstall {
 #[tauri::command]
 pub fn odyssey_install_skill(state: State<'_, AppState>) -> CommandResult<SkillInstall> {
     let home = state.home.clone().ok_or_else(|| thingmaker_supervisor::DesktopError::not_ready("HOME is not set"))?;
-    let target = home.join(".agents/skills/super-thing/SKILL.md");
+    let target = home.join(".agents/skills/big-thing/SKILL.md");
     // The same skill, installed under its earlier name, would be offered to
     // the model twice; a copy that is ours (by its name line) is retired.
-    let legacy = home.join(".agents/skills/odyssey");
-    if std::fs::read_to_string(legacy.join("SKILL.md")).is_ok_and(|existing| existing.starts_with("---\nname: odyssey\n")) {
-        let _ = std::fs::remove_dir_all(&legacy);
+    for name in ["odyssey", "super-thing"] {
+        let legacy = home.join(".agents/skills").join(name);
+        if std::fs::read_to_string(legacy.join("SKILL.md")).is_ok_and(|existing| existing.starts_with(&format!("---\nname: {name}\n"))) {
+            let _ = std::fs::remove_dir_all(&legacy);
+        }
     }
     if std::fs::read_to_string(&target).is_ok_and(|existing| existing == SKILL_MD) {
         return Ok(SkillInstall { path: target.to_string_lossy().into_owned(), changed: false });
@@ -295,7 +297,7 @@ pub fn odyssey_install_skill(state: State<'_, AppState>) -> CommandResult<SkillI
     // Through the same staging and backup path as any other skill import, so a
     // hand-edited copy is backed up rather than overwritten silently.
     let staging_root = state.data_dir.join("imports").join(format!("odyssey-skill-{}", std::process::id()));
-    let source = staging_root.join("source").join("super-thing");
+    let source = staging_root.join("source").join("big-thing");
     std::fs::create_dir_all(&source).map_err(|error| thingmaker_supervisor::DesktopError::io(error.to_string()))?;
     std::fs::write(source.join("SKILL.md"), SKILL_MD).map_err(|error| thingmaker_supervisor::DesktopError::io(error.to_string()))?;
     let staging = staging_root.join("staging");
@@ -303,7 +305,7 @@ pub fn odyssey_install_skill(state: State<'_, AppState>) -> CommandResult<SkillI
         let plan = thingmaker_supervisor::integrations::stage_import(&source, &staging, "odyssey-skill")?;
         let skills_root = home.join(".agents/skills");
         let backups = super::skills::skill_backup_root(&state, thingmaker_supervisor::integrations::SkillScope::User);
-        let applied = thingmaker_supervisor::integrations::apply_import(&staging, &plan, std::slice::from_ref(&"super-thing".to_string()), &skills_root, true, &backups)?;
+        let applied = thingmaker_supervisor::integrations::apply_import(&staging, &plan, std::slice::from_ref(&"big-thing".to_string()), &skills_root, true, &backups)?;
         Ok::<SkillInstall, thingmaker_supervisor::DesktopError>(SkillInstall {
             path: applied.first().map(|entry| entry.path.to_string_lossy().into_owned()).unwrap_or_else(|| target.to_string_lossy().into_owned()),
             changed: true,
@@ -704,10 +706,12 @@ pub fn odyssey_install_delegate(workspace_id: String, state: State<'_, AppState>
     // The delegate as it was installed under the feature's earlier name: an
     // untouched copy is retired, so the agent is not offered two of them. A
     // tuned one stays; it is the user's.
-    let legacy = std::path::Path::new(&record.canonical_root).join(".claude/agents/odyssey-delegate.md");
-    let legacy_text = DELEGATE_MD.replace("super-thing-delegate", "odyssey-delegate").replace("a Super Thing", "an Odyssey").replace("Super Thing", "Odyssey");
-    if std::fs::read_to_string(&legacy).is_ok_and(|existing| existing == legacy_text) {
-        let _ = std::fs::remove_file(&legacy);
+    for (file, name, article) in [("odyssey-delegate.md", "Odyssey", "an"), ("super-thing-delegate.md", "Super Thing", "a")] {
+        let legacy = std::path::Path::new(&record.canonical_root).join(".claude/agents").join(file);
+        let legacy_text = DELEGATE_MD.replace("big-thing-delegate", file.trim_end_matches(".md")).replace("a Big Thing", &format!("{article} {name}")).replace("Big Thing", name);
+        if std::fs::read_to_string(&legacy).is_ok_and(|existing| existing == legacy_text) {
+            let _ = std::fs::remove_file(&legacy);
+        }
     }
     let target = std::path::Path::new(&record.canonical_root).join(DELEGATE_PATH);
     match std::fs::read_to_string(&target) {

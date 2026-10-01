@@ -18,14 +18,14 @@ vi.mock("@tauri-apps/api/core", () => ({
       memory.unshift(entry);
       return entry;
     }
-    if (command === "superthing_commits") return [];
+    if (command === "bigthing_commits") return [];
     return null;
   }),
   Channel: class {},
 }));
 vi.mock("@tauri-apps/api/event", () => ({ listen: vi.fn(async () => () => undefined) }));
 
-import { MemoryPanel, RunOptions, Timeline } from "./components/SuperThingTeam";
+import { MemoryPanel, RunOptions, Timeline } from "./components/BigThingTeam";
 
 const view: OdysseyView = {
   goal: {

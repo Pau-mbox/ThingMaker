@@ -137,7 +137,7 @@ fn the_accounts_usage_is_read_from_claude_code() {
 }
 
 /// What a shell command's result looks like on Claude Code's stream: the
-/// shape Super Thing reads a check's exit code from. Spends one small turn.
+/// shape Big Thing reads a check's exit code from. Spends one small turn.
 #[tokio::test]
 async fn a_shell_commands_result_carries_what_a_check_needs() {
     if std::env::var("THINGMAKER_REAL_CLAUDE").as_deref() != Ok("1") {

@@ -1,4 +1,4 @@
-//! The text Super Thing submits to the session.
+//! The text Big Thing submits to the session.
 //!
 //! Two kinds, sized deliberately. The briefing goes in once per session, so it
 //! is served from the provider's prefix cache from the second turn on; every
@@ -15,7 +15,7 @@ use crate::odyssey_notes::{AGENT_NOTES_DIR, STATE_NOTE_PATH, WorkspaceNotes};
 use crate::storage::odyssey::{CheckKind, MilestoneRecord, MilestoneState, OdysseyRecord, OnPlanChange, StopCondition};
 
 /// The delegate a Claude orchestrator raises its subagents as.
-pub const DELEGATE_NAME: &str = "super-thing-delegate";
+pub const DELEGATE_NAME: &str = "big-thing-delegate";
 
 /// One thing that changed since the last continuation, told once.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -139,7 +139,7 @@ pub fn build_briefing(goal: &OdysseyRecord, milestones: &[MilestoneRecord], opti
         StopCondition::MilestoneComplete => "Stop after each milestone; the user restarts you for the next one.",
         StopCondition::Manual => "The user decides when to stop.",
     };
-    let mut lines: Vec<String> = vec!["You are working under Super Thing, ThingMaker's long-horizon runner.".into(), String::new()];
+    let mut lines: Vec<String> = vec!["You are working under Big Thing, ThingMaker's long-horizon runner.".into(), String::new()];
     if options.handed_over {
         lines.push(format!(
             "This session picked up a run another session started, so some of the milestones below may already be done — the record says which. Nothing of that session's conversation came with the goal; `{STATE_NOTE_PATH}` is where it left off, and `{AGENT_NOTES_DIR}/` is what its subagents wrote. Read both before you touch anything, and do not redo work they say is finished."
@@ -148,20 +148,20 @@ pub fn build_briefing(goal: &OdysseyRecord, milestones: &[MilestoneRecord], opti
     }
     lines.push("How this works:".into());
     lines.push("- The goal below is broken into ordered milestones. You work the active one.".into());
-    lines.push("- After each of your turns Super Thing takes a checkpoint of the working tree and sends you the next continuation. Do not ask permission to continue and do not wait for a human between milestones.".into());
-    lines.push("- Super Thing pauses the run when the account's usage window is spent and resumes it when the provider's quota resets. A long gap between turns is normal and means nothing failed.".into());
-    lines.push("- A milestone is done when its check passes, not when you say so. Each check is listed below. You may run it yourself, including from a subagent, and Super Thing reads the exit code out of your tool results.".into());
+    lines.push("- After each of your turns Big Thing takes a checkpoint of the working tree and sends you the next continuation. Do not ask permission to continue and do not wait for a human between milestones.".into());
+    lines.push("- Big Thing pauses the run when the account's usage window is spent and resumes it when the provider's quota resets. A long gap between turns is normal and means nothing failed.".into());
+    lines.push("- A milestone is done when its check passes, not when you say so. Each check is listed below. You may run it yourself, including from a subagent, and Big Thing reads the exit code out of your tool results.".into());
     if let Some(branch) = options.branch {
-        lines.push(format!("- This run has its own Git worktree on branch `{branch}`. Work and commit here only; Super Thing commits a checkpoint after every turn, so never rewrite this branch's history."));
+        lines.push(format!("- This run has its own Git worktree on branch `{branch}`. Work and commit here only; Big Thing commits a checkpoint after every turn, so never rewrite this branch's history."));
     }
     if options.tools {
-        lines.push("- You report to Super Thing through its tools on the `team` server: `superthing_report` when a milestone is finished or blocked, `superthing_task` when a task starts, finishes or cannot be done, `superthing_ask` for a decision only the user can make, and `superthing_amend` to change the plan. Each call is checked against the plan and answered at once.".into());
+        lines.push("- You report to Big Thing through its tools on the `team` server: `bigthing_report` when a milestone is finished or blocked, `bigthing_task` when a task starts, finishes or cannot be done, `bigthing_ask` for a decision only the user can make, and `bigthing_amend` to change the plan. Each call is checked against the plan and answered at once.".into());
         lines.push(format!("- If those tools are ever unavailable, end the reply with a single line instead: {REPORT_GRAMMAR}. While you are still working, report nothing."));
     } else {
         lines.push(format!("- When you finish a milestone, end that reply with a single line: {REPORT_GRAMMAR}. While you are still working, send no report line."));
     }
     if options.skill_available {
-        lines.push("- Load the `super-thing` skill if you want the full protocol.".into());
+        lines.push("- Load the `big-thing` skill if you want the full protocol.".into());
     }
     lines.push(String::new());
     if let Some(path) = goal.plan_path.as_deref() {
@@ -182,14 +182,14 @@ pub fn build_briefing(goal: &OdysseyRecord, milestones: &[MilestoneRecord], opti
         OnPlanChange::TasksAuto => "Task changes land at once. Adding or dropping a milestone, or changing its title or check, is shown to the user as a diff and lands when they accept; until then, work to the plan as it stands.",
     };
     if options.tools {
-        lines.push(format!("- When the plan no longer fits what you found, change it with `superthing_amend` — add, revise, drop, split or move tasks and milestones — and give a reason. {plan_change}"));
-        lines.push("- Decisions only a human can make — an ambiguous requirement, an architectural fork, constraints that conflict, a failure that keeps recurring, a permission you cannot grant yourself — go to `superthing_ask`, with what you will do meanwhile. Carry on; never wait for the answer. Everything else you decide.".into());
+        lines.push(format!("- When the plan no longer fits what you found, change it with `bigthing_amend` — add, revise, drop, split or move tasks and milestones — and give a reason. {plan_change}"));
+        lines.push("- Decisions only a human can make — an ambiguous requirement, an architectural fork, constraints that conflict, a failure that keeps recurring, a permission you cannot grant yourself — go to `bigthing_ask`, with what you will do meanwhile. Carry on; never wait for the answer. Everything else you decide.".into());
         lines.push(format!(
-            "- Milestones are broken into numbered tasks (6.3 is the third task of milestone 6). Name each {} after its task, `6.3-<slug>`, so the run can show which model did it, and move tasks with `superthing_task`.",
+            "- Milestones are broken into numbered tasks (6.3 is the third task of milestone 6). Name each {} after its task, `6.3-<slug>`, so the run can show which model did it, and move tasks with `bigthing_task`.",
             if has_workers(options.team).is_some() { "delegated job (the start of its task text)" } else { "subagent" }
         ));
     } else {
-        lines.push(format!("- When the plan no longer fits what you found, change it with an SUPERTHING-AMEND block — add, revise, drop, split or move tasks and milestones — and give a `reason:`. {plan_change}"));
+        lines.push(format!("- When the plan no longer fits what you found, change it with a BIGTHING-AMEND block — add, revise, drop, split or move tasks and milestones — and give a `reason:`. {plan_change}"));
         lines.push(format!("- Decisions only a human can make — an ambiguous requirement, an architectural fork, constraints that conflict, a failure that keeps recurring, a permission you cannot grant yourself — go on one line: {ASK_GRAMMAR}. Name what you will do meanwhile and carry on; never wait for the answer. Everything else you decide."));
         lines.push(format!(
             "- Milestones are broken into numbered tasks (6.3 is the third task of milestone 6). Name each {} after its task, `6.3-<slug>`, so the run can show which model did it, and when a task starts, finishes or cannot be done, put a line in your reply: {TASK_GRAMMAR}. Several lines per reply are fine.",
@@ -207,7 +207,7 @@ pub fn build_briefing(goal: &OdysseyRecord, milestones: &[MilestoneRecord], opti
     lines.push(String::new());
     lines.push(stop.into());
     lines.push(format!(
-        "Budget: at most {} continuations{}. Super Thing stops the run at the ceiling, so keep turns purposeful.",
+        "Budget: at most {} continuations{}. Big Thing stops the run at the ceiling, so keep turns purposeful.",
         goal.max_continuations,
         goal.token_budget.map(|budget| format!(", and {} tokens", super::decide::grouped(budget))).unwrap_or_default()
     ));
@@ -236,7 +236,7 @@ fn delegation_lines(options: &BriefingOptions<'_>) -> Vec<String> {
             .collect::<Vec<_>>()
             .join(", ");
         if options.runner_dispatch {
-            lines.push(format!("- You lead a team: {roster}. Super Thing hands the milestone's ready tasks to these workers itself, in parallel, and tells you when they are done; you plan, read their results, verify and report. Do not delegate a task Super Thing has already given a worker. Use `delegate` only for follow-up work the plan does not list."));
+            lines.push(format!("- You lead a team: {roster}. Big Thing hands the milestone's ready tasks to these workers itself, in parallel, and tells you when they are done; you plan, read their results, verify and report. Do not delegate a task Big Thing has already given a worker. Use `delegate` only for follow-up work the plan does not list."));
         } else {
             lines.push(format!("- You lead a team: {roster}. Hand routine implementation to its workers with the `team` tools — `delegate` by worker name or capability, then `await_jobs` for their reports; call `list_workers` if the team may have changed. Delegate independent tasks together."));
         }
@@ -309,7 +309,7 @@ pub fn build_continuation(input: &ContinuationInput<'_>) -> String {
     if !milestone.steps.is_empty() {
         lines.push("Tasks:".into());
         lines.extend(task_lines_for(input.index, &milestone.steps));
-        lines.push(if input.tools { "Move tasks with `superthing_task`.".into() } else { format!("Report task moves with: {TASK_GRAMMAR}") });
+        lines.push(if input.tools { "Move tasks with `bigthing_task`.".into() } else { format!("Report task moves with: {TASK_GRAMMAR}") });
     }
     if milestone.check_kind != CheckKind::Manual {
         lines.push(check_label(milestone.check_kind, milestone.check_spec.as_deref()).replacen("check: ", "Its check: ", 1));
@@ -333,11 +333,11 @@ pub fn build_continuation(input: &ContinuationInput<'_>) -> String {
 /// The planning prompt: the document, and what to turn it into.
 pub fn build_planning_prompt(goal: &OdysseyRecord, document: &str, source: Option<&str>, tools: bool) -> String {
     let check_rule = match goal.default_check.as_deref().map(str::trim).filter(|check| !check.is_empty()) {
-        Some(check) => format!("- **Every milestone gets a check Super Thing can run.** The project's test command is `{check}`; use `check: tests_pass {check}` unless the document names a better command for that milestone (`command <cmd>` for something else that must exit 0, `files_exist <paths>` for artefacts). Super Thing runs these commands itself, so do not invent one that is not there. `manual` stalls the run at that milestone until a human ticks it; use it only when nothing can be run."),
-        None => "- **Prefer a check Super Thing can run.** If the repository has a test command you can see — a package script, a Makefile target, `cargo test`, a script under `Tools/` — use `tests_pass <cmd>` for milestones whose work it covers, and `command <cmd>` or `files_exist <paths>` where the document names something else that must hold. Super Thing runs these commands itself, so do not invent one. `manual` stalls the run at that milestone until a human ticks it; use it only when nothing can be run.".into(),
+        Some(check) => format!("- **Every milestone gets a check Big Thing can run.** The project's test command is `{check}`; use `check: tests_pass {check}` unless the document names a better command for that milestone (`command <cmd>` for something else that must exit 0, `files_exist <paths>` for artefacts). Big Thing runs these commands itself, so do not invent one that is not there. `manual` stalls the run at that milestone until a human ticks it; use it only when nothing can be run."),
+        None => "- **Prefer a check Big Thing can run.** If the repository has a test command you can see — a package script, a Makefile target, `cargo test`, a script under `Tools/` — use `tests_pass <cmd>` for milestones whose work it covers, and `command <cmd>` or `files_exist <paths>` where the document names something else that must hold. Big Thing runs these commands itself, so do not invent one. `manual` stalls the run at that milestone until a human ticks it; use it only when nothing can be run.".into(),
     };
     let mut lines = vec![
-        "You are setting up a Super Thing goal, ThingMaker's long-horizon runner. This turn is planning only: do not start the work, do not edit any files, and do not run anything.".to_string(),
+        "You are setting up a Big Thing goal, ThingMaker's long-horizon runner. This turn is planning only: do not start the work, do not edit any files, and do not run anything.".to_string(),
         String::new(),
         format!("Goal: {}", goal.title),
     ];
@@ -361,7 +361,7 @@ pub fn build_planning_prompt(goal: &OdysseyRecord, document: &str, source: Optio
         String::new(),
     ]);
     if tools {
-        lines.push("Send the plan with the `superthing_propose_plan` tool on the `team` server. If that tool is not available, reply with nothing but this block, in exactly this shape:".into());
+        lines.push("Send the plan with the `bigthing_propose_plan` tool on the `team` server. If that tool is not available, reply with nothing but this block, in exactly this shape:".into());
     } else {
         lines.push("Reply with nothing but this block, in exactly this shape:".into());
     }
@@ -384,7 +384,7 @@ mod tests {
     use crate::delegation::WorkerSlot;
     use crate::odyssey_notes::NoteInfo;
     use crate::storage::odyssey::StepState;
-    use crate::superthing::tests::{goal, milestone, step};
+    use crate::bigthing::tests::{goal, milestone, step};
 
     fn plan() -> Vec<MilestoneRecord> {
         let mut first = milestone("m1", MilestoneState::Verified);
@@ -400,15 +400,15 @@ mod tests {
     #[test]
     fn the_briefing_explains_the_mechanics_and_lists_the_plan() {
         let text = build_briefing(&goal(), &plan(), &BriefingOptions { skill_available: true, tools: true, ..Default::default() });
-        assert!(text.starts_with("You are working under Super Thing"));
-        assert!(text.contains("`superthing_report`"));
+        assert!(text.starts_with("You are working under Big Thing"));
+        assert!(text.contains("`bigthing_report`"));
         assert!(text.contains(REPORT_GRAMMAR), "the text line stays as a fallback");
         assert!(text.contains("1. Foundation  [check: `pnpm test` must exit 0]"));
         assert!(text.contains("2. Screens  (spec: ## UI)  [check: the user ticks it]"));
         assert!(text.contains("Budget: at most 50 continuations."));
-        assert!(text.contains("`super-thing` skill"));
+        assert!(text.contains("`big-thing` skill"));
         let plain = build_briefing(&goal(), &plan(), &BriefingOptions::default());
-        assert!(!plain.contains("superthing_report"), "no tools promised to a session without them");
+        assert!(!plain.contains("bigthing_report"), "no tools promised to a session without them");
         assert!(plain.contains(ASK_GRAMMAR) && plain.contains(TASK_GRAMMAR));
         assert!(!plain.contains("skill"));
     }
@@ -432,7 +432,7 @@ mod tests {
         assert!(text.contains("turned off for this run"));
         assert!(!text.contains(DELEGATE_NAME), "no subagents to name");
         let dispatched = build_briefing(&goal(), &plan(), &BriefingOptions { team: Some(&team), runner_dispatch: true, tools: true, ..Default::default() });
-        assert!(dispatched.contains("Super Thing hands the milestone's ready tasks to these workers itself"));
+        assert!(dispatched.contains("Big Thing hands the milestone's ready tasks to these workers itself"));
         let alone = build_briefing(&goal(), &plan(), &BriefingOptions { agent: Some(Provider::Claude), ..Default::default() });
         assert!(alone.contains(&format!("subagent_type: {DELEGATE_NAME}")));
     }
@@ -458,7 +458,7 @@ mod tests {
             deltas: &deltas,
             plan_path: Some("docs/plan.md"),
             notes: Some(Some(&notes)),
-            agent_notes: &["docs/super-thing/agents/a.md".into()],
+            agent_notes: &["docs/big-thing/agents/a.md".into()],
             now: 30 * 60_000,
             tools: false,
         });
@@ -476,7 +476,7 @@ mod tests {
     #[test]
     fn the_planning_prompt_asks_for_the_tool_or_the_block() {
         let text = build_planning_prompt(&goal(), "# Roadmap", Some("roadmap.md"), true);
-        assert!(text.contains("`superthing_propose_plan`"));
+        assert!(text.contains("`bigthing_propose_plan`"));
         assert!(text.contains(PLAN_GRAMMAR));
         assert!(text.ends_with("--- end of roadmap.md ---"));
     }

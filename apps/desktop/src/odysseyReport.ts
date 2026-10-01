@@ -15,7 +15,7 @@ export type Report = {
   note: string;
 };
 
-const LINE = /^\s*(?:SUPERTHING|ODYSSEY)-REPORT:\s*(.+)$/im;
+const LINE = /^\s*(?:BIGTHING|SUPERTHING|ODYSSEY)-REPORT:\s*(.+)$/im;
 
 /**
  * Parses the last report line in a message. Later lines win, so a model that
@@ -25,7 +25,7 @@ export function parseReport(text: string): Report | null {
   if (!text) return null;
   // Scan from the end: `String.matchAll` keeps order, so the last match is the
   // model's final word on the turn.
-  const matches = [...text.matchAll(/^\s*(?:SUPERTHING|ODYSSEY)-REPORT:\s*(.+)$/gim)];
+  const matches = [...text.matchAll(/^\s*(?:BIGTHING|SUPERTHING|ODYSSEY)-REPORT:\s*(.+)$/gim)];
   const body = matches.at(-1)?.[1] ?? text.match(LINE)?.[1];
   if (!body) return null;
 

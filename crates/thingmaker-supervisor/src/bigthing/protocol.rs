@@ -1,6 +1,6 @@
 //! The run protocol: what the agent sends back, read into typed messages.
 //!
-//! Two ways in, one shape out. The `superthing_*` tools on the session's
+//! Two ways in, one shape out. The `bigthing_*` tools on the session's
 //! `team` server deliver these directly; the text lines and blocks below are
 //! the fallback for a provider that cannot load that server. Every parser is a
 //! refusal machine: a missing or malformed line means "nothing was said",
@@ -16,11 +16,11 @@ use crate::storage::odyssey::{AmendmentRecord, AmendmentState, CheckKind, Milest
 
 // ---------------------------------------------------------------- grammars
 
-pub const REPORT_GRAMMAR: &str = "SUPERTHING-REPORT: milestone=<n> status=<complete|blocked> note=<one line>";
-pub const TASK_GRAMMAR: &str = "SUPERTHING-TASK: milestone=<m> task=<t> status=<in_progress|done|blocked> agent=<subagent name, optional> note=<one line, optional>";
-pub const ASK_GRAMMAR: &str = "SUPERTHING-ASK: kind=<ambiguity|architecture|conflict|failure|permission> default=<what you do until you hear back> options=<a | b | c, optional> question=<one line>";
+pub const REPORT_GRAMMAR: &str = "BIGTHING-REPORT: milestone=<n> status=<complete|blocked> note=<one line>";
+pub const TASK_GRAMMAR: &str = "BIGTHING-TASK: milestone=<m> task=<t> status=<in_progress|done|blocked> agent=<subagent name, optional> note=<one line, optional>";
+pub const ASK_GRAMMAR: &str = "BIGTHING-ASK: kind=<ambiguity|architecture|conflict|failure|permission> default=<what you do until you hear back> options=<a | b | c, optional> question=<one line>";
 
-pub const PLAN_GRAMMAR: &str = "SUPERTHING-PLAN
+pub const PLAN_GRAMMAR: &str = "BIGTHING-PLAN
 milestone: <title>
 detail: <one line, optional>
 section: <the heading or line range of the document this milestone comes from, optional>
@@ -28,9 +28,9 @@ check: <manual | command <cmd> | tests_pass <cmd> | files_exist <paths>>
 step: <task title, repeatable — three to eight per milestone, in order>
 depends: <numbers of earlier tasks in this milestone the one above waits for, optional>
 capability: <what the task needs from a worker, e.g. image or review, optional>
-END-SUPERTHING-PLAN";
+END-BIGTHING-PLAN";
 
-pub const AMEND_GRAMMAR: &str = "SUPERTHING-AMEND
+pub const AMEND_GRAMMAR: &str = "BIGTHING-AMEND
 add: <title>
 after: <milestone number, or \"end\">
 detail: <one line, optional>
@@ -58,10 +58,10 @@ step: <each task that replaces it, repeatable>
 depends: <numbers of the milestone's tasks the one above waits for, optional>
 move_task: <task number>
 after: <task number in the same milestone, or \"start\">
-END-SUPERTHING-AMEND";
+END-BIGTHING-AMEND";
 
 /// The instruction appended once when any change amendment is carried.
-pub const AMEND_INSTRUCTION: &str = "Fold the above into the plan when it fits — you decide where and when. Change the milestones with `superthing_amend` (or an SUPERTHING-AMEND block), and keep working in the same reply if you have work to do. If it needs no change to the plan, say so.";
+pub const AMEND_INSTRUCTION: &str = "Fold the above into the plan when it fits — you decide where and when. Change the milestones with `bigthing_amend` (or a BIGTHING-AMEND block), and keep working in the same reply if you have work to do. If it needs no change to the plan, say so.";
 
 /// Continuations to leave between tellings of the same amendment.
 pub const RETELL_AFTER_CONTINUATIONS: i64 = 3;
@@ -81,11 +81,11 @@ fn re(pattern: &str) -> Regex {
     Regex::new(pattern).expect("a valid pattern")
 }
 
-static REPORT_LINE: LazyLock<Regex> = LazyLock::new(|| re(r"(?im)^\s*(?:SUPERTHING|ODYSSEY)-REPORT:[ \t]*(.+)$"));
-static ASK_LINE: LazyLock<Regex> = LazyLock::new(|| re(r"(?im)^\s*(?:SUPERTHING|ODYSSEY)-ASK:[ \t]*(.+)$"));
-static TASK_LINE: LazyLock<Regex> = LazyLock::new(|| re(r"(?im)^\s*(?:SUPERTHING|ODYSSEY)-TASK:[ \t]*(.+)$"));
-static PLAN_BLOCK: LazyLock<Regex> = LazyLock::new(|| re(r"(?m)^[^\S\n]*(?:\*\*)?(?:SUPERTHING|ODYSSEY)-PLAN(?:\*\*)?[^\S\n]*$([\s\S]*?)^[^\S\n]*(?:\*\*)?END-(?:SUPERTHING|ODYSSEY)-PLAN(?:\*\*)?[^\S\n]*$"));
-static AMEND_BLOCK: LazyLock<Regex> = LazyLock::new(|| re(r"(?m)^[^\S\n]*(?:\*\*)?(?:SUPERTHING|ODYSSEY)-AMEND(?:\*\*)?[^\S\n]*$([\s\S]*?)^[^\S\n]*(?:\*\*)?END-(?:SUPERTHING|ODYSSEY)-AMEND(?:\*\*)?[^\S\n]*$"));
+static REPORT_LINE: LazyLock<Regex> = LazyLock::new(|| re(r"(?im)^\s*(?:BIGTHING|SUPERTHING|ODYSSEY)-REPORT:[ \t]*(.+)$"));
+static ASK_LINE: LazyLock<Regex> = LazyLock::new(|| re(r"(?im)^\s*(?:BIGTHING|SUPERTHING|ODYSSEY)-ASK:[ \t]*(.+)$"));
+static TASK_LINE: LazyLock<Regex> = LazyLock::new(|| re(r"(?im)^\s*(?:BIGTHING|SUPERTHING|ODYSSEY)-TASK:[ \t]*(.+)$"));
+static PLAN_BLOCK: LazyLock<Regex> = LazyLock::new(|| re(r"(?m)^[^\S\n]*(?:\*\*)?(?:BIGTHING|SUPERTHING|ODYSSEY)-PLAN(?:\*\*)?[^\S\n]*$([\s\S]*?)^[^\S\n]*(?:\*\*)?END-(?:BIGTHING|SUPERTHING|ODYSSEY)-PLAN(?:\*\*)?[^\S\n]*$"));
+static AMEND_BLOCK: LazyLock<Regex> = LazyLock::new(|| re(r"(?m)^[^\S\n]*(?:\*\*)?(?:BIGTHING|SUPERTHING|ODYSSEY)-AMEND(?:\*\*)?[^\S\n]*$([\s\S]*?)^[^\S\n]*(?:\*\*)?END-(?:BIGTHING|SUPERTHING|ODYSSEY)-AMEND(?:\*\*)?[^\S\n]*$"));
 static PLAN_KEY: LazyLock<Regex> = LazyLock::new(|| re(r"(?i)^(milestone|detail|section|check|step|task|depends|capability)\s*:\s*(.*)$"));
 static AMEND_KEY: LazyLock<Regex> = LazyLock::new(|| re(r"(?i)^(add|revise|drop|drop_task|revise_task|split_task|move_task|after|title|detail|section|check|step|task|depends|capability|reason)\s*:\s*(.*)$"));
 
@@ -488,7 +488,7 @@ pub fn finish_plan(milestones: Vec<ProposedMilestone>, mut notes: Vec<String>, d
     }
     let runnable = milestones.iter().filter(|milestone| milestone.check_spec.is_some()).count();
     if runnable > 0 {
-        notes.push(format!("{runnable} milestone{} Super Thing can run. Read the commands before you start the run.", if runnable == 1 { " has a check" } else { "s have checks" }));
+        notes.push(format!("{runnable} milestone{} Big Thing can run. Read the commands before you start the run.", if runnable == 1 { " has a check" } else { "s have checks" }));
     } else {
         notes.push(ALL_MANUAL_NOTE.into());
     }
@@ -1037,26 +1037,34 @@ impl TurnProtocol {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::superthing::tests::{milestone, step};
+    use crate::bigthing::tests::{milestone, step};
+
+    #[test]
+    fn lines_written_under_the_earlier_names_still_read() {
+        assert_eq!(parse_report("SUPERTHING-REPORT: milestone=2 status=complete note=x").unwrap().milestone, 2);
+        assert_eq!(parse_report("ODYSSEY-REPORT: milestone=3 status=blocked note=y").unwrap().milestone, 3);
+        assert_eq!(parse_task_lines("SUPERTHING-TASK: milestone=1 task=2 status=done").len(), 1);
+        assert!(parse_plan("SUPERTHING-PLAN\nmilestone: One\nEND-SUPERTHING-PLAN").is_some());
+    }
 
     #[test]
     fn a_report_is_read_or_refused() {
         assert_eq!(parse_report("Done.\nODYSSEY-REPORT: milestone=3 status=complete note=screens built"), Some(Report { milestone: 3, status: ReportStatus::Complete, note: "screens built".into() }));
-        let restated = "SUPERTHING-REPORT: milestone=1 status=blocked note=first\ntext\nODYSSEY-REPORT: milestone=2 status=complete note=second";
+        let restated = "BIGTHING-REPORT: milestone=1 status=blocked note=first\ntext\nODYSSEY-REPORT: milestone=2 status=complete note=second";
         assert_eq!(parse_report(restated).unwrap().milestone, 2);
         assert_eq!(parse_report("odyssey-report:  milestone = 2   status = BLOCKED"), Some(Report { milestone: 2, status: ReportStatus::Blocked, note: String::new() }));
-        for bad in ["I finished the milestone!", "SUPERTHING-REPORT: status=complete", "SUPERTHING-REPORT: milestone=0 status=complete", "SUPERTHING-REPORT: milestone=2 status=nearly", ""] {
+        for bad in ["I finished the milestone!", "BIGTHING-REPORT: status=complete", "BIGTHING-REPORT: milestone=0 status=complete", "BIGTHING-REPORT: milestone=2 status=nearly", ""] {
             assert_eq!(parse_report(bad), None, "{bad}");
         }
     }
 
     #[test]
     fn asks_and_task_lines_are_read_one_per_line() {
-        let asks = parse_asks("SUPERTHING-ASK: kind=architecture default=keep SQLite options=SQLite | Postgres question=Which database should the service use?\nSUPERTHING-ASK: kind=bogus question=Second?\nSUPERTHING-ASK: kind=failure default=x");
+        let asks = parse_asks("BIGTHING-ASK: kind=architecture default=keep SQLite options=SQLite | Postgres question=Which database should the service use?\nBIGTHING-ASK: kind=bogus question=Second?\nBIGTHING-ASK: kind=failure default=x");
         assert_eq!(asks.len(), 2);
         assert_eq!(asks[0], Ask { kind: "architecture".into(), fallback: "keep SQLite".into(), options: vec!["SQLite".into(), "Postgres".into()], question: "Which database should the service use?".into() });
         assert_eq!(asks[1].kind, "ambiguity");
-        let tasks = parse_task_lines("SUPERTHING-TASK: milestone=6 task=3 status=done agent=`6.3-pricing` note=priced\nSUPERTHING-TASK: milestone=6 task=4 status=in_progress agent=-\nSUPERTHING-TASK: milestone=6 status=done");
+        let tasks = parse_task_lines("BIGTHING-TASK: milestone=6 task=3 status=done agent=`6.3-pricing` note=priced\nBIGTHING-TASK: milestone=6 task=4 status=in_progress agent=-\nBIGTHING-TASK: milestone=6 status=done");
         assert_eq!(tasks, vec![
             TaskLine { milestone: 6, task: 3, status: TaskStatus::Done, agent: Some("6.3-pricing".into()), note: "priced".into() },
             TaskLine { milestone: 6, task: 4, status: TaskStatus::InProgress, agent: None, note: String::new() },
@@ -1065,7 +1073,7 @@ mod tests {
 
     #[test]
     fn a_plan_block_is_read_with_its_tasks_and_bounded() {
-        let reply = "Here is the plan.\n\nSUPERTHING-PLAN\nmilestone: Foundation\ndetail: Set up the project.\ndetail: Second line.\nsection: `## Setup`\ncheck: tests_pass pnpm test\nstep: Scaffold\nstep: Wire CI\ndepends: 1\ncapability: Review\nmilestone: Art\ncheck: rm -rf ~\nEND-SUPERTHING-PLAN";
+        let reply = "Here is the plan.\n\nBIGTHING-PLAN\nmilestone: Foundation\ndetail: Set up the project.\ndetail: Second line.\nsection: `## Setup`\ncheck: tests_pass pnpm test\nstep: Scaffold\nstep: Wire CI\ndepends: 1\ncapability: Review\nmilestone: Art\ncheck: rm -rf ~\nEND-BIGTHING-PLAN";
         let plan = parse_plan(reply).unwrap();
         assert_eq!(plan.milestones.len(), 2);
         let first = &plan.milestones[0];
@@ -1076,19 +1084,19 @@ mod tests {
         assert_eq!(plan.milestones[1].check_kind, CheckKind::Manual, "an unnamed check is never a command");
         assert!(plan.notes.iter().any(|note| note.contains("does not name one of")));
         assert!(parse_plan("no block").is_none());
-        assert!(parse_plan("SUPERTHING-PLAN\nmilestone: unterminated").is_none());
+        assert!(parse_plan("BIGTHING-PLAN\nmilestone: unterminated").is_none());
     }
 
     #[test]
     fn an_amendment_is_read_resolved_and_diffed() {
-        let reply = "I can fit the ships in.\n\nSUPERTHING-AMEND\nadd: Ship art pipeline\nafter: 2\ncheck: tests_pass pnpm test\nstep: Import the sprites\nstep: Bind them\nrevise: 3\ntitle: Economy with ship classes\ndrop: 3\nreason: folded into the milestone above\ndrop: the economy one\nEND-SUPERTHING-AMEND";
+        let reply = "I can fit the ships in.\n\nBIGTHING-AMEND\nadd: Ship art pipeline\nafter: 2\ncheck: tests_pass pnpm test\nstep: Import the sprites\nstep: Bind them\nrevise: 3\ntitle: Economy with ship classes\ndrop: 3\nreason: folded into the milestone above\ndrop: the economy one\nEND-BIGTHING-AMEND";
         let amendment = parse_amendment(reply).unwrap();
         assert_eq!(amendment.ops.len(), 3);
         assert!(matches!(&amendment.ops[0], AmendOp::Add { after: Place::After(2), check_kind: CheckKind::TestsPass, steps, .. } if steps.len() == 2));
         assert!(amendment.notes.join(" ").contains("rather than a milestone number"));
-        let decorated = "**SUPERTHING-AMEND**\n- **add:** First\n**END-SUPERTHING-AMEND**\n\nActually:\n\nODYSSEY-AMEND\nadd: Second\nEND-SUPERTHING-AMEND";
+        let decorated = "**BIGTHING-AMEND**\n- **add:** First\n**END-BIGTHING-AMEND**\n\nActually:\n\nODYSSEY-AMEND\nadd: Second\nEND-BIGTHING-AMEND";
         assert!(matches!(&parse_amendment(decorated).unwrap().ops[..], [AmendOp::Add { title, .. }] if title == "Second"));
-        assert!(parse_amendment("SUPERTHING-AMEND\nreason: orphan\nEND-SUPERTHING-AMEND").is_none());
+        assert!(parse_amendment("BIGTHING-AMEND\nreason: orphan\nEND-BIGTHING-AMEND").is_none());
 
         let mut done = step("s1", StepState::Done);
         done.title = "Done task".into();
@@ -1128,7 +1136,7 @@ mod tests {
 
     #[test]
     fn tools_win_over_the_text_and_the_text_still_counts() {
-        let text = "SUPERTHING-REPORT: milestone=1 status=blocked note=from text\nSUPERTHING-ASK: question=Q1?";
+        let text = "BIGTHING-REPORT: milestone=1 status=blocked note=from text\nBIGTHING-ASK: question=Q1?";
         let tools = TurnProtocol { report: Some(Report { milestone: 2, status: ReportStatus::Complete, note: "tool".into() }), asks: vec![Ask { kind: "ambiguity".into(), fallback: String::new(), options: vec![], question: "Q1?".into() }], ..Default::default() };
         let turn = TurnProtocol::read(text, tools);
         assert_eq!(turn.report.unwrap().milestone, 2);

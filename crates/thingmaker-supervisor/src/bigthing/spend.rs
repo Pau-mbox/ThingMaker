@@ -27,7 +27,8 @@ use super::{
 use crate::agents::Provider;
 use crate::storage::odyssey::{AccountPolicy, JournalKind, Orchestrator};
 
-const COSTS_KEY: &str = "superthingTurnCosts";
+const COSTS_KEY: &str = "bigthingTurnCosts";
+const LEGACY_COSTS_KEY: &str = "superthingTurnCosts";
 /// Measured turns kept per goal.
 const MAX_COSTS: usize = 40;
 /// Measured turns before the forecast has an opinion.
@@ -122,7 +123,8 @@ fn points(value: f64) -> String {
 
 impl Engine {
     pub(crate) fn turn_costs(&self, goal_id: &str) -> Vec<TurnCost> {
-        self.db(|storage| storage.setting_get::<Vec<TurnCost>>(COSTS_KEY, &goal_scope(goal_id))).ok().flatten().unwrap_or_default()
+        let scope = goal_scope(goal_id);
+        self.db(|storage| Ok(storage.setting_get::<Vec<TurnCost>>(COSTS_KEY, &scope)?.or(storage.setting_get::<Vec<TurnCost>>(LEGACY_COSTS_KEY, &scope)?))).ok().flatten().unwrap_or_default()
     }
 
     /// The 5-hour reading, taken fresh when the one in the book is old.
@@ -212,7 +214,7 @@ impl Engine {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::superthing::usage::tests::{usage, window};
+    use crate::bigthing::usage::tests::{usage, window};
 
     fn cost(milestone: usize, percent: f64) -> TurnCost {
         TurnCost { at: 0, provider: Provider::Codex, milestone: Some(milestone), percent }

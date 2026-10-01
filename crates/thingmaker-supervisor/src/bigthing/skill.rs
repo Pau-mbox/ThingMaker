@@ -1,18 +1,18 @@
-//! The gate on the `super-thing` skill: the protocol the agents load is the
+//! The gate on the `big-thing` skill: the protocol the agents load is the
 //! one this code implements.
 //!
-//! A skill that drifts from the parser teaches the model a grammar Super Thing
+//! A skill that drifts from the parser teaches the model a grammar Big Thing
 //! ignores. So every grammar it quotes is compared with the real one, every
 //! example line in it is parsed with the real parser, and the enumerations it
 //! documents are compared with the real ones.
 
-/// The skill, as installed into `~/.agents/skills/super-thing`.
-pub const SKILL_MD: &str = include_str!("../../../../runtime/skills/super-thing/SKILL.md");
+/// The skill, as installed into `~/.agents/skills/big-thing`.
+pub const SKILL_MD: &str = include_str!("../../../../runtime/skills/big-thing/SKILL.md");
 
 #[cfg(test)]
 mod tests {
     use super::SKILL_MD as SKILL;
-    use crate::superthing::{
+    use crate::bigthing::{
         prompt::{DELEGATE_NAME, milestone_state_label},
         protocol::{AMEND_GRAMMAR, ASK_GRAMMAR, PLAN_GRAMMAR, REPORT_GRAMMAR, ReportStatus, TASK_GRAMMAR, TaskStatus, parse_amendment, parse_asks, parse_plan, parse_report, parse_task_lines},
     };
@@ -32,7 +32,7 @@ mod tests {
     #[test]
     fn front_matter_names_the_skill_and_says_when_to_load_it() {
         let front = SKILL.strip_prefix("---\n").and_then(|rest| rest.split_once("\n---\n")).map(|(front, _)| front).expect("front matter");
-        assert!(front.lines().any(|line| line == "name: super-thing"));
+        assert!(front.lines().any(|line| line == "name: big-thing"));
         let description = front.lines().find_map(|line| line.strip_prefix("description: ")).expect("a description");
         assert!(description.len() > 40 && description.contains("Use when"));
     }
@@ -46,11 +46,11 @@ mod tests {
 
     #[test]
     fn every_example_line_parses_to_what_it_claims() {
-        let reports = lines_starting("SUPERTHING-REPORT: ", "milestone=<");
+        let reports = lines_starting("BIGTHING-REPORT: ", "milestone=<");
         assert!(reports.len() >= 2);
         let statuses: Vec<ReportStatus> = reports.iter().map(|line| parse_report(line).unwrap_or_else(|| panic!("parses: {line}")).status).collect();
         assert!(statuses.contains(&ReportStatus::Complete) && statuses.contains(&ReportStatus::Blocked), "both outcomes are shown");
-        let tasks = lines_starting("SUPERTHING-TASK: ", "milestone=<");
+        let tasks = lines_starting("BIGTHING-TASK: ", "milestone=<");
         assert!(tasks.len() >= 3);
         let mut seen = Vec::new();
         for line in &tasks {
@@ -61,7 +61,7 @@ mod tests {
         for status in [TaskStatus::InProgress, TaskStatus::Done, TaskStatus::Blocked] {
             assert!(seen.contains(&status));
         }
-        let asks = lines_starting("SUPERTHING-ASK: ", "kind=<");
+        let asks = lines_starting("BIGTHING-ASK: ", "kind=<");
         assert!(asks.len() >= 2);
         for line in asks {
             assert_eq!(parse_asks(line).len(), 1, "parses: {line}");
@@ -93,7 +93,7 @@ mod tests {
 
     #[test]
     fn it_names_every_tool_the_team_server_carries() {
-        for tool in ["superthing_report", "superthing_task", "superthing_ask", "superthing_amend", "superthing_propose_plan", "memory_read", "memory_write", "board"] {
+        for tool in ["bigthing_report", "bigthing_task", "bigthing_ask", "bigthing_amend", "bigthing_propose_plan", "memory_read", "memory_write", "board"] {
             assert!(SKILL.contains(&format!("`{tool}`")), "the skill names `{tool}`");
         }
     }

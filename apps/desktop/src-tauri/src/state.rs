@@ -70,8 +70,8 @@ pub struct AppState {
     /// them on. Set once in `setup`.
     pub delegation: std::sync::OnceLock<thingmaker_supervisor::delegation::Delegation>,
     pub delegation_socket: std::sync::OnceLock<thingmaker_supervisor::delegation::socket::DelegationSocket>,
-    /// Super Thing's engine (ADR-010). Set once in `setup`, after delegation.
-    pub engine: std::sync::OnceLock<thingmaker_supervisor::superthing::Engine>,
+    /// Big Thing's engine (ADR-010). Set once in `setup`, after delegation.
+    pub engine: std::sync::OnceLock<thingmaker_supervisor::bigthing::Engine>,
     /// The model each live attachment was opened on, when one was asked for.
     pub actor_models: Mutex<HashMap<String, String>>,
 }

@@ -51,7 +51,7 @@ pub enum Decision {
     Idle { reason: String },
 }
 
-/// Whether Super Thing can settle this milestone itself.
+/// Whether Big Thing can settle this milestone itself.
 pub fn has_runnable_check(milestone: &MilestoneRecord) -> bool {
     milestone.check_kind != CheckKind::Manual && milestone.check_spec.as_deref().is_some_and(|spec| !spec.trim().is_empty())
 }
@@ -232,7 +232,7 @@ pub fn stall_notice(reason: &str, since: Option<i64>, now: i64) -> Option<String
         return None;
     }
     let waited = now - since;
-    (waited >= STALL_WARNING_MS).then(|| format!("Super Thing has not been able to act for {}: {reason}", stall_duration(waited)))
+    (waited >= STALL_WARNING_MS).then(|| format!("Big Thing has not been able to act for {}: {reason}", stall_duration(waited)))
 }
 
 /// A goal set to stop after each milestone pauses instead of rolling on.
@@ -248,9 +248,9 @@ pub fn continuations_left(goal: &OdysseyRecord) -> i64 {
 mod tests {
     use super::*;
     use crate::storage::odyssey::JournalKind;
-    use crate::superthing::journal::tests::entry;
-    use crate::superthing::tests::{goal, milestone};
-    use crate::superthing::usage::tests::{usage, window};
+    use crate::bigthing::journal::tests::entry;
+    use crate::bigthing::tests::{goal, milestone};
+    use crate::bigthing::usage::tests::{usage, window};
 
     const READY: SessionCondition = SessionCondition { attached: true, idle: true };
 
@@ -379,7 +379,7 @@ mod tests {
         assert_eq!(stall_duration(120 * 60_000), "2h");
         assert_eq!(stall_duration(5 * 60_000), "5m");
         assert!(stall_notice("waiting", Some(0), STALL_WARNING_MS - 1).is_none());
-        assert_eq!(stall_notice("waiting", Some(0), STALL_WARNING_MS).unwrap(), "Super Thing has not been able to act for 5m: waiting");
+        assert_eq!(stall_notice("waiting", Some(0), STALL_WARNING_MS).unwrap(), "Big Thing has not been able to act for 5m: waiting");
         assert_eq!(dead_turn(true, Some(0), 30 * 60_000, 30), Some(30 * 60_000));
         assert_eq!(dead_turn(true, Some(0), 30 * 60_000 - 1, 30), None);
         assert_eq!(dead_turn(true, None, 30 * 60_000, 30), None);

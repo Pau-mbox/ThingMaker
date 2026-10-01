@@ -1,4 +1,4 @@
-//! Super Thing: the long-horizon runner (ADR-010).
+//! Big Thing: the long-horizon runner (ADR-010).
 //!
 //! The engine owns the loop and writes every decision to the goal's record
 //! before acting on it. The pieces it is built from are pure and tested on

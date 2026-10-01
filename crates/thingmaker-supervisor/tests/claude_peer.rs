@@ -350,7 +350,7 @@ async fn chunks_without_ids_become_one_message_per_run_and_the_quota_is_lifted_o
     assert_eq!(first, "Looking at it.");
     let last = messages.last().unwrap();
     assert_ne!(last.0, messages[0].0, "text after a tool call is a new message");
-    assert!(last.1.starts_with("SUPERTHING-REPORT"));
+    assert!(last.1.starts_with("BIGTHING-REPORT"));
 
     let quota = events
         .iter()

@@ -1,5 +1,5 @@
 /**
- * Super Thing: the long-horizon goal screen (docs/plans/odyssey.md §8).
+ * Big Thing: the long-horizon goal screen (docs/plans/odyssey.md §8).
  *
  * O2 scope: the plan and its record. Every number shown is read from the
  * database, and the parts a runner would fill in — checkpoints, live state,
@@ -22,7 +22,7 @@ import { TaskTable } from "./OdysseyTasks";
 import { InboxPanel, useInboxItems } from "./OdysseyInbox";
 import { taskProgress } from "../odysseyTasks";
 import { AmendDialog, AmendmentList } from "./OdysseyAmend";
-import { MemoryPanel, RunOptions, Timeline, WorktreeCard } from "./SuperThingTeam";
+import { MemoryPanel, RunOptions, Timeline, WorktreeCard } from "./BigThingTeam";
 import { isPlanDocument, fileNameOf, summarize, type DocumentSummary } from "../odysseyDocument";
 import { planSummary, allManual } from "../odysseyPlan";
 import { api } from "../ipc";
@@ -35,9 +35,9 @@ const STOP_LABEL: Record<StopCondition, string> = {
 };
 
 const STOP_HINT: Record<StopCondition, string> = {
-  goal_complete: "Super Thing works through every milestone in order.",
-  milestone_complete: "Super Thing stops after each milestone and waits for you.",
-  manual: "Super Thing keeps going until you stop it.",
+  goal_complete: "Big Thing works through every milestone in order.",
+  milestone_complete: "Big Thing stops after each milestone and waits for you.",
+  manual: "Big Thing keeps going until you stop it.",
 };
 
 const RESET_LABEL: Record<OnUsageReset, string> = {
@@ -58,7 +58,7 @@ const REPORT_LABEL: Record<OnReport, string> = {
 };
 
 const REPORT_HINT: Record<OnReport, string> = {
-  continue: "The milestone stays reported · unverified and the run keeps going. A check Super Thing can run itself is still run.",
+  continue: "The milestone stays reported · unverified and the run keeps going. A check Big Thing can run itself is still run.",
   wait: "The run pauses at every claim until a check passes or you tick it.",
 };
 
@@ -121,13 +121,13 @@ function laneLabel(milestone: MilestoneRecord): string {
     case "user":
       return "you ticked it";
     case "desktop":
-      return "check run by Super Thing";
+      return "check run by Big Thing";
     default:
       return "no check has run";
   }
 }
 
-/** Whether Super Thing itself can run this milestone's check. */
+/** Whether Big Thing itself can run this milestone's check. */
 const runnable = hasRunnableCheck;
 
 /** The evidence sheet: what ran, in which lane, and what it printed. */
@@ -155,7 +155,7 @@ function MilestoneBadge({ milestone, sessionId }: { milestone: MilestoneRecord; 
   const busy = useStore((s) => s.odysseyRuntime[sessionId]?.ticking ?? false);
 
   const runButton = runnable(milestone) ? (
-    <button className="button button-small" disabled={busy} onClick={() => void runCheck(sessionId, milestone.id)} title={`Super Thing runs \`${milestone.checkSpec}\` and reads the exit code`} type="button">
+    <button className="button button-small" disabled={busy} onClick={() => void runCheck(sessionId, milestone.id)} title={`Big Thing runs \`${milestone.checkSpec}\` and reads the exit code`} type="button">
       {busy ? "Running…" : "Run check"}
     </button>
   ) : null;
@@ -393,7 +393,7 @@ const ORCHESTRATOR_HINT: Record<Orchestrator, string> = {
   claude: "This goal always runs on Claude Code, on the Claude subscription.",
   codex: "This goal always runs on Codex, on the ChatGPT subscription.",
   either:
-    "Super Thing keeps the run where it is and moves it to the other account when this one is spent and the other is not. A move costs a fresh briefing — worth it against a five-hour wait and nothing less. At most one move an hour, never mid-turn.",
+    "Big Thing keeps the run where it is and moves it to the other account when this one is spent and the other is not. A move costs a fresh briefing — worth it against a five-hour wait and nothing less. At most one move an hour, never mid-turn.",
 };
 
 /**
@@ -628,7 +628,7 @@ function StateCard({ view, sessionId }: { view: OdysseyView; sessionId: string }
             )}
             <p className="small muted">
               {goal.onUsageReset === "continue_automatically"
-                ? "Auto-resume is on: Super Thing re-checks usage at the reset time and picks up from the last checkpoint."
+                ? "Auto-resume is on: Big Thing re-checks usage at the reset time and picks up from the last checkpoint."
                 : goal.onUsageReset === "notify_only"
                   ? "You will be told when the quota is back; the run waits for you."
                   : "This goal is set to stop at the reset."}
@@ -642,7 +642,7 @@ function StateCard({ view, sessionId }: { view: OdysseyView; sessionId: string }
             {silentFor !== null && goal.deadTurnMinutes > 0 && (
               <>
                 {" "}
-                The session has produced no events for {stallDuration(silentFor)}; Super Thing cancels the turn at {goal.deadTurnMinutes} minutes.
+                The session has produced no events for {stallDuration(silentFor)}; Big Thing cancels the turn at {goal.deadTurnMinutes} minutes.
               </>
             )}
           </p>
@@ -774,7 +774,7 @@ function Settings({ view, sessionId }: { view: OdysseyView; sessionId: string })
           />
           <span className="small muted">
             Run from the project root. The planner is told to make it each milestone&rsquo;s check unless the document names a better one, so a claim is verified by
-            Super Thing rather than waiting for your tick. Nothing here runs until a milestone with that check is reported.
+            Big Thing rather than waiting for your tick. Nothing here runs until a milestone with that check is reported.
           </span>
         </label>
         <label className="odyssey-field">
@@ -868,7 +868,7 @@ function Settings({ view, sessionId }: { view: OdysseyView; sessionId: string })
             onChange={(event) => setMax(event.target.value)}
             value={max}
           />
-          <span className="small muted">Super Thing stops after this many continuations, whatever state the goal is in.</span>
+          <span className="small muted">Big Thing stops after this many continuations, whatever state the goal is in.</span>
         </label>
         <label className="odyssey-field">
           <span className="small">Token budget</span>
@@ -915,14 +915,14 @@ function SkillRow() {
 
   return (
     <div className="odyssey-field">
-      <span className="small">The `super-thing` skill</span>
+      <span className="small">The `big-thing` skill</span>
       <div className="row wrap">
         <button className="button button-small" disabled={busy} onClick={() => void install()} type="button">
           {busy ? "Installing…" : "Install or repair"}
         </button>
         {state && <span className="small muted mono">{state.path}</span>}
       </div>
-      <span className="small muted">The full protocol the model can load on demand. Super Thing installs it with the first briefing; reinstall it if you have edited the copy.</span>
+      <span className="small muted">The full protocol the model can load on demand. Big Thing installs it with the first briefing; reinstall it if you have edited the copy.</span>
     </div>
   );
 }
@@ -938,7 +938,7 @@ function VerifiedStrip({ milestones }: { milestones: MilestoneRecord[] }) {
       </header>
       <div className="odyssey-seals">
         {milestones.map((milestone) => (
-          // The seal's tooltip names the lane, because a check Super Thing ran and
+          // The seal's tooltip names the lane, because a check Big Thing ran and
           // one read from the agent's tool result are not equally strong.
           <span
             className={`odyssey-seal ${milestone.state === "verified" ? "seal-on" : ""} ${milestone.state === "failed" ? "seal-failed" : ""}`}
@@ -1140,7 +1140,7 @@ function NewGoalForm({ sessionId, workspaceId, agentSessionId }: { sessionId: st
       >
         <h3>Set a goal for this session</h3>
         <p className="small muted">
-          Super Thing breaks a goal into milestones and keeps this session working through them, parking itself when the account's usage runs out. It never marks a
+          Big Thing breaks a goal into milestones and keeps this session working through them, parking itself when the account's usage runs out. It never marks a
           milestone done on the agent's word alone.
         </p>
         <input aria-label="Goal title" className="input" onChange={(event) => setTitle(event.target.value)} placeholder="Ship onboarding v2" value={title} />
@@ -1165,7 +1165,7 @@ function NewGoalForm({ sessionId, workspaceId, agentSessionId }: { sessionId: st
               </button>
             </header>
             <p className="small muted">
-              Super Thing will hand this document to the session and the agent will propose the milestones. Nothing is read from it here, and the goal stays a draft
+              Big Thing will hand this document to the session and the agent will propose the milestones. Nothing is read from it here, and the goal stays a draft
               until you start it.
             </p>
             {document.adopted ? (
@@ -1193,7 +1193,7 @@ function NewGoalForm({ sessionId, workspaceId, agentSessionId }: { sessionId: st
             value={testCommand}
           />
           <span className="small muted">
-            Run from the project root. The agent is told to make it each milestone&rsquo;s check when it plans, so Super Thing can verify a claim instead of waiting for
+            Run from the project root. The agent is told to make it each milestone&rsquo;s check when it plans, so Big Thing can verify a claim instead of waiting for
             your tick. Without one, every milestone is yours to tick.
           </span>
         </label>
@@ -1217,7 +1217,7 @@ function NewGoalForm({ sessionId, workspaceId, agentSessionId }: { sessionId: st
           <span className="small">Who hands out the tasks</span>
           <select aria-label="Who hands out the tasks" className="select" onChange={(event) => setDispatch(event.target.value as "agent" | "runner")} value={dispatch}>
             <option value="agent">The orchestrator delegates</option>
-            <option value="runner">Super Thing hands out the tasks</option>
+            <option value="runner">Big Thing hands out the tasks</option>
           </select>
         </label>
         <label className="odyssey-toggle">
@@ -1250,7 +1250,7 @@ function NewGoalForm({ sessionId, workspaceId, agentSessionId }: { sessionId: st
  * The planning state of a draft goal that came from a document: waiting for
  * the agent's plan, or showing the plan it proposed for approval.
  *
- * The approval is not ceremony. A proposed check is a command Super Thing will
+ * The approval is not ceremony. A proposed check is a command Big Thing will
  * run in the workspace, and the document it came from may not be the user's,
  * so Start is where a human agrees to it.
  */
@@ -1294,12 +1294,12 @@ function PlanCard({ view, sessionId }: { view: OdysseyView; sessionId: string })
         {milestones.length > 0 && (
           <>
             <p className="small muted">
-              {proposed?.summary ?? `${milestones.length} milestones are proposed`}. They are the agent&rsquo;s reading of the document, not Super Thing&rsquo;s — edit,
+              {proposed?.summary ?? `${milestones.length} milestones are proposed`}. They are the agent&rsquo;s reading of the document, not Big Thing&rsquo;s — edit,
               reorder or remove any of them before you start.
             </p>
             {runnable > 0 && (
               <p className="small chip-warn">
-                {runnable} of them {runnable === 1 ? "has a check" : "have checks"} Super Thing will run in this workspace. Read those commands in the milestone list
+                {runnable} of them {runnable === 1 ? "has a check" : "have checks"} Big Thing will run in this workspace. Read those commands in the milestone list
                 before you press Start.
               </p>
             )}
@@ -1356,7 +1356,7 @@ export function OdysseyPane({ sessionId }: { sessionId: string }) {
     if (!view) return;
     let current = true;
     void api
-      .superthingBriefing(view.goal.id)
+      .bigthingBriefing(view.goal.id)
       .then((text) => current && setBriefing(text))
       .catch(() => undefined);
     return () => {
