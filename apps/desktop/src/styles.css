@@ -4072,7 +4072,27 @@ button.odyssey-task-title svg {
   text-decoration: line-through;
 }
 
-/* Which subscription a session spends, as a two-letter tag on its row. */
+/* Which subscription a session spends: the provider's mark in a small dark
+   tile, the same box for all three so they read as a set. */
+.provider-mark {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 5px;
+  background: rgba(255, 255, 255, 0.035);
+  border: 1px solid var(--border-strong);
+}
+.provider-mark-glyph {
+  display: block;
+}
+.provider-mark.provider-claude { border-color: rgba(217, 119, 87, 0.32); }
+.provider-mark.provider-codex { border-color: rgba(122, 132, 247, 0.32); }
+.provider-mark.provider-gemini { border-color: rgba(76, 141, 246, 0.32); }
+
+/* The two-letter tag the mark replaced, kept for anything still using it. */
 .provider-tag {
   flex: none;
   font-size: 10px;

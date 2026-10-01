@@ -17,7 +17,6 @@ import {
   ORCHESTRATOR_PROVIDERS,
   PROVIDERS,
   PROVIDER_LABELS,
-  PROVIDER_SHORT,
   WORKER_CAPABILITIES,
   asConfigOptions,
   isEffortOption,
@@ -31,6 +30,7 @@ import {
 } from "@thingmaker/contracts";
 import { useStore } from "../store";
 import { newPreset, presetMatches, presetWorker, teamSummary, uniqueName } from "../team";
+import { ProviderBadge } from "./ProviderMark";
 
 function quotaLine(quota: QuotaSnapshot | undefined): string | null {
   if (!quota) return null;
@@ -144,7 +144,7 @@ function WorkerCard({ worker, models, quota, onChange, onRemove }: { worker: Wor
     <li className="team-worker">
       <div className="team-worker-head">
         <strong>{worker.name.trim() || "Unnamed worker"}</strong>
-        <span className={`provider-tag provider-${worker.provider}`}>{PROVIDER_SHORT[worker.provider]}</span>
+        <ProviderBadge provider={worker.provider} />
         <span className="composer-spacer" />
         <button aria-label={`Remove ${worker.name || "worker"}`} className="button button-small" onClick={onRemove} type="button">
           Remove

@@ -4,9 +4,10 @@
  * a way into the worker's own session.
  */
 import { useEffect, useState } from "react";
-import { PROVIDER_LABELS, PROVIDER_SHORT, type JobView } from "@thingmaker/contracts";
+import { PROVIDER_LABELS, type JobView } from "@thingmaker/contracts";
 import { useStore } from "../store";
 import { countdown, isOpen, isRunning, jobDuration, teamSummary } from "../team";
+import { ProviderBadge } from "./ProviderMark";
 
 const EMPTY: JobView[] = [];
 
@@ -24,7 +25,7 @@ function JobRow({ job, sessionId, now }: { job: JobView; sessionId: string; now:
       <div className="agent-row">
         <span className={`chip small ${chip}`}>{job.status}</span>
         <strong>{job.worker}</strong>
-        <span className={`provider-tag provider-${job.provider}`}>{PROVIDER_SHORT[job.provider]}</span>
+        <ProviderBadge provider={job.provider} />
         <span className="small muted">
           {PROVIDER_LABELS[job.provider]}
           {job.model ? ` · ${job.model}` : ""}

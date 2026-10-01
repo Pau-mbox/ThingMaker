@@ -3,6 +3,7 @@ import type { Provider } from "@thingmaker/contracts";
 import { PROVIDERS, PROVIDER_LABELS } from "@thingmaker/contracts";
 import { useStore, sessionTitle, basenameOf as basename } from "../store";
 import { api } from "../ipc";
+import { ProviderBadge } from "./ProviderMark";
 import { windowName } from "./UsageLine";
 import {
   IconChevron,
@@ -29,7 +30,6 @@ function AttentionDot({ kind, running, exited }: { kind: string; running: boolea
 
 /** Untitled sessions show a short, stable name instead of the raw id. */
 /** Two letters for the row, so the provider is visible without a second line. */
-const PROVIDER_SHORT: Record<Provider, string> = { claude: "CC", codex: "CX", gemini: "GM" };
 
 function storedLabel(id: string, title: string | undefined): string {
   if (title && title !== id) return title;
@@ -169,9 +169,7 @@ function SessionRow({ row, showProject, onMenu, renaming, onRename }: { row: Row
           <span className="sidebar-title">{row.label}</span>
           {showProject && <span className="session-project">{row.project}</span>}
         </span>
-        <span className={`provider-tag provider-${row.provider}`} title={`Runs on ${PROVIDER_LABELS[row.provider]}`}>
-          {PROVIDER_SHORT[row.provider]}
-        </span>
+        <ProviderBadge provider={row.provider} title={`Runs on ${row.provider === "gemini" ? "Gemini (Antigravity)" : PROVIDER_LABELS[row.provider]}`} />
         <span className="row-meta">{row.running ? "running" : row.exited ? "exited" : relative(row.updated)}</span>
       </button>
       <span className="row-actions">
