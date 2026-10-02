@@ -12,6 +12,7 @@
 import { useEffect, useState } from "react";
 import { useStore, windowDelta } from "../store";
 import { staleActivity } from "../odysseyRunner";
+import { stepDoing, stepOf } from "../toolSteps";
 import { UsageLine } from "./UsageLine";
 import { IconChevron } from "./icons";
 
@@ -27,6 +28,11 @@ export function ActivityBar({ sessionId, onOpenAgents }: { sessionId: string; on
   const sampleUsage = useStore((s) => s.sampleUsage);
   const clearStaleActivity = useStore((s) => s.clearStaleActivity);
   const jobs = useStore((s) => s.jobs[sessionId]);
+  // A string, so the selection is stable between updates.
+  const roots = useStore((s) => {
+    const workspace = s.workspaces.find((entry) => entry.id === s.sessions[sessionId]?.workspaceId);
+    return workspace ? `${workspace.canonicalRoot}\n${workspace.displayPath}` : "";
+  });
 
   const foreground = !!session && (session.projection.foreground === "running" || session.projection.foreground === "cancelling" || session.projection.foreground === "awaiting_user");
   const projection = session?.projection;
@@ -80,8 +86,18 @@ export function ActivityBar({ sessionId, onOpenAgents }: { sessionId: string; on
           : "Thinking"
     : "Working in the background";
 
+  // What the turn is doing, in the transcript's words, and how much it has
+  // done: a long "Thinking" otherwise says nothing at all.
+  const doing = runningTools.at(-1);
+  let turnSteps = 0;
+  for (let index = projection.cards.length - 1; index >= 0; index -= 1) {
+    const card = projection.cards[index];
+    if (card?.kind === "message" && card.message.role === "user") break;
+    if (card?.kind === "tool") turnSteps += 1;
+  }
   const counts = [
-    runningTools.length > 0 ? `${runningTools.length} tool call${runningTools.length === 1 ? "" : "s"}` : null,
+    doing ? `${stepDoing(stepOf(doing, roots.split("\n").filter(Boolean)))}${runningTools.length > 1 ? ` (+${runningTools.length - 1} more)` : ""}` : null,
+    foreground && turnSteps > 0 ? `${turnSteps} step${turnSteps === 1 ? "" : "s"} so far` : null,
     agents.length > 0 ? `${agents.length} background agent${agents.length === 1 ? "" : "s"}` : null,
     detached.length > 0 ? `${detached.length} detached` : null,
     openJobs.length > 0 ? `${openJobs.length} worker job${openJobs.length === 1 ? "" : "s"}${waitingJobs > 0 ? ` (${waitingJobs} waiting out a limit)` : ""}` : null,

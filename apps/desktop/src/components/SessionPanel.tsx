@@ -13,6 +13,7 @@ import { AgentsPane } from "./AgentsPane";
 import { ContextPane } from "./ContextPane";
 import { ArtifactsPane } from "./ArtifactsPane";
 import { ActivityBar } from "./ActivityBar";
+import { ToolGroup } from "./ToolGroup";
 import { ImagesPane } from "./ImagesPane";
 import { OdysseyPane } from "./OdysseyPane";
 import { AttachmentThumb, BlockImage, InlineImage, workspaceImageRenderer } from "./InlineImage";
@@ -75,22 +76,16 @@ function Blocks({ blocks, markdown, onLink, workspaceId }: { blocks: ContentBloc
   );
 }
 
-function ToolCard({ patch, detached, sessionId, workspaceId, provider }: { patch: ToolPatch; detached: string | undefined; sessionId: string; workspaceId: string; provider: Provider | undefined }) {
+/** A tool call's raw detail: what went in, what came out, what it wrote. */
+function ToolDetail({ patch, provider }: { patch: ToolPatch; provider: Provider | undefined }) {
   // Both are read from what the tool returned, so they appear only when the
   // call actually produced that shape.
   const testRun = useMemo(() => detectTestRun(patch.rawInput, patch.rawOutput, shellResultsOf(patch, provider)), [patch, provider]);
   const edited = useMemo(() => editedFilesIn(patch.rawOutput).slice(0, 12), [patch.rawOutput]);
   // No agent times its tool calls on the wire; nothing is guessed.
   const millis = null;
-  const running = patch.status === "in_progress" || patch.status === "pending";
-  const id = patch.toolCallId;
   return (
-    <details className="card card-tool">
-      <summary>
-        <span className="chip">{patch.toolKind ?? "tool"}</span> {patch.title ?? patch.name ?? patch.toolCallId}{" "}
-        <span className="chip small">{patch.status ?? "no status"}</span>
-        {detached && <span className="chip chip-warn small">detached: {detached.replace("_", " ")}</span>}
-      </summary>
+    <>
       {testRun && <TestsCard millis={millis} run={testRun} />}
       {edited.length > 0 && (
         <>
@@ -117,9 +112,22 @@ function ToolCard({ patch, detached, sessionId, workspaceId, provider }: { patch
         </>
       )}
       <p className="small muted">
-        supplied fields: {patch.present.join(", ") || "none"}
+        {patch.toolKind ?? "tool"} · {patch.status ?? "no status"} · supplied fields: {patch.present.join(", ") || "none"}
         {patch.cleared.length > 0 ? `; cleared: ${patch.cleared.join(", ")}` : ""}
       </p>
+    </>
+  );
+}
+
+function ToolCard({ patch, detached, provider }: { patch: ToolPatch; detached: string | undefined; provider: Provider | undefined }) {
+  return (
+    <details className="card card-tool">
+      <summary>
+        <span className="chip">{patch.toolKind ?? "tool"}</span> {patch.title ?? patch.name ?? patch.toolCallId}{" "}
+        <span className="chip small">{patch.status ?? "no status"}</span>
+        {detached && <span className="chip chip-warn small">detached: {detached.replace("_", " ")}</span>}
+      </summary>
+      <ToolDetail patch={patch} provider={provider} />
     </details>
   );
 }
@@ -199,7 +207,7 @@ function CardBody({ card, sessionId }: { card: Card; sessionId: string }) {
       );
     case "tool": {
       if (!patch) return null;
-      return <ToolCard detached={detached} patch={patch} provider={provider} sessionId={sessionId} workspaceId={workspaceId} />;
+      return <ToolCard detached={detached} patch={patch} provider={provider} />;
     }
     case "notice":
       return (
@@ -262,15 +270,26 @@ function cardText(card: Card, tools: Map<string, ToolPatch>): string {
   }
 }
 
-type CardGroup = { kind: "single"; card: Card } | { kind: "runtime"; key: string; cards: Card[] };
+type CardGroup = { kind: "single"; card: Card } | { kind: "runtime"; key: string; cards: Card[] } | { kind: "work"; key: string; cards: Card[] };
 
-/** Consecutive runtime/stderr lines collapse into one expandable group. */
-function groupCards(cards: Card[]): CardGroup[] {
+/**
+ * Consecutive runtime/stderr lines collapse into one expandable group, and a
+ * run of tool calls between two messages into one work group. Runtime
+ * lines and routine permission answers inside a run stay in it; a message,
+ * a notice or a refusal ends it.
+ */
+export function groupCards(cards: Card[]): CardGroup[] {
   const out: CardGroup[] = [];
   for (const card of cards) {
     const noisy = card.kind === "runtime" || card.kind === "diagnostic";
+    const quiet = card.kind === "permission" && card.decision === "allowed";
     const last = out.at(-1);
-    if (noisy && last && last.kind === "runtime") last.cards.push(card);
+    if (card.kind === "tool") {
+      if (last && last.kind === "work") last.cards.push(card);
+      else if (last && last.kind === "runtime") out[out.length - 1] = { kind: "work", key: last.key, cards: [...last.cards, card] };
+      else out.push({ kind: "work", key: `work|${card.key}`, cards: [card] });
+    } else if ((noisy || quiet) && last && last.kind === "work") last.cards.push(card);
+    else if (noisy && last && last.kind === "runtime") last.cards.push(card);
     else if (noisy) out.push({ kind: "runtime", key: `group|${card.key}`, cards: [card] });
     else out.push({ kind: "single", card });
   }
@@ -770,9 +789,18 @@ export function SessionPanel({ sessionId }: { sessionId: string }) {
             </div>
           )}
           <div aria-busy={active} className="transcript" ref={transcriptRef}>
-            {groupCards(shownCards).map((group) =>
+            {groupCards(shownCards).map((group, index, groups) =>
               group.kind === "single" ? (
                 <CardView card={group.card} images={cardImages.get(group.card.key)} key={group.card.key} sessionId={sessionId} />
+              ) : group.kind === "work" ? (
+                <ToolGroup
+                  cards={group.cards}
+                  key={group.key}
+                  live={active && index === groups.length - 1}
+                  renderCard={(card) => <CardView card={card} images={cardImages.get(card.key)} key={card.key} sessionId={sessionId} />}
+                  renderDetail={(patch) => <ToolDetail patch={patch} provider={session.snapshot.provider} />}
+                  sessionId={sessionId}
+                />
               ) : (
                 <details className="runtime-group" key={group.key}>
                   <summary className="small muted">
