@@ -1849,6 +1849,12 @@ export const useStore = create<State>((set, get) => ({
   noteJob(job) {
     const previous = get().jobs[job.orchestrator]?.find((existing) => existing.id === job.id);
     set({ jobs: { ...get().jobs, [job.orchestrator]: upsertJob(get().jobs[job.orchestrator], job) } });
+    // A worker closed for being idle is archived by the host: the sidebar
+    // reads the rows again so it leaves the live list.
+    if (job.workerClosed && !previous?.workerClosed) {
+      const workspaceId = get().sessions[job.orchestrator]?.workspaceId;
+      if (workspaceId) void get().loadRecords(workspaceId);
+    }
     // A new worker session has a row now: the sidebar shows it under its
     // orchestrator.
     if (job.workerSession && previous?.workerSession !== job.workerSession) {

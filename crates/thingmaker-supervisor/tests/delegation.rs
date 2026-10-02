@@ -363,3 +363,34 @@ async fn past_the_last_retry_the_job_fails_and_keeps_what_the_worker_said() {
     }
     delegation.release("cx-o").await;
 }
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn a_free_worker_takes_the_next_job_and_closes_once_idle() {
+    let Some((delegation, launcher, changes)) = service(&[]) else { return };
+    let dir = tempfile::tempdir().unwrap();
+    delegation.register("cx-o", Provider::Claude, dir.path().to_path_buf(), team());
+    delegation.set_worker_idle(Duration::from_secs(3600));
+    let first = delegation.delegate("cx-o", DelegateArgs { task: "First".into(), worker: Some("luna".into()), ..Default::default() }).unwrap();
+    let done = delegation.await_jobs("cx-o", std::slice::from_ref(&first.id), Duration::from_secs(30), false).await.unwrap();
+    assert_eq!(done[0].status, JobStatus::Succeeded);
+    let second = delegation.delegate("cx-o", DelegateArgs { task: "Second".into(), worker: Some("luna".into()), ..Default::default() }).unwrap();
+    assert!(second.warm, "the free worker takes it");
+    assert_eq!(second.continues, None, "a new task, not a follow-up");
+    let done = delegation.await_jobs("cx-o", std::slice::from_ref(&second.id), Duration::from_secs(30), false).await.unwrap();
+    assert_eq!(done[0].status, JobStatus::Succeeded);
+    assert_eq!(done[0].worker_session, first.worker_session.clone().or(done[0].worker_session.clone()));
+    assert_eq!(launcher.launched.lock().unwrap().len(), 1, "one worker session for both jobs");
+    // Idle past the limit: closed, and the jobs say so.
+    delegation.set_worker_idle(Duration::from_millis(1));
+    tokio::time::sleep(Duration::from_millis(20)).await;
+    delegation.reap_idle().await;
+    assert_eq!(launcher.released.lock().unwrap().len(), 1);
+    assert!(delegation.jobs("cx-o").iter().all(|job| job.worker_closed));
+    assert!(changes.lock().unwrap().iter().any(|job| job.worker_closed));
+    // The next job opens a fresh one.
+    let third = delegation.delegate("cx-o", DelegateArgs { task: "Third".into(), worker: Some("luna".into()), ..Default::default() }).unwrap();
+    assert!(!third.warm);
+    delegation.await_jobs("cx-o", &[third.id], Duration::from_secs(30), false).await.unwrap();
+    assert_eq!(launcher.launched.lock().unwrap().len(), 2);
+    delegation.release("cx-o").await;
+}

@@ -4492,3 +4492,6 @@ button.odyssey-task-title svg {
   white-space: nowrap;
   max-width: 520px;
 }
+.sidebar-finished {
+  margin-left: 8px;
+}

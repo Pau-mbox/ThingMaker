@@ -188,6 +188,16 @@ impl WorkerLauncher for HostLauncher {
 
     fn released(&self, worker_handle: &str) {
         if let Some(state) = self.app.try_state::<AppState>() {
+            // A closed worker's session is archived: its job is over, and the
+            // sidebar keeps it under Archived rather than among live work.
+            let agent_session_id = state.agent_session_id(worker_handle);
+            let root = state.actor_entries().into_iter().find(|(id, _)| id == worker_handle).map(|(_, root)| root);
+            if let Some(root) = root
+                && let Ok(Some(workspace)) = state.with_storage(|s| s.workspace_by_root(&root.to_string_lossy()))
+                && let Ok(Some(row)) = state.with_storage(|s| s.session_by_agent_id(&workspace.id, &agent_session_id))
+            {
+                let _ = state.with_storage(|s| s.session_set_archive(&row.id, thingmaker_supervisor::storage::workspaces::ArchiveState::Archived));
+            }
             state.remove_actor(worker_handle);
         }
     }

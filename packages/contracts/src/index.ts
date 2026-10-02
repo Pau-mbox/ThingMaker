@@ -452,6 +452,10 @@ export type JobView = {
   retryAtUnixMs?: number;
   startedAtUnixMs: number;
   finishedAtUnixMs?: number;
+  /** The worker's session was closed: idle too long, or its orchestrator ended. */
+  workerClosed?: boolean;
+  /** Taken by a worker that had already done an earlier job, keeping its context. */
+  warm?: boolean;
 };
 
 /** Emitted by the host on every job change. */

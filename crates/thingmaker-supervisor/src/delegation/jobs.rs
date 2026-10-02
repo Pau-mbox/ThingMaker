@@ -43,6 +43,12 @@ pub const MAX_AWAIT: Duration = Duration::from_secs(20 * 60);
 pub const DEFAULT_AWAIT: Duration = Duration::from_secs(5 * 60);
 /// A result is the worker's report, not its transcript.
 pub const RESULT_CHARS: usize = 24_000;
+/// Jobs one worker session takes before it is closed and a fresh one opened:
+/// reuse saves a start and keeps the provider's prompt cache warm, but each
+/// job adds to the context the next one pays for.
+pub const MAX_WORKER_REUSE: usize = 4;
+/// How long a worker with nothing to do stays open for the next job.
+pub const WORKER_IDLE: Duration = Duration::from_secs(5 * 60);
 const TASK_CHARS: usize = 40_000;
 
 /// What a job does when its worker hits a temporary limit — Codex's image
@@ -238,6 +244,12 @@ pub struct JobView {
     pub started_at_unix_ms: u64,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub finished_at_unix_ms: Option<u64>,
+    /// The worker's session was closed: idle too long, or its orchestrator ended.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub worker_closed: bool,
+    /// Taken by a worker that had already done an earlier job, keeping its context.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub warm: bool,
 }
 
 /// What `delegate` takes.
@@ -298,6 +310,8 @@ struct Inner {
     state: Mutex<State>,
     changed: watch::Sender<u64>,
     extension: std::sync::RwLock<Option<Arc<dyn TeamExtension>>>,
+    reaper: std::sync::atomic::AtomicBool,
+    idle: Mutex<Duration>,
 }
 
 /// The delegation service. Cloning shares it.
@@ -329,7 +343,15 @@ impl Delegation {
     pub fn new(launcher: Arc<dyn WorkerLauncher>, on_change: impl Fn(&JobView) + Send + Sync + 'static) -> Self {
         let (changed, _) = watch::channel(0);
         Self {
-            inner: Arc::new(Inner { launcher, on_change: Box::new(on_change), state: Mutex::new(State::default()), changed, extension: std::sync::RwLock::new(None) }),
+            inner: Arc::new(Inner {
+                launcher,
+                on_change: Box::new(on_change),
+                state: Mutex::new(State::default()),
+                changed,
+                extension: std::sync::RwLock::new(None),
+                reaper: std::sync::atomic::AtomicBool::new(false),
+                idle: Mutex::new(WORKER_IDLE),
+            }),
         }
     }
 
@@ -537,6 +559,10 @@ impl Delegation {
                     }
                 },
             };
+            // A worker that finished an earlier job on the same slot and has
+            // nothing to do takes this one: no start, and a warm cache.
+            let warm = if reuse.is_none() && queued.is_none() { warm_worker(&state, session, &route.slot) } else { None };
+            let reuse = reuse.or_else(|| warm.clone().map(|actor| (String::new(), actor)));
             state.serial += 1;
             let id = format!("job-{}", state.serial);
             let view = JobView {
@@ -551,7 +577,7 @@ impl Delegation {
                 result: None,
                 error: None,
                 rerouted_from: route.rerouted_from.clone(),
-                continues: reuse.as_ref().map(|(previous, _)| previous.clone()),
+                continues: reuse.as_ref().map(|(previous, _)| previous.clone()).filter(|previous| !previous.is_empty()),
                 worker_session: reuse.as_ref().map(|(_, actor)| actor.handle().id.clone()),
                 agent_session_id: None,
                 tool_calls: 0,
@@ -560,6 +586,8 @@ impl Delegation {
                 retry_at_unix_ms: queued.as_ref().map(|(_, at)| *at),
                 started_at_unix_ms: now,
                 finished_at_unix_ms: None,
+                worker_closed: false,
+                warm: warm.is_some(),
             };
             let token = reuse.is_none().then(|| uuid::Uuid::new_v4().simple().to_string());
             if let Some(token) = &token {
@@ -574,7 +602,11 @@ impl Delegation {
         };
         (self.inner.on_change)(&view);
         self.bump();
-        let prompt = worker_prompt(task, &args.files, orchestrator_provider, view.continues.is_some());
+        let mut prompt = worker_prompt(task, &args.files, orchestrator_provider, view.continues.is_some());
+        if view.warm {
+            prompt = format!("Your previous task is finished. This is a new one: treat it on its own, using what you learned only where it applies.\n\n{prompt}");
+        }
+        self.ensure_reaper();
         let service = self.clone();
         let job_id = view.id.clone();
         let summary: String = task.lines().next().unwrap_or(task).chars().take(60).collect();
@@ -821,6 +853,79 @@ impl Delegation {
         self.state().retry = policy;
     }
 
+    /// How long an idle worker stays open (tests shorten it).
+    pub fn set_worker_idle(&self, idle: Duration) {
+        *self.inner.idle.lock().unwrap_or_else(|poisoned| poisoned.into_inner()) = idle;
+    }
+
+    /// Starts the loop that closes idle workers, once.
+    fn ensure_reaper(&self) {
+        use std::sync::atomic::Ordering;
+        if self.inner.reaper.swap(true, Ordering::SeqCst) {
+            return;
+        }
+        let weak = Arc::downgrade(&self.inner);
+        tokio::spawn(async move {
+            loop {
+                let pause = weak.upgrade().map(|inner| (*inner.idle.lock().unwrap_or_else(|poisoned| poisoned.into_inner()) / 4).clamp(Duration::from_millis(200), Duration::from_secs(30)));
+                let Some(pause) = pause else { break };
+                tokio::time::sleep(pause).await;
+                let Some(inner) = weak.upgrade() else { break };
+                Delegation { inner }.reap_idle().await;
+            }
+        });
+    }
+
+    /// Closes the workers that have had nothing to do for longer than the
+    /// idle time. A closed worker's jobs keep their reports; a follow-up to one
+    /// of them starts a new worker.
+    pub async fn reap_idle(&self) {
+        let idle = *self.inner.idle.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+        let now = now_unix_ms();
+        let (closing, views) = {
+            let mut state = self.state();
+            let mut handles: HashMap<String, (SessionActor, u64, bool)> = HashMap::new();
+            for record in state.jobs.values() {
+                let (Some(handle), Some(actor)) = (record.view.worker_session.clone(), record.actor.clone()) else { continue };
+                let entry = handles.entry(handle).or_insert((actor, 0, false));
+                entry.1 = entry.1.max(record.view.finished_at_unix_ms.unwrap_or(now));
+                entry.2 |= !record.view.status.is_finished();
+            }
+            // A worker another unfinished job points at is in use, whether
+            // or not that record holds the actor.
+            let busy: Vec<String> = state.jobs.values().filter(|record| !record.view.status.is_finished()).filter_map(|record| record.view.worker_session.clone()).collect();
+            let closing: Vec<(String, SessionActor)> = handles
+                .into_iter()
+                .filter(|(handle, (_, finished, active))| !active && !busy.contains(handle) && now.saturating_sub(*finished) >= idle.as_millis() as u64)
+                .map(|(handle, (actor, _, _))| (handle, actor))
+                .collect();
+            let mut views = Vec::new();
+            for (handle, _) in &closing {
+                let mut tokens = Vec::new();
+                for record in state.jobs.values_mut() {
+                    if record.view.worker_session.as_deref() == Some(handle.as_str()) {
+                        record.actor = None;
+                        record.view.worker_closed = true;
+                        tokens.extend(record.token.take());
+                        views.push(record.view.clone());
+                    }
+                }
+                for token in tokens {
+                    state.worker_tokens.remove(&token);
+                }
+            }
+            (closing, views)
+        };
+        for (handle, actor) in closing {
+            let _ = actor.stop().await;
+            self.inner.launcher.released(&handle);
+        }
+        for view in views {
+            (self.inner.on_change)(&view);
+        }
+        self.bump();
+    }
+
     async fn release_worker(&self, job_id: &str, worker: &SessionActor) {
         let token = {
             let mut state = self.state();
@@ -831,6 +936,16 @@ impl Delegation {
             token
         };
         let _ = token;
+        // Every job that held this worker lets go of it, so none hands a
+        // stopped session to the next one.
+        {
+            let mut state = self.state();
+            for record in state.jobs.values_mut() {
+                if record.actor.as_ref().is_some_and(|actor| actor.handle().id == worker.handle().id) {
+                    record.actor = None;
+                }
+            }
+        }
         self.update(job_id, |record| record.actor = None);
         let _ = worker.stop().await;
         self.inner.launcher.released(&worker.handle().id);
@@ -1105,6 +1220,35 @@ pub fn looks_rate_limited(error: &str) -> bool {
 /// What a worker is told. It has none of the orchestrator's conversation, so
 /// the task has to stand alone; and its last message is its report, so it is
 /// asked to make that message one.
+/// A worker that finished an earlier job on this slot, is free, and has not
+/// taken its share of jobs yet.
+fn warm_worker(state: &State, session: &str, slot: &WorkerSlot) -> Option<SessionActor> {
+    let ids = state.order.get(session)?;
+    for id in ids.iter().rev() {
+        let Some(record) = state.jobs.get(id) else { continue };
+        if record.view.status != JobStatus::Succeeded || record.view.worker_closed {
+            continue;
+        }
+        let Some(actor) = &record.actor else { continue };
+        if record.slot.name != slot.name || record.slot.provider != slot.provider || record.slot.model != slot.model || record.slot.effort != slot.effort {
+            continue;
+        }
+        let handle = actor.handle().id.as_str();
+        let uses = state.jobs.values().filter(|other| other.view.worker_session.as_deref() == Some(handle));
+        let mut count = 0;
+        let mut busy = false;
+        for other in uses {
+            count += 1;
+            busy |= !other.view.status.is_finished();
+        }
+        if busy || count >= MAX_WORKER_REUSE {
+            continue;
+        }
+        return Some(actor.clone());
+    }
+    None
+}
+
 pub fn worker_prompt(task: &str, files: &[String], orchestrator: Provider, follow_up: bool) -> String {
     let mut prompt = String::new();
     if follow_up {

@@ -294,6 +294,8 @@ export function Sidebar() {
   // Orchestrators whose workers are shown. Folded by default: a long run
   // opens dozens, and they would bury every other session. Remembered on
   // this machine.
+  // Finished workers inside an open team, folded unless asked for.
+  const [openFinished, setOpenFinished] = useState<Record<string, boolean>>({});
   const [openTeams, setOpenTeams] = useState<Record<string, boolean>>(() => {
     try {
       return JSON.parse(localStorage.getItem("thingmaker.sidebar.openTeams") ?? "{}") as Record<string, boolean>;
@@ -501,7 +503,10 @@ export function Sidebar() {
                     // A worker shows only while its orchestrator's team is
                     // open; one whose orchestrator is not listed stands alone.
                     if (row.parent && unpinned.some((parent) => parent.id === row.parent) && !openTeams[row.parent]) return null;
+                    // A finished worker folds away: the live ones are what to watch.
+                    if (row.parent && !row.running && unpinned.some((parent) => parent.id === row.parent) && !openFinished[row.parent]) return null;
                     const running = children.filter((child) => child.running).length;
+                    const finished = children.length - running;
                     return (
                       <SessionGroup key={row.liveId ?? row.id}>
                         <SessionRow
@@ -519,6 +524,11 @@ export function Sidebar() {
                               <IconChevron open={!!openTeams[row.id]} size={12} /> {children.length} worker{children.length === 1 ? "" : "s"}
                               {running > 0 ? ` · ${running} running` : ""}
                             </button>
+                            {openTeams[row.id] && finished > 0 && (
+                              <button className="link small sidebar-finished" onClick={() => setOpenFinished({ ...openFinished, [row.id as string]: !openFinished[row.id as string] })} type="button">
+                                {openFinished[row.id] ? "hide finished" : `show ${finished} finished`}
+                              </button>
+                            )}
                           </li>
                         )}
                       </SessionGroup>

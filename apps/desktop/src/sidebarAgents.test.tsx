@@ -88,3 +88,21 @@ describe("the session list comes from the desktop's own records", () => {
     expect(screen.queryByText(/0ff8c852/)).toBeNull();
   });
 });
+
+describe("workers under their orchestrator", () => {
+  it("fold finished workers away behind a count, and show them on request", async () => {
+    const { fireEvent } = await import("@testing-library/react");
+    localStorage.removeItem("thingmaker.sidebar.openTeams");
+    seed([
+      record({ agentSessionId: "o-1", titleOverlay: "Orchestrator run" }),
+      record({ agentSessionId: "w-1", titleOverlay: "luna · first job", parentSessionId: "row-o-1" }),
+      record({ agentSessionId: "w-2", titleOverlay: "luna · second job", parentSessionId: "row-o-1" }),
+    ]);
+    render(<Sidebar />);
+    fireEvent.click(screen.getByRole("button", { name: /2 workers/ }));
+    expect(screen.queryByText("luna · first job")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "show 2 finished" }));
+    expect(screen.getByText("luna · first job")).toBeTruthy();
+    expect(screen.getByText("luna · second job")).toBeTruthy();
+  });
+});
