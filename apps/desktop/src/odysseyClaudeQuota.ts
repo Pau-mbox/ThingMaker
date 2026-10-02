@@ -35,9 +35,10 @@ export const CLAUDE_RETRY_MS = 5 * 60_000;
 /**
  * Whether a line is the account saying it is spent.
  *
- * Deliberately narrower than `looksLikeQuotaError`: that one is a hint to go
- * and re-sample a real endpoint, so a false positive costs a fetch. This one
- * parks a run, so a model that merely *mentions* rate limits must not match.
+ * Deliberately narrower than the engine's `looks_like_quota_error`: that one
+ * is a hint to go and re-sample a real endpoint, so a false positive costs a
+ * fetch. This one parks a run, so a model that merely *mentions* rate limits
+ * must not match.
  */
 export function looksLikeClaudeLimit(message: string | null | undefined): boolean {
   if (!message) return false;

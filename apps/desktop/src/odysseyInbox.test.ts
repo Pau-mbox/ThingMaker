@@ -1,24 +1,7 @@
-/** The line an agent uses to hand a decision to the user (docs/plans/odyssey.md §11.10). */
+/** What lands in the user's inbox (docs/plans/odyssey.md §11.10). */
 import { describe, expect, it } from "vitest";
-import { parseAsks } from "./odysseyAsk";
 import { inboxItems } from "./odysseyInbox";
 import type { AmendmentRecord, MilestoneRecord, OdysseyJournalEntry } from "@thingmaker/contracts";
-
-describe("the ask line", () => {
-  it("reads kind, default, options and the question, in any order before the question", () => {
-    const asks = parseAsks("Work.\nODYSSEY-ASK: kind=architecture default=continuing with plain classes options=ECS | classes question=Move the economy to ECS before milestone 3?\nODYSSEY-ASK: question=Which locale first?");
-    expect(asks).toEqual([
-      { kind: "architecture", fallback: "continuing with plain classes", options: ["ECS", "classes"], question: "Move the economy to ECS before milestone 3?" },
-      { kind: "ambiguity", fallback: "", options: [], question: "Which locale first?" },
-    ]);
-  });
-
-  it("skips a line with no question and never invents a kind", () => {
-    expect(parseAsks("BIGTHING-ASK: kind=failure default=skipping")).toEqual([]);
-    expect(parseAsks("BIGTHING-ASK: kind=whim question=Why?")[0]?.kind).toBe("ambiguity");
-    expect(parseAsks("")).toEqual([]);
-  });
-});
 
 describe("what lands in the inbox", () => {
   const milestone = (overrides: Partial<MilestoneRecord> & { id: string; title: string; position: number }): MilestoneRecord => ({ odysseyId: "o1", detail: "", state: "planned", checkKind: "manual", steps: [], ...overrides });

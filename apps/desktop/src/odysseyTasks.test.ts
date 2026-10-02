@@ -1,10 +1,10 @@
 /**
- * Tasks inside milestones (docs/plans/odyssey.md §11.8): the line the agent
- * writes, the state the screen derives, and how a subagent is tied to a task.
+ * Tasks inside milestones (docs/plans/odyssey.md §11.8): the state the screen
+ * derives, and how a subagent is tied to a task.
  */
 import { describe, expect, it } from "vitest";
 import type { MilestoneRecord, OdysseyStep } from "@thingmaker/contracts";
-import { dependencyNumbers, matchAgentToTask, parseTaskLines, readyTasks, taskLinesFor, taskOwner, taskProgress, taskStatus } from "./odysseyTasks";
+import { dependencyNumbers, matchAgentToTask, taskOwner, taskProgress, taskStatus } from "./odysseyTasks";
 
 const step = (overrides: Partial<OdysseyStep> & { id: string; title: string }): OdysseyStep => ({
   milestoneId: "m6",
@@ -25,35 +25,15 @@ const steps = [
 
 const milestone = (id: string, list: OdysseyStep[]): MilestoneRecord => ({ id, odysseyId: "o1", position: 5, title: "Economy", detail: "", state: "active", checkKind: "manual", steps: list });
 
-describe("the task line", () => {
-  it("reads every line in a reply, in order, with its optional parts", () => {
-    const lines = parseTaskLines("work\nODYSSEY-TASK: milestone=6 task=2 status=done agent=pricing-core note=prices converge\nODYSSEY-TASK: milestone=6 task=3 status=in_progress\nODYSSEY-TASK: milestone=6 task=5 status=blocked note=needs harbour data");
-    expect(lines).toEqual([
-      { milestone: 6, task: 2, status: "done", agent: "pricing-core", note: "prices converge" },
-      { milestone: 6, task: 3, status: "in_progress", agent: null, note: "" },
-      { milestone: 6, task: 5, status: "blocked", agent: null, note: "needs harbour data" },
-    ]);
-  });
-
-  it("skips a malformed line rather than guessing", () => {
-    expect(parseTaskLines("BIGTHING-TASK: milestone=6 status=done")).toEqual([]);
-    expect(parseTaskLines("BIGTHING-TASK: milestone=6 task=2 status=finished")).toEqual([]);
-    expect(parseTaskLines("BIGTHING-TASK: milestone=0 task=2 status=done")).toEqual([]);
-    expect(parseTaskLines("")).toEqual([]);
-  });
-});
-
 describe("what a task's state means on the screen", () => {
   it("derives waiting from an unfinished dependency and never stores it", () => {
     expect(taskStatus(steps[2] as OdysseyStep, steps)).toBe("waiting");
     expect(taskStatus(steps[3] as OdysseyStep, steps)).toBe("pending");
     expect(taskStatus(steps[1] as OdysseyStep, steps)).toBe("in_progress");
-    expect(readyTasks(steps).map((task) => task.id)).toEqual(["t4"]);
   });
 
   it("numbers dependencies the way the agent was shown them", () => {
     expect(dependencyNumbers(steps[2] as OdysseyStep, steps, 5)).toEqual(["6.2"]);
-    expect(taskLinesFor(5, steps)).toEqual(["6.1 [done] Model — 6.1-model", "6.2 [in progress] Pricing — pricing-core", "6.3 [waiting on 6.2] Validation", "6.4 [ready] Docs"]);
   });
 
   it("shows the observed harness and model as the owner, else the name", () => {

@@ -3,39 +3,10 @@
  *
  * A milestone's steps were titles with a state that nothing moved. A task is
  * the same row with three more facts on it: who is doing it, what it waits
- * for, and when it moved. Those come from three lanes, the same three the
- * rest of Big Thing uses — the plan proposes tasks, the agent reports their
- * state on a line, the desktop records the subagent it saw doing them.
- *
- * Pure: parsing, derivation and formatting. The store applies.
+ * for, and when it moved. The Rust engine reads the agent's task lines and
+ * records them; this module only derives and formats what the screen shows.
  */
 import type { MilestoneRecord, OdysseyStep } from "@thingmaker/contracts";
-
-/** The task line the agent writes, several per reply, quoted in the briefing and the skill. */
-export const TASK_GRAMMAR = "BIGTHING-TASK: milestone=<m> task=<t> status=<in_progress|done|blocked> agent=<subagent name, optional> note=<one line, optional>";
-
-export type TaskLine = { milestone: number; task: number; status: "in_progress" | "done" | "blocked"; agent: string | null; note: string };
-
-/** Every readable task line in a reply, in order. A malformed line is skipped, never guessed. */
-export function parseTaskLines(text: string): TaskLine[] {
-  if (!text) return [];
-  const lines: TaskLine[] = [];
-  for (const match of text.matchAll(/^\s*(?:BIGTHING|SUPERTHING|ODYSSEY)-TASK:\s*(.+)$/gim)) {
-    const body = match[1] ?? "";
-    const milestone = /(?:^|\s)milestone\s*=\s*(\d+)/i.exec(body);
-    const task = /(?:^|\s)task\s*=\s*(\d+)/i.exec(body);
-    const status = /(?:^|\s)status\s*=\s*(in_progress|done|blocked)/i.exec(body);
-    if (!milestone || !task || !status) continue;
-    const m = Number.parseInt(milestone[1] ?? "", 10);
-    const t = Number.parseInt(task[1] ?? "", 10);
-    if (!Number.isFinite(m) || !Number.isFinite(t) || m < 1 || t < 1) continue;
-    // `agent=` runs to the next key or the end; a name has no spaces.
-    const agent = /(?:^|\s)agent\s*=\s*([^\s]+)/i.exec(body)?.[1]?.replace(/^`|`$/g, "") ?? null;
-    const note = /(?:^|\s)note\s*=\s*(.*)$/i.exec(body)?.[1]?.trim() ?? "";
-    lines.push({ milestone: m, task: t, status: status[1]?.toLowerCase() as TaskLine["status"], agent: agent && agent !== "-" ? agent : null, note });
-  }
-  return lines;
-}
 
 /** A task's state for the screen: `waiting` is derived, never stored. */
 export type TaskStatus = "pending" | "waiting" | "in_progress" | "done" | "blocked";
@@ -71,11 +42,6 @@ export function dependencyNumbers(step: Pick<OdysseyStep, "dependsOn">, siblings
     .map((index) => taskNumber(milestoneIndex, index));
 }
 
-/** Tasks that can start now: not started, and nothing they wait for is open. */
-export function readyTasks(steps: OdysseyStep[]): OdysseyStep[] {
-  return steps.filter((step) => taskStatus(step, steps) === "pending");
-}
-
 export function taskProgress(milestones: Pick<MilestoneRecord, "steps">[]): { done: number; total: number } {
   const steps = milestones.flatMap((milestone) => milestone.steps);
   return { done: steps.filter((step) => step.state === "done").length, total: steps.length };
@@ -86,25 +52,6 @@ export function taskOwner(step: Pick<OdysseyStep, "agentName" | "harness" | "mod
   if (step.model) return `${step.harness ?? "harness"} · ${step.model}`;
   if (step.harness) return `${step.harness} · default`;
   return step.agentName ?? null;
-}
-
-/**
- * The milestone's tasks as the continuation lists them, one line each with
- * the state the record holds — so a resumed or compacted session knows what
- * is done without redoing it, and what it may start.
- */
-export function taskLinesFor(milestoneIndex: number, steps: OdysseyStep[]): string[] {
-  return steps.map((step, index) => {
-    const status = taskStatus(step, steps);
-    const label =
-      status === "waiting"
-        ? `waiting on ${dependencyNumbers(step, steps, milestoneIndex).join(", ")}`
-        : status === "pending"
-          ? "ready"
-          : status.replace("_", " ");
-    const owner = step.agentName ? ` — ${step.agentName}` : "";
-    return `${taskNumber(milestoneIndex, index)} [${label}] ${step.title}${owner}`;
-  });
 }
 
 /**

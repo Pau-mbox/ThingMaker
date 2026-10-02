@@ -2,9 +2,10 @@
  * What a dropped document *is*, not what it says.
  *
  * Big Thing does not read a roadmap for milestones — the session's model does
- * that (`odysseyPlan.ts`). This module only measures the file so the drop can
- * be described honestly before anything is created, and lifts the first
- * heading as a suggested goal name, which is a name and not a plan.
+ * that, in a planning turn the Rust engine runs. This module only measures the
+ * file so the drop can be described honestly before anything is created, and
+ * lifts the first heading as a suggested goal name, which is a name and not a
+ * plan.
  */
 import { MAX_PLAN_DOCUMENT_BYTES } from "./odysseyPlan";
 
