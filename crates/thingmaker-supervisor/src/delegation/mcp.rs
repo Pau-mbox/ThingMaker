@@ -72,10 +72,13 @@ fn tools() -> Value {
         {
             "name": "job_status",
             "title": "Check a job",
-            "description": "One job's status now, without waiting, and its report when it has finished.",
+            "description": "One job's status now, without waiting, and its report when it has finished. Long reports come back shortened everywhere; pass full: true here for the whole one.",
             "inputSchema": {
                 "type": "object",
-                "properties": { "job_id": { "type": "string" } },
+                "properties": {
+                    "job_id": { "type": "string" },
+                    "full": { "type": "boolean", "description": "The whole report rather than its start and end." }
+                },
                 "required": ["job_id"],
                 "additionalProperties": false
             },
@@ -96,8 +99,30 @@ fn tools() -> Value {
     ])
 }
 
+/// How much of a report the orchestrator reads unasked. Its context pays for
+/// every report it awaits; the rest stays a `job_status` away.
+pub const REPORT_CHARS: usize = 4_000;
+
+/// A long report's start and end, which is where workers put the summary,
+/// with a note on how to read the middle.
+fn shorten_report(text: &str) -> String {
+    let count = text.chars().count();
+    if count <= REPORT_CHARS {
+        return text.to_string();
+    }
+    let head_chars = REPORT_CHARS * 3 / 10;
+    let tail_chars = REPORT_CHARS - head_chars;
+    let head: String = text.chars().take(head_chars).collect();
+    let tail: String = text.chars().skip(count - tail_chars).collect();
+    format!("{head}\n… [{} characters left out; job_status with full: true returns the whole report] …\n{tail}", count - REPORT_CHARS)
+}
+
 /// A job as the model reads it: what matters for the next decision.
 pub fn job_for_model(job: &JobView) -> Value {
+    job_value(job, false)
+}
+
+fn job_value(job: &JobView, full: bool) -> Value {
     let mut value = json!({
         "job_id": job.id,
         "worker": job.worker,
@@ -114,7 +139,7 @@ pub fn job_for_model(job: &JobView) -> Value {
         value["continues"] = json!(previous);
     }
     if let Some(result) = &job.result {
-        value["report"] = json!(result);
+        value["report"] = json!(if full { result.clone() } else { shorten_report(result) });
     }
     if let Some(error) = &job.error {
         value["error"] = json!(error);
@@ -191,7 +216,7 @@ async fn call_tool(delegation: &Delegation, session: &str, name: &str, arguments
             }
         }
         "job_status" => match string("job_id").map(|id| delegation.job(session, &id)) {
-            Some(Ok(job)) => text_result(&job_for_model(&job), false),
+            Some(Ok(job)) => text_result(&job_value(&job, arguments.get("full").and_then(Value::as_bool).unwrap_or(false)), false),
             Some(Err(error)) => error_result(&error),
             None => error_result("job_status needs a job_id"),
         },
@@ -267,6 +292,17 @@ pub async fn handle(delegation: &Delegation, caller: &Caller, message: &Value) -
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_long_report_keeps_its_start_and_end_and_says_how_to_read_the_rest() {
+        assert_eq!(shorten_report("short"), "short");
+        let long = format!("Summary up top.{}All done: see src/app.rs.", "x".repeat(10_000));
+        let short = shorten_report(&long);
+        assert!(short.starts_with("Summary up top."));
+        assert!(short.ends_with("All done: see src/app.rs."));
+        assert!(short.contains("full: true"));
+        assert!(short.chars().count() < REPORT_CHARS + 120);
+    }
 
     #[test]
     fn every_tool_has_an_object_schema_and_the_names_the_guidance_uses() {

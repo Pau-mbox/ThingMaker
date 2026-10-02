@@ -1257,7 +1257,7 @@ pub fn worker_prompt(task: &str, files: &[String], orchestrator: Provider, follo
         prompt.push_str(&format!(
             "You are a worker on a team in ThingMaker, the user's desktop for several AI providers. The orchestrator ({}) delegated this task to you. You share its workspace and files but not its conversation. \
 Do the task completely without asking questions: where something is ambiguous, make a reasonable choice and say so. \
-End with a short report as your final message: what you did, the files you created or changed (paths), and anything the orchestrator should check.\n\nTask:\n",
+End with a short report as your final message, a few lines at most: what you did, the files you created or changed (paths), and anything the orchestrator should check. It can read the files itself, so do not paste their contents.\n\nTask:\n",
             orchestrator.label()
         ));
     }
