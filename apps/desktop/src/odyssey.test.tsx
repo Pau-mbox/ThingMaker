@@ -370,8 +370,23 @@ describe("the Big Thing screen", () => {
     render(<OdysseyPane sessionId={SESSION} />);
 
     const card = within(screen.getByRole("status"));
-    expect(card.getByText(/no events for 12m/)).toBeTruthy();
-    expect(card.getByText(/cancels the turn at 30 minutes/)).toBeTruthy();
+    expect(card.getByText(/No events from the session for 12m/)).toBeTruthy();
+    expect(card.getByText(/cancels the turn if it stays silent for 30 minutes/)).toBeTruthy();
+  });
+
+  it("raises no warning for a long turn that is still producing events", () => {
+    useStore.setState({
+      odysseyRuntime: {
+        [SESSION]: { resumeAt: null, lastReason: "a turn is already running", lastReasonAt: Date.now() - 10 * 60_000, ticking: false, stalledSince: null, stallNotified: false },
+      },
+    });
+    seed(view);
+    const session = useStore.getState().sessions[SESSION]!;
+    session.projection.foreground = "running";
+    useStore.setState({ sessions: { [SESSION]: { ...session, lastEventAt: Date.now() } } });
+    render(<OdysseyPane sessionId={SESSION} />);
+    expect(screen.queryByText(/has not been able to act/)).toBeNull();
+    expect(screen.queryByText(/No events from the session/)).toBeNull();
   });
 
   it("offers the silent-turn limit as a setting", () => {

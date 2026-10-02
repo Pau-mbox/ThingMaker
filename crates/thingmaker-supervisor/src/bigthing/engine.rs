@@ -569,13 +569,17 @@ impl Engine {
     async fn idle(&self, goal: &OdysseyRecord, reason: &str, live: Option<&LiveSession>, watch: Option<&Watch>, now: i64) {
         let previous = self.runtime(&goal.id);
         let changed = previous.last_reason != reason;
-        let since = if changed || previous.stalled_since.is_none() { now } else { previous.stalled_since.unwrap_or(now) };
-        let notified = !changed && previous.stall_notified;
+        // A run that is working — a turn streaming, workers on tasks, a
+        // cooldown, a quota hold with its own time — is not stalled, however
+        // long it takes. A turn that goes silent is the dead-turn guard's.
+        let working = decide::is_working_wait(reason);
+        let since = if working { None } else if changed || previous.stalled_since.is_none() { Some(now) } else { previous.stalled_since };
+        let notified = !working && !changed && previous.stall_notified;
         self.patch_runtime(&goal.id, |runtime| {
             runtime.last_reason = reason.to_string();
             runtime.last_reason_at = now;
             runtime.ticking = false;
-            runtime.stalled_since = Some(since);
+            runtime.stalled_since = since;
             runtime.stall_notified = notified;
         });
 
@@ -608,7 +612,7 @@ impl Engine {
                 return;
             }
         }
-        if let Some(notice) = decide::stall_notice(reason, Some(since), now)
+        if let Some(notice) = decide::stall_notice(reason, since, now)
             && !notified
         {
             self.patch_runtime(&goal.id, |runtime| runtime.stall_notified = true);

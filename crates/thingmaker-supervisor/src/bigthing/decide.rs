@@ -214,6 +214,13 @@ pub fn dead_turn(running: bool, last_event_at: Option<i64>, now: i64, minutes: i
     (silent >= minutes * 60_000).then_some(silent)
 }
 
+/// Whether an idle reason means the run is busy rather than stuck: a turn in
+/// flight, workers on tasks, the cooldown, or a quota hold that names when it
+/// ends. None of these is worth a stall warning.
+pub fn is_working_wait(reason: &str) -> bool {
+    reason == "a turn is already running" || reason.starts_with("workers are on task") || reason.starts_with("waiting out the cooldown") || reason.starts_with("the agent is waiting for its delegates' quota")
+}
+
 /// A duration the way a reader would say it.
 pub fn stall_duration(ms: i64) -> String {
     let minutes = ms.max(0) / 60_000;
@@ -380,6 +387,8 @@ mod tests {
         assert_eq!(stall_duration(5 * 60_000), "5m");
         assert!(stall_notice("waiting", Some(0), STALL_WARNING_MS - 1).is_none());
         assert_eq!(stall_notice("waiting", Some(0), STALL_WARNING_MS).unwrap(), "Big Thing has not been able to act for 5m: waiting");
+        assert!(is_working_wait("a turn is already running") && is_working_wait("workers are on tasks 2.1, 2.2"));
+        assert!(!is_working_wait("the session is not attached"));
         assert_eq!(dead_turn(true, Some(0), 30 * 60_000, 30), Some(30 * 60_000));
         assert_eq!(dead_turn(true, Some(0), 30 * 60_000 - 1, 30), None);
         assert_eq!(dead_turn(true, None, 30 * 60_000, 30), None);

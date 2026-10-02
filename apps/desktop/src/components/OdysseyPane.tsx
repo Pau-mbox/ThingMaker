@@ -496,7 +496,7 @@ function StateCard({ view, sessionId }: { view: OdysseyView; sessionId: string }
   const waiting = goal.state === "waiting_usage";
   // The clock also has to run while the runner is held up, or the age of the
   // reason freezes at whatever it was when the card last rendered.
-  const ticking = waiting || (goal.state === "running" && runtime?.stalledSince !== null && runtime?.stalledSince !== undefined);
+  const ticking = waiting || goal.state === "running";
   useEffect(() => {
     if (!ticking) return;
     const timer = setInterval(() => setNow(Date.now()), 1000);
@@ -636,15 +636,14 @@ function StateCard({ view, sessionId }: { view: OdysseyView; sessionId: string }
           </>
         )}
         {details && <RunMonitor sessionId={sessionId} view={view} />}
-        {stall && (
-          <p className="small chip-warn">
-            {stall}
-            {silentFor !== null && goal.deadTurnMinutes > 0 && (
-              <>
-                {" "}
-                The session has produced no events for {stallDuration(silentFor)}; Big Thing cancels the turn at {goal.deadTurnMinutes} minutes.
-              </>
-            )}
+        {/* Only a run that is actually stuck is warned about; the engine
+            does not count a turn in flight or workers on tasks as stuck. */}
+        {stall && <p className="small chip-warn">{stall}</p>}
+        {/* A quiet turn is still a turn; this only says when the silent-turn
+            cancel would step in, once the quiet has lasted a while. */}
+        {silentFor !== null && silentFor >= 5 * 60_000 && goal.deadTurnMinutes > 0 && (
+          <p className="small muted">
+            No events from the session for {stallDuration(silentFor)}; Big Thing cancels the turn if it stays silent for {goal.deadTurnMinutes} minutes.
           </p>
         )}
         {/* The reason shows in every state and carries its age: a reason with
