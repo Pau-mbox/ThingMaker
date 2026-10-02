@@ -4495,3 +4495,77 @@ button.odyssey-task-title svg {
 .sidebar-finished {
   margin-left: 8px;
 }
+
+/* Big Thing: what is running right now, one lane per worker. */
+.work-lanes {
+  padding: 0;
+  overflow: hidden;
+}
+
+.work-lane-list {
+  list-style: none;
+  margin: 0;
+  padding: 4px 0;
+}
+
+.work-lane {
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(150px, 0.9fr) minmax(0, 2fr) auto auto;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 10px 9px;
+}
+
+.work-lane + .work-lane {
+  border-top: 1px solid var(--border);
+}
+
+.work-lane-who {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.work-lane-task {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.work-lane-meta {
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.work-lane-bar {
+  position: absolute;
+  left: 10px;
+  right: 10px;
+  bottom: 2px;
+  height: 2px;
+  border-radius: 1px;
+  background: linear-gradient(90deg, transparent, var(--accent), transparent);
+  background-size: 40% 100%;
+  animation: slide 1.6s ease-in-out infinite;
+  opacity: 0.7;
+}
+
+.work-lane-waiting .work-lane-bar {
+  background: var(--warn);
+  animation: none;
+  opacity: 0.35;
+}
+
+.work-lane-starting .work-lane-bar {
+  background: linear-gradient(90deg, transparent, var(--info), transparent);
+  background-size: 40% 100%;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .work-lane-bar {
+    animation: none;
+  }
+}

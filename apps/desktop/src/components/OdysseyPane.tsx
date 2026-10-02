@@ -23,6 +23,7 @@ import { InboxPanel, useInboxItems } from "./OdysseyInbox";
 import { taskProgress } from "../odysseyTasks";
 import { AmendDialog, AmendmentList } from "./OdysseyAmend";
 import { MemoryPanel, RunOptions, Timeline, WorktreeCard } from "./BigThingTeam";
+import { WorkLanes } from "./WorkLanes";
 import { isPlanDocument, fileNameOf, summarize, type DocumentSummary } from "../odysseyDocument";
 import { planSummary, allManual } from "../odysseyPlan";
 import { api } from "../ipc";
@@ -1472,6 +1473,7 @@ export function OdysseyPane({ sessionId }: { sessionId: string }) {
 
       {tab === "roadmap" && (
         <div className="odyssey-roadmap">
+          <WorkLanes sessionId={sessionId} />
           <PlanCard sessionId={sessionId} view={view} />
           <div className="odyssey-timeline">
             <ul>
@@ -1511,6 +1513,7 @@ export function OdysseyPane({ sessionId }: { sessionId: string }) {
       {tab === "documents" && <DocumentsCard sessionId={sessionId} view={view} />}
       {tab === "team" && (
         <div className="odyssey-tab-stack">
+          <WorkLanes sessionId={sessionId} />
           <Timeline view={view} />
           <MemoryPanel goalUpdatedAt={goal.updatedAt} workspaceId={session.workspaceId} />
         </div>
