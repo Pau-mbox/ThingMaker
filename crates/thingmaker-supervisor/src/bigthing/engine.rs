@@ -771,6 +771,7 @@ impl Engine {
                     agent_notes: &agent_notes,
                     now: clock::now_ms(),
                     tools,
+                    runner_dispatch: goal.dispatch == Dispatch::Runner,
                 })
             }
         };

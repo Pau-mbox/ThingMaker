@@ -294,6 +294,9 @@ pub struct ContinuationInput<'a> {
     pub agent_notes: &'a [String],
     pub now: i64,
     pub tools: bool,
+    /// Big Thing hands the ready tasks out itself, so the orchestrator is not
+    /// told to.
+    pub runner_dispatch: bool,
 }
 
 /// Submitted after each settled turn: the pointer and the deltas only.
@@ -310,6 +313,10 @@ pub fn build_continuation(input: &ContinuationInput<'_>) -> String {
         lines.push("Tasks:".into());
         lines.extend(task_lines_for(input.index, &milestone.steps));
         lines.push(if input.tools { "Move tasks with `bigthing_task`.".into() } else { format!("Report task moves with: {TASK_GRAMMAR}") });
+        let ready = super::protocol::ready_tasks(&milestone.steps).len();
+        if ready >= 2 && !input.runner_dispatch {
+            lines.push(format!("{ready} tasks are ready and wait on nothing: hand them to subagents or workers at the same time rather than one after another."));
+        }
     }
     if milestone.check_kind != CheckKind::Manual {
         lines.push(check_label(milestone.check_kind, milestone.check_spec.as_deref()).replacen("check: ", "Its check: ", 1));
@@ -352,7 +359,8 @@ pub fn build_planning_prompt(goal: &OdysseyRecord, document: &str, source: Optio
         "- One reviewable outcome, in the order it has to happen. Between 3 and 12 is usual.".into(),
         "- **Carry the document's substance across, do not summarise it.** A milestone's `detail:` is the working specification for that milestone, and for most of the run it is all anyone sees — the document itself is not re-sent every turn. Move the relevant section into it: the specific names, numbers, formats, ordering rules and constraints, in the document's own words where they are precise. Aim for a few hundred words per milestone rather than a sentence.".into(),
         "- Use several `detail:` lines to keep that structure; they are joined as separate lines.".into(),
-        "- Break each milestone into three to eight `step:` tasks, in order, each one thing a subagent can be given; add `depends:` under a task that has to wait for earlier ones (their numbers within the milestone), and `capability:` when a task needs a particular kind of worker (`image`, `review`, `fast`). The run tracks these tasks — who ran each, and when — so they should be real units of work, not headings.".into(),
+        "- Break each milestone into three to eight `step:` tasks, each one thing a subagent or worker can be given on its own, and `capability:` when a task needs a particular kind of worker (`image`, `review`, `fast`). The run tracks these tasks — who ran each, and when — so they should be real units of work, not headings.".into(),
+        "- **Plan for parallel work.** Tasks without `depends:` can run at the same time, on different subagents or workers, so cut the work along lines that do not touch each other — separate files, modules, screens, assets — rather than as one sequence. Add `depends:` (the numbers of earlier tasks in the same milestone) only when a task truly cannot start until another has finished: it needs that task's output, file or decision. The order you list tasks in is not a dependency, and a task that only *reads* what another touches can usually go in parallel. A final integration, verification or review task is the usual one that depends on the others.".into(),
         "- Name where each milestone came from with `section:` — the document's heading, or a line range — so the agent can read that part of the file rather than all of it.".into(),
         check_rule,
         "- Skip anything the document records as already finished, and say so in that milestone's detail rather than adding it as work.".into(),
@@ -461,6 +469,7 @@ mod tests {
             agent_notes: &["docs/big-thing/agents/a.md".into()],
             now: 30 * 60_000,
             tools: false,
+            runner_dispatch: false,
         });
         assert_eq!(text.split('\n').next().unwrap(), "Continue. Milestone 2/2: Screens.");
         assert!(text.contains("Spec: ## UI in `docs/plan.md`."));
@@ -471,6 +480,14 @@ mod tests {
         assert!(text.contains("- 1 continuation left in the budget."));
         assert!(!text.contains("Its check"), "a manual milestone has no check line");
         assert!(!text.contains("Goal:"));
+        assert!(!text.contains("tasks are ready"), "one ready task is not a parallel batch");
+        let mut wide = working.clone();
+        let mut third = step("s3", StepState::Pending);
+        third.title = "Icons".into();
+        wide.steps.push(third);
+        let input = ContinuationInput { milestone: &wide, index: 1, total: 2, deltas: &[], plan_path: None, notes: None, agent_notes: &[], now: 0, tools: true, runner_dispatch: false };
+        assert!(build_continuation(&input).contains("2 tasks are ready and wait on nothing"));
+        assert!(!build_continuation(&ContinuationInput { runner_dispatch: true, ..input }).contains("tasks are ready"), "the runner hands them out itself");
     }
 
     #[test]
@@ -478,6 +495,7 @@ mod tests {
         let text = build_planning_prompt(&goal(), "# Roadmap", Some("roadmap.md"), true);
         assert!(text.contains("`bigthing_propose_plan`"));
         assert!(text.contains(PLAN_GRAMMAR));
+        assert!(text.contains("**Plan for parallel work.**") && text.contains("only when a task truly cannot start"), "the planner is told to keep dependencies to what is real");
         assert!(text.ends_with("--- end of roadmap.md ---"));
     }
 }

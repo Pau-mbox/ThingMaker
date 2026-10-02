@@ -77,7 +77,7 @@ fn run_tools() -> Vec<Value> {
         "type": "object",
         "properties": {
             "title": { "type": "string" },
-            "depends": { "type": "array", "items": { "type": "integer", "minimum": 1 }, "description": "Numbers of earlier tasks in the same milestone this one waits for." },
+            "depends": { "type": "array", "items": { "type": "integer", "minimum": 1 }, "description": "Numbers of earlier tasks in the same milestone this one cannot start without. Only real dependencies: tasks without any run in parallel." },
             "capability": { "type": "string", "description": "What the task needs from a worker: image, review, fast, code." }
         },
         "required": ["title"]
@@ -122,7 +122,7 @@ fn run_tools() -> Vec<Value> {
         json!({
             "name": "bigthing_propose_plan",
             "title": "Propose a plan",
-            "description": "Sends the milestones for a goal that has none yet, when Big Thing asked you to plan from a document. Each milestone carries the document's substance in `detail`, a check Big Thing can run when there is one, and three to eight tasks. The user reviews the plan before the run starts.",
+            "description": "Sends the milestones for a goal that has none yet, when Big Thing asked you to plan from a document. Each milestone carries the document's substance in `detail`, a check Big Thing can run when there is one, and three to eight tasks cut so that independent ones can run in parallel. The user reviews the plan before the run starts.",
             "inputSchema": object(json!({
                 "milestones": {
                     "type": "array",

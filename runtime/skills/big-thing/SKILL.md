@@ -73,10 +73,17 @@ above them; `depends:` and `capability:` attach to the `step:` above it.
 - `section:` says where in the document it came from — a heading, or a line
   range — so that later you, and every subagent you raise, read those two
   pages rather than the whole file.
-- `step:` lines are the milestone's **tasks**: three to eight, in order, each
-  one thing a subagent can be given. `depends: 1, 2` under a task says it
-  waits for tasks 1 and 2 of the same milestone. The run tracks tasks — who
-  ran each and when — so make them units of work, not headings.
+- `step:` lines are the milestone's **tasks**: three to eight, each one thing
+  a subagent or worker can be given on its own. `depends: 1, 2` under a task
+  says it waits for tasks 1 and 2 of the same milestone. The run tracks
+  tasks — who ran each and when — so make them units of work, not headings.
+- **Plan for parallel work.** Tasks with no `depends:` can run at the same
+  time on different subagents or workers, so split the work along lines that
+  do not touch each other: separate files, modules, screens or assets. Add
+  `depends:` only when a task cannot start until another has finished — it
+  needs that task's output, file or decision. Listing order is not a
+  dependency. A closing integration, verification or review task is usually
+  the one that waits on the others.
 - **A check is a command Big Thing will run itself**, in the workspace root, and
   its exit code is what marks the milestone done. The planning prompt names
   the project's test command when the user has set one; use
