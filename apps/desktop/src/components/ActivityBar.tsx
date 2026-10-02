@@ -26,15 +26,21 @@ export function ActivityBar({ sessionId, onOpenAgents }: { sessionId: string; on
   const [open, setOpen] = useState(false);
   const sampleUsage = useStore((s) => s.sampleUsage);
   const clearStaleActivity = useStore((s) => s.clearStaleActivity);
+  const jobs = useStore((s) => s.jobs[sessionId]);
 
   const foreground = !!session && (session.projection.foreground === "running" || session.projection.foreground === "cancelling" || session.projection.foreground === "awaiting_user");
   const projection = session?.projection;
   const runningTools = projection ? [...projection.toolCalls.values()].filter((t) => t.status === "in_progress" || t.status === "pending") : [];
   const detached = projection ? [...projection.detached.entries()].filter(([, state]) => state === "active" || state === "cancellation_requested") : [];
   const agents = projection ? [...projection.inspector.agents.values()].filter((a) => a.status === "working" || a.status === "starting") : [];
+  // The team's jobs come from the host, which holds the workers, so they are
+  // known rather than inferred: a worker on a job is work in flight even
+  // while the orchestrator itself says nothing.
+  const openJobs = (jobs ?? []).filter((job) => job.status === "starting" || job.status === "running" || job.status === "waiting");
+  const waitingJobs = openJobs.filter((job) => job.status === "waiting").length;
   // Background work outlives the turn that started it, which is exactly why
   // this strip stays visible after the foreground settles.
-  const busy = foreground || agents.length > 0 || detached.length > 0;
+  const busy = foreground || agents.length > 0 || detached.length > 0 || openJobs.length > 0;
 
   useEffect(() => {
     if (!busy) return;
@@ -56,13 +62,13 @@ export function ActivityBar({ sessionId, onOpenAgents }: { sessionId: string; on
     ? session.turnStartedAt
     : // Oldest still-running background item, so the clock reflects the work
       // that is actually outstanding.
-      [...agents.map((agent) => agent.generationStartedAtUnixMs)].filter((value): value is number => typeof value === "number").sort((a, b) => a - b)[0] ??
+      [...agents.map((agent) => agent.generationStartedAtUnixMs), ...openJobs.map((job) => job.startedAtUnixMs)].filter((value): value is number => typeof value === "number").sort((a, b) => a - b)[0] ??
       null;
 
   // Nothing reports that it stopped when its process is killed or dies with
   // its provider, so the strip would claim work for ever. The session's own
   // silence is what we actually know; say that instead of guessing.
-  const stale = foreground ? null : staleActivity({ lastEventAt: session.lastEventAt, now });
+  const stale = foreground || openJobs.length > 0 ? null : staleActivity({ lastEventAt: session.lastEventAt, now });
 
   const phase = foreground
     ? projection.foreground === "cancelling"
@@ -78,6 +84,7 @@ export function ActivityBar({ sessionId, onOpenAgents }: { sessionId: string; on
     runningTools.length > 0 ? `${runningTools.length} tool call${runningTools.length === 1 ? "" : "s"}` : null,
     agents.length > 0 ? `${agents.length} background agent${agents.length === 1 ? "" : "s"}` : null,
     detached.length > 0 ? `${detached.length} detached` : null,
+    openJobs.length > 0 ? `${openJobs.length} worker job${openJobs.length === 1 ? "" : "s"}${waitingJobs > 0 ? ` (${waitingJobs} waiting out a limit)` : ""}` : null,
   ].filter(Boolean);
 
   const lastRuntime = [...projection.cards].reverse().find((c) => c.kind === "runtime");
@@ -90,14 +97,14 @@ export function ActivityBar({ sessionId, onOpenAgents }: { sessionId: string; on
         <strong>{stale ? "Reported running, but silent" : phase}</strong>
         {startedAt && <span className="muted small activity-clock">{elapsed(now - startedAt)}</span>}
         <span className="muted small activity-counts">
-          {stale ? `nothing has been reported for ${elapsed(stale.silentMs)}; it probably ended without saying so` : counts.join(" · ") || "no reported work in flight"}
+          {stale ? `nothing has been reported for ${elapsed(stale.silentMs)}; it probably ended without saying so` : counts.join(" · ")}
         </span>
         {stale && (
           <button className="link small" onClick={() => clearStaleActivity(sessionId)} type="button">
             Clear
           </button>
         )}
-        {agents.length + detached.length > 0 && (
+        {agents.length + detached.length + openJobs.length > 0 && (
           <button className="link small" onClick={onOpenAgents} type="button">
             Agents
           </button>

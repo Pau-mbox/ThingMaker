@@ -9,7 +9,7 @@
  */
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { Snapshot } from "@thingmaker/contracts";
+import type { JobView, Snapshot } from "@thingmaker/contracts";
 
 vi.mock("@tauri-apps/api/core", () => ({
   invoke: vi.fn(async () => {
@@ -66,7 +66,7 @@ function seed(silentMs: number, foreground: "idle" | "running" = "idle") {
   useStore.setState({ sessions: { [SESSION]: session } });
 }
 
-beforeEach(() => useStore.setState({ sessions: {} }));
+beforeEach(() => useStore.setState({ sessions: {}, jobs: {} }));
 afterEach(cleanup);
 
 describe("work the session has gone quiet about", () => {
@@ -99,6 +99,16 @@ describe("work the session has gone quiet about", () => {
     expect(agent?.status).toBe("idle");
     // Cleared, not claimed successful: nobody told us how it went.
     expect(agent?.outcome).toBeNull();
+  });
+
+  it("counts the team's open jobs, and never calls them stale while a worker holds one", () => {
+    seed(196 * 60_000);
+    const job = (id: string, status: JobView["status"]): JobView => ({ id, orchestrator: SESSION, worker: "cx", provider: "codex", task: "t", status, toolCalls: 0, attempts: 0, startedAtUnixMs: Date.now() - 60_000 });
+    useStore.setState({ jobs: { [SESSION]: [job("j1", "running"), job("j2", "waiting"), job("j3", "succeeded")] } });
+    render(<ActivityBar onOpenAgents={() => undefined} sessionId={SESSION} />);
+    expect(screen.getByText(/2 worker jobs \(1 waiting out a limit\)/)).toBeTruthy();
+    expect(screen.queryByText("Reported running, but silent")).toBeNull();
+    expect(screen.queryByText(/no reported work/)).toBeNull();
   });
 
   it("never calls a live foreground turn stale, however quiet it is", () => {
