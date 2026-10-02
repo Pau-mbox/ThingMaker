@@ -1099,6 +1099,30 @@ export type ContentCredentials = { generator?: string; generatorVersion?: string
 export type WorkspaceImage = { relative: string; absolutePath: string; mime: string; width: number; height: number; bytes: number; dataBase64: string; credentials?: ContentCredentials };
 export type RuntimeEnvInfo = { names: string[]; available: boolean; backend: string };
 
+/** How an MCP server is reached: a program started on stdio, or a URL. */
+export type McpTransport =
+  | { type: "stdio"; command: string; args: string[]; env: Record<string, string> }
+  | { type: "http"; url: string; headers: Record<string, string> };
+export type McpServerSpec = { name: string; transport: McpTransport };
+/** `user`: every project. `local`: this project only (Claude Code). `project`: the shared .mcp.json. */
+export type McpScope = "user" | "local" | "project";
+/** A server a provider has configured; secret values are never sent, only names. */
+export type InstalledMcpServer = {
+  name: string;
+  provider: Provider;
+  scope: McpScope;
+  kind: "stdio" | "http";
+  summary: string;
+  envKeys: string[];
+  headerKeys: string[];
+  enabled: boolean;
+  source: string;
+};
+export type McpOverview = { servers: InstalledMcpServer[]; providers: { provider: Provider; available: boolean; problem?: string }[]; folder?: string | null };
+export type McpCatalogEntry = { id: string; title: string; description: string; homepage: string; spec: McpServerSpec; needs?: "node" | "uv"; secrets: [string, string][] };
+export type McpInstallOutcome = { provider: Provider; ok: boolean; message: string };
+export type McpProbe = { server?: string | null; version?: string | null; tools: string[] };
+
 /** A reusable, user-authored context selection (CTX-04). Stored locally. */
 export type ContextBundle = { id: string; name: string; instructions: string; refs: Mention[] };
 
@@ -1319,6 +1343,12 @@ export const COMMANDS = {
   sessionArchive: "session_archive",
   sessionPin: "session_pin",
   sessionRename: "session_rename",
+  mcpOverview: "mcp_overview",
+  mcpCatalog: "mcp_catalog",
+  mcpParse: "mcp_parse",
+  mcpInstall: "mcp_install",
+  mcpRemove: "mcp_remove",
+  mcpTest: "mcp_test",
   bigthingStart: "bigthing_start",
   bigthingPause: "bigthing_pause",
   bigthingTick: "bigthing_tick",

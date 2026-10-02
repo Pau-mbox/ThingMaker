@@ -4420,3 +4420,75 @@ button.odyssey-task-title svg {
 .odyssey-memory-add button {
   justify-self: start;
 }
+
+/* MCP servers in Integrations. */
+.mcp-section {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.mcp-catalog {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
+  gap: 8px;
+}
+.mcp-catalog-entry {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.mcp-catalog-entry p {
+  margin: 0;
+  flex: 1;
+}
+.mcp-paste {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+}
+.mcp-paste textarea {
+  flex: 1;
+}
+.mcp-pending {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.mcp-install {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.mcp-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 200px;
+}
+.mcp-pairs,
+.mcp-targets {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.mcp-pairs .row input {
+  flex: 1;
+}
+.mcp-error {
+  white-space: pre-wrap;
+  margin: 0;
+}
+.mcp-installed {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.mcp-installed-row {
+  gap: 8px;
+}
+.mcp-summary {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 520px;
+}

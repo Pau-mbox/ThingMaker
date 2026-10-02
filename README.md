@@ -50,6 +50,7 @@ with your own sign-in, and never reads, stores or passes on a token.
 | 🧭 **Big Thing** | A long-horizon goal runner: drop in a plan document and the agent turns it into milestones and tasks with their dependencies and checks; press Start and it runs to the end on its own — see [Big Thing](#big-thing) below. |
 | 🧠 **Shared memory** | One project memory — decisions, conventions, facts — that the orchestrator, its workers and you read and write (`memory_read`, `memory_write`), plus a live task board. |
 | 🖼️ **Inline images** | Images agents generate or read show up right in the transcript, including Codex's generated images. |
+| 🔌 **MCP servers in one click** | Install Playwright, Context7, GitHub and others from a catalog, or paste any server's config or `mcp add` command. ThingMaker test-starts it, then writes it through each provider's own `mcp add`, so Claude Code, Codex and Antigravity all have it. Secrets stay in the keychain as `${NAME}` references. |
 | 🔍 **Review and tools** | Diffs and baselines, git staging and commits, worktrees, an integrated terminal, file browsing, artifacts and skills. |
 | 🔐 **Your accounts, your machine** | Each provider signs in through its own flow and keeps its own credentials. Switch accounts from the Providers panel. Everything runs locally. |
 

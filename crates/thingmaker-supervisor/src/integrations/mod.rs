@@ -3,6 +3,7 @@
 
 pub mod context;
 pub mod edit;
+pub mod mcp;
 pub mod skill_import;
 pub mod skills;
 

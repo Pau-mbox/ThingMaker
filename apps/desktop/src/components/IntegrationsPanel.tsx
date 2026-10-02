@@ -1,6 +1,7 @@
 /**
- * Integrations (CTX-01, CFG-10): the instruction files and skills every
- * agent reads, and the runtime environment agents are launched with.
+ * Integrations (CTX-01, CFG-10): the instruction files, skills and MCP
+ * servers every agent reads, and the runtime environment agents are
+ * launched with.
  *
  * Everything is read from files with its source shown and saved with hash
  * checks and a backup. A save is labelled "applies to the next session"
@@ -15,6 +16,7 @@ import { basenameOf, useStore } from "../store";
 
 import { SkillImport } from "./SkillImport";
 import { RuntimeEnvSection } from "./RuntimeEnvSection";
+import { McpSection } from "./McpSection";
 
 const CodeEditor = lazy(() => import("./MonacoEditor"));
 
@@ -304,6 +306,8 @@ export function IntegrationsPanel() {
           </button>
         </div>
       </section>
+
+      <McpSection workspaceId={workspaceId} />
 
       <RuntimeEnvSection />
     </div>

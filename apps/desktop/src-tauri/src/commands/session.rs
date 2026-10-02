@@ -158,6 +158,11 @@ pub(crate) fn build_launch(
 /// The documented environment plus the user's runtime variables.
 pub(crate) fn launch_environment(state: &AppState) -> EnvironmentProfile {
     let mut environment = EnvironmentProfile::trusted_local();
+    // Opened from the Dock, the app has macOS's minimal PATH; the folders
+    // `npx`, `uvx` and friends live in are added so MCP servers start.
+    if let Some(home) = &state.home {
+        environment = environment.with_tool_paths(home);
+    }
     let (extra, missing) = super::runtime_env::resolve_for_launch(state);
     for (name, value) in extra {
         environment = environment.with_set(name, value);
