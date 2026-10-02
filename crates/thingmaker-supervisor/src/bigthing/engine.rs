@@ -772,6 +772,7 @@ impl Engine {
                     now: clock::now_ms(),
                     tools,
                     runner_dispatch: goal.dispatch == Dispatch::Runner,
+                    full: journal::spec_due(&loaded.journal, &loaded.milestones[index].id),
                 })
             }
         };

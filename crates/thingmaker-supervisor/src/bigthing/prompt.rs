@@ -297,17 +297,22 @@ pub struct ContinuationInput<'a> {
     /// Big Thing hands the ready tasks out itself, so the orchestrator is not
     /// told to.
     pub runner_dispatch: bool,
+    /// Whether the milestone's detail, spec section and check go out. Only
+    /// the first continuation of a milestone on a session needs them.
+    pub full: bool,
 }
 
 /// Submitted after each settled turn: the pointer and the deltas only.
 pub fn build_continuation(input: &ContinuationInput<'_>) -> String {
     let milestone = input.milestone;
     let mut lines = vec![format!("Continue. Milestone {}/{}: {}.", input.index + 1, input.total, milestone.title)];
-    if !milestone.detail.is_empty() {
-        lines.push(milestone.detail.clone());
-    }
-    if let Some(section) = milestone.section.as_deref() {
-        lines.push(format!("Spec: {section}{}.", input.plan_path.map(|path| format!(" in `{path}`")).unwrap_or_default()));
+    if input.full {
+        if !milestone.detail.is_empty() {
+            lines.push(milestone.detail.clone());
+        }
+        if let Some(section) = milestone.section.as_deref() {
+            lines.push(format!("Spec: {section}{}.", input.plan_path.map(|path| format!(" in `{path}`")).unwrap_or_default()));
+        }
     }
     if !milestone.steps.is_empty() {
         lines.push("Tasks:".into());
@@ -318,7 +323,7 @@ pub fn build_continuation(input: &ContinuationInput<'_>) -> String {
             lines.push(format!("{ready} tasks are ready and wait on nothing: hand them to subagents or workers at the same time rather than one after another."));
         }
     }
-    if milestone.check_kind != CheckKind::Manual {
+    if input.full && milestone.check_kind != CheckKind::Manual {
         lines.push(check_label(milestone.check_kind, milestone.check_spec.as_deref()).replacen("check: ", "Its check: ", 1));
     }
     if let Some(notes) = input.notes {
@@ -470,6 +475,7 @@ mod tests {
             now: 30 * 60_000,
             tools: false,
             runner_dispatch: false,
+            full: true,
         });
         assert_eq!(text.split('\n').next().unwrap(), "Continue. Milestone 2/2: Screens.");
         assert!(text.contains("Spec: ## UI in `docs/plan.md`."));
@@ -485,9 +491,19 @@ mod tests {
         let mut third = step("s3", StepState::Pending);
         third.title = "Icons".into();
         wide.steps.push(third);
-        let input = ContinuationInput { milestone: &wide, index: 1, total: 2, deltas: &[], plan_path: None, notes: None, agent_notes: &[], now: 0, tools: true, runner_dispatch: false };
+        let input = ContinuationInput { milestone: &wide, index: 1, total: 2, deltas: &[], plan_path: None, notes: None, agent_notes: &[], now: 0, tools: true, runner_dispatch: false, full: true };
         assert!(build_continuation(&input).contains("2 tasks are ready and wait on nothing"));
         assert!(!build_continuation(&ContinuationInput { runner_dispatch: true, ..input }).contains("tasks are ready"), "the runner hands them out itself");
+        let mut checked = wide.clone();
+        checked.check_kind = CheckKind::TestsPass;
+        checked.check_spec = Some("pnpm test".into());
+        checked.detail = "Build every screen".into();
+        let again = build_continuation(&ContinuationInput { milestone: &checked, plan_path: Some("docs/plan.md"), full: false, ..input });
+        assert!(again.starts_with("Continue. Milestone 2/2: Screens."));
+        assert!(again.contains("2.2 [ready] Copy"), "the tasks still go out: their states move");
+        assert!(!again.contains("Spec:") && !again.contains("Its check") && !again.contains("Build every screen"), "the spec went out already: {again}");
+        let first = build_continuation(&ContinuationInput { milestone: &checked, plan_path: Some("docs/plan.md"), full: true, ..input });
+        assert!(first.contains("Its check") && first.contains("Build every screen"));
     }
 
     #[test]

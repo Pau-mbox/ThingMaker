@@ -87,6 +87,26 @@ pub fn handed_over(journal: &[JournalEntry]) -> bool {
     false
 }
 
+/// How often a milestone's full spec goes out again on a long milestone, in
+/// case the session compacted it away.
+pub const SPEC_REFRESH_EVERY: usize = 8;
+
+/// Whether the next continuation of this milestone carries its full spec: the
+/// first one on this session since the briefing, and every
+/// `SPEC_REFRESH_EVERY` after. The rest carry the pointer and what changed.
+pub fn spec_due(journal: &[JournalEntry], milestone_id: &str) -> bool {
+    let mut sent = 0;
+    for entry in journal {
+        if is(entry, JournalKind::Briefing) || is_move(entry) {
+            break;
+        }
+        if is(entry, JournalKind::Continuation) && entry.milestone_id.as_deref() == Some(milestone_id) {
+            sent += 1;
+        }
+    }
+    sent % SPEC_REFRESH_EVERY == 0
+}
+
 /// When this goal last had a prompt submitted.
 pub fn last_prompt_at(journal: &[JournalEntry]) -> Option<i64> {
     journal.iter().find(|entry| is_prompt(entry)).map(|entry| entry.at)
@@ -364,6 +384,20 @@ pub(crate) mod tests {
 
     fn continuation(at: i64) -> JournalEntry {
         entry(JournalKind::Continuation, at, "Continued milestone 2 of 3", None)
+    }
+
+    #[test]
+    fn a_milestone_spec_goes_out_once_per_session_and_now_and_then_after() {
+        let on = |milestone: &str, at: i64| JournalEntry { milestone_id: Some(milestone.into()), ..continuation(at) };
+        let briefing = entry(JournalKind::Briefing, 1, "Briefed", None);
+        assert!(spec_due(std::slice::from_ref(&briefing), "m2"), "first continuation of the milestone");
+        assert!(!spec_due(&[on("m2", 3), on("m1", 2), briefing.clone()], "m2"));
+        assert!(spec_due(&[on("m1", 3), briefing.clone(), on("m2", 0)], "m2"), "a new briefing starts the count again");
+        let moved = entry(JournalKind::State, 4, &format!("{MOVED_TO_SESSION} s2"), None);
+        assert!(spec_due(&[moved, on("m2", 3), briefing.clone()], "m2"), "a new session has not seen it");
+        let mut long: Vec<_> = (0..SPEC_REFRESH_EVERY as i64).rev().map(|at| on("m2", at + 2)).collect();
+        long.push(briefing);
+        assert!(spec_due(&long, "m2"), "refreshed now and then");
     }
 
     #[test]
