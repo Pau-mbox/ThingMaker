@@ -86,6 +86,8 @@ pub enum EngineEvent {
     Notify { goal_id: String, workspace_id: String, attention: &'static str, text: String },
     /// The engine opened a session; the interface attaches to it.
     SessionOpened { workspace_id: String, handle: String, agent_session_id: String },
+    /// The engine named a session after its goal: re-read the session rows.
+    SessionNamed { workspace_id: String },
     /// The goal moved to another session.
     Moved { goal_id: String, from_agent_session_id: Option<String>, to_agent_session_id: String, to_handle: String },
 }

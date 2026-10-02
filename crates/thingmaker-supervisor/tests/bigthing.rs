@@ -243,6 +243,9 @@ async fn a_goal_runs_from_its_briefing_to_complete_with_every_milestone_verified
     // The mock wrote a file per turn, so the no-progress guard never tripped.
     assert!(std::fs::read_dir(&live.root).unwrap().count() >= 2);
     assert!(fixture.host.events.lock().unwrap().iter().any(|event| matches!(event, EngineEvent::Notify { attention: "done", .. })));
+    let row = fixture.storage.lock().unwrap().session_get(&live.row_id).unwrap().unwrap();
+    assert_eq!(row.title_overlay.as_deref(), Some("Write two files"), "the session is named after the goal, not its first prompt");
+    assert!(fixture.host.events.lock().unwrap().iter().any(|event| matches!(event, EngineEvent::SessionNamed { .. })));
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]

@@ -1291,6 +1291,9 @@ export const useStore = create<State>((set, get) => ({
         if (settings && shouldNotify(settings, kind, event.workspaceId)) void notify(kind, workspace ? basenameOf(workspace.displayPath) : "a workspace");
         return;
       }
+      case "session_named":
+        void get().loadRecords(event.workspaceId);
+        return;
       case "session_opened": {
         void get().loadRecords(event.workspaceId);
         if (state.sessions[event.handle]) return;

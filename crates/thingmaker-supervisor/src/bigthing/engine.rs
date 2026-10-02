@@ -745,6 +745,9 @@ impl Engine {
         let goal = &loaded.goal;
         self.checkpoint(loaded, live, index.map(|index| loaded.milestones[index].id.as_str()))?;
         let brief = index.is_none();
+        if brief {
+            self.name_session(goal);
+        }
         let skill_available = brief && self.inner.host.install_skill();
         if brief && live.provider == Provider::Claude {
             self.inner.host.install_delegate(&live.root);
@@ -1511,6 +1514,20 @@ impl Engine {
         }
     }
 
+    /// Names the goal's session after the goal, unless someone already named
+    /// it: otherwise the provider titles it from the first prompt, which is
+    /// the planning or briefing boilerplate.
+    fn name_session(&self, goal: &OdysseyRecord) {
+        let Some(row_id) = goal.session_id.as_deref() else { return };
+        let Ok(Some(row)) = self.db(|storage| storage.session_get(row_id)) else { return };
+        if row.title_overlay.is_some() || goal.title.trim().is_empty() {
+            return;
+        }
+        if self.db(|storage| storage.session_set_title_overlay(&row.id, Some(&goal.title))).is_ok() {
+            self.inner.host.emit(EngineEvent::SessionNamed { workspace_id: row.workspace_id.clone() });
+        }
+    }
+
     /// Asks the session's model to turn the goal's plan document into
     /// milestones. The goal stays a draft until the user starts it.
     pub async fn request_plan(&self, goal_id: &str) -> Result<(), DesktopError> {
@@ -1523,6 +1540,7 @@ impl Engine {
         }
         let document = self.db(|storage| storage.odyssey_plan_document(goal_id))?.ok_or_else(|| DesktopError::not_ready("This goal has no plan document to read."))?;
         let text = prompt::build_planning_prompt(&loaded.goal, &document, loaded.goal.plan_source.as_deref(), self.tools_available(&live));
+        self.name_session(&loaded.goal);
         self.inner.inbox.lock().unwrap_or_else(|poisoned| poisoned.into_inner()).remove(goal_id);
         state.pending = Some(PendingTurn { handle: live.handle.clone(), tokens_at_submit: None, milestone: None, window_at_submit: None, provider: live.provider });
         match live.actor.submit_text(format!("bigthing-plan-{}", uuid::Uuid::new_v4().simple()), &text).await? {
