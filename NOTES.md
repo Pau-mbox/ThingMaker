@@ -180,3 +180,31 @@ PC final NSIS installer exited 0; public /health reports API 2. Existing key and
 encrypted saved Android connection were preserved. Removed the extra background
 app instance created by installer/manual launch; the live origin and renderer now
 belong to one installed process.
+
+## 2026-10-03: merge upstream main activity groups
+
+Fetched origin/main at 4326772. Saved all existing Windows/Android adaptations
+in local checkpoint 0114be5 and backup/windows-android-before-main-20261003.
+Merged in 038a0fe; the only textual conflict was the appended styles.css rules.
+Kept both upstream tool groups and the Android responsive rules. Added 44px
+touch targets, wrapping labels and mobile details margins. Adapted tool step
+paths for Windows canonical prefixes, case differences and slash variants;
+preserved Windows backslashes and recognized PowerShell/CMD read/list commands.
+Remote dispatcher regeneration found the same 163 explicit operations.
+
+Validation: 272 frontend/contracts tests, 3 Codex bridge tests, 4 desktop native
+tests, clippy with warnings denied, Vite, NSIS and Android builds passed. APK
+2.0.1 (versionCode 3) installed over 2.0.0 in the Android emulator, preserving
+the encrypted connection. Public WSS verified authentication rejection,
+duplicate submission rejection, a real Codex reply, duplex terminal, replay and
+metadata events. A second real Codex turn used a shell tool; Android displayed
+its collapsed and expanded group, a 44px step control and no horizontal overflow.
+Receipts: target/websocket-verification.json, target/main-tool-verification.json.
+
+The automatic policy review rejected running the new Windows installer with a
+generic blocked-by-policy reason. The existing installed PC application was
+restarted and remains healthy, using the previous build. Its shell events do
+not yet include the new Codex commandActions metadata; the new Rust bridge is
+covered by tests but not validated in the installed host. New installer:
+target/release/bundle/nsis/ThingMaker_0.0.0_x64-setup.exe. Manual installation
+is still required. Physical Android device testing remains outstanding.
