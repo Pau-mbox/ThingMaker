@@ -509,7 +509,8 @@ export function SessionPanel({ sessionId }: { sessionId: string }) {
   }, [sessionId, session?.workspaceId, activeForPoll, settledMarker, noteImageFiles]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
-    composerRef.current?.focus();
+    // On a phone, focusing the box raises the keyboard over what you came to read.
+    if (!IS_REMOTE) composerRef.current?.focus();
   }, [focusToken, sessionId]);
 
   useEffect(() => {

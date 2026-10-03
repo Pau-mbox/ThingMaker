@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
+import { IS_REMOTE } from "../remote/mode";
 import type { Provider } from "@thingmaker/contracts";
 import { PROVIDERS, PROVIDER_LABELS } from "@thingmaker/contracts";
 import { useStore, sessionTitle, basenameOf as basename } from "../store";
@@ -619,6 +620,17 @@ export function Sidebar() {
             </div>
           );
         })}
+        {IS_REMOTE && window.ThingMakerNative?.unpair && (
+          <button
+            className="link small"
+            onClick={() => {
+              if (window.confirm("Unpair this phone? You can pair it again from the Mac's Settings → Phone.")) window.ThingMakerNative?.unpair?.();
+            }}
+            type="button"
+          >
+            Unpair this phone
+          </button>
+        )}
         <div className="row remote-hidden">
           <button
             className={`icon-button ${view.kind === "signin" ? "on" : ""}`}

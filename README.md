@@ -51,6 +51,7 @@ with your own sign-in, and never reads, stores or passes on a token.
 | 🧠 **Shared memory** | One project memory — decisions, conventions, facts — that the orchestrator, its workers and you read and write (`memory_read`, `memory_write`), plus a live task board. |
 | 🖼️ **Inline images** | Images agents generate or read show up right in the transcript, including Codex's generated images. |
 | 🔌 **MCP servers in one click** | Install Playwright, Context7, GitHub and others from a catalog, or paste any server's config or `mcp add` command. ThingMaker test-starts it, then writes it through each provider's own `mcp add`, so Claude Code, Codex and Antigravity all have it. Secrets stay in the keychain as `${NAME}` references. |
+| 📱 **On your phone** | An Android app follows and drives the Mac's sessions and Big Things over Tailscale: read transcripts live, send and steer, answer a Big Thing, pause and resume, and get notified when one needs you. Paired by QR code, locked by your fingerprint, revocable per phone — see [On your phone](#4-on-your-phone). |
 | 🔍 **Review and tools** | Diffs and baselines, git staging and commits, worktrees, an integrated terminal, file browsing, artifacts and skills. |
 | 🔐 **Your accounts, your machine** | Each provider signs in through its own flow and keeps its own credentials. Switch accounts from the Providers panel. Everything runs locally. |
 
@@ -166,6 +167,28 @@ picks up the new build when you reopen it.
 4. For something bigger, open the session's **Big Thing** tab, drop your plan
    document on the form, review the milestones it proposes, and press
    **Start**.
+
+### 4. On your phone
+
+The Android app shows ThingMaker's own screens, served by your Mac, so the
+phone always matches the Mac's version.
+
+1. Install [Tailscale](https://tailscale.com/download) on the Mac and on the
+   phone and sign in to both with the same account. The bridge listens only on
+   the Mac's Tailscale address — never your LAN or the internet.
+2. Build the app with `pnpm phone` (Java 17 and the Android SDK; it installs
+   itself when a phone is plugged in with USB debugging on, otherwise copy
+   `ThingMaker-phone.apk` to the phone).
+3. On the Mac, **Settings → Phone**: turn on phone access and press **Pair a
+   phone**. In the app, scan the QR code.
+
+From the phone you can read and follow sessions, send and steer, cancel, start
+sessions, run and answer Big Things and decide their plan changes, and cancel
+or retry worker jobs. Sign-ins, provider settings, workspace trust, the
+terminal, git and file writes stay on the Mac. The app asks for your
+fingerprint or screen lock when it opens, and notifies you when a Big Thing
+needs input, is blocked or is done, or a worker's job fails. Revoke a phone in
+**Settings → Phone**.
 
 ## Development
 

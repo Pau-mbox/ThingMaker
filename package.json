@@ -16,6 +16,7 @@
     "dev": "pnpm --filter @thingmaker/desktop run tauri dev --config src-tauri/tauri.dev.conf.json",
     "rust:test": "cargo test --workspace --exclude thingmaker-desktop",
     "rust:clippy": "cargo clippy --workspace --all-targets -- -D warnings",
-    "app": "bash scripts/install-app.sh"
+    "app": "bash scripts/install-app.sh",
+    "phone": "bash scripts/phone.sh"
   }
 }

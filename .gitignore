@@ -25,3 +25,6 @@ apps/desktop/src-tauri/target/
 
 # Generated images (imagegen sidecar output)
 output/
+
+# The Android app's build
+ThingMaker-phone.apk

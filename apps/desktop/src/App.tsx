@@ -77,6 +77,19 @@ export function App() {
 
   useKeyboardShortcuts();
 
+  // On the phone, Android's back gesture steps out of a session to the list.
+  useEffect(() => {
+    if (!IS_REMOTE) return;
+    const back = () => {
+      const current = useStore.getState().view;
+      if (current.kind === "welcome" || current.kind === "workspace") return false;
+      const workspaceId = current.kind === "session" ? useStore.getState().sessions[current.sessionId]?.workspaceId : undefined;
+      useStore.getState().setView(workspaceId ? { kind: "workspace", workspaceId } : { kind: "welcome" });
+      return true;
+    };
+    (window as unknown as { __thingmakerBack?: () => boolean }).__thingmakerBack = back;
+  }, []);
+
   return (
     <div className={`app ${sidebarCollapsed && !IS_REMOTE ? "sidebar-collapsed" : ""} ${IS_REMOTE ? `app-remote remote-view-${view.kind}` : ""}`} data-reduce-motion={reducedMotion === "reduce" ? "true" : undefined}>
       <div aria-live="polite" className="sr-only" role="status">

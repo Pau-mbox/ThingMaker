@@ -19,6 +19,7 @@ declare global {
       token(): string;
       notify?(title: string, body: string): void;
       connectionChanged?(state: string): void;
+      unpair?(): void;
     };
   }
 }
