@@ -258,7 +258,7 @@ ThingMaker is young and moving fast. It is built and used daily on macOS
 (Apple silicon).
 
 This checkout also contains a validated Windows port and Android remote client.
-Android **2.0.1 (3)** is published in JackApps. Upstream `main` through
+Android **2.0.2 (4)** is published in JackApps. Upstream `main` through
 `4326772` is integrated locally. Its Windows installer is built but awaits
 manual installation; the installed PC app still uses the preceding build.
 See the [dated validation and remaining checks](docs/windows-android.md#estado-verificado).

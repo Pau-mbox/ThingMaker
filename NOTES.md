@@ -224,3 +224,25 @@ URL: https://builds.jacksparrot.com/apps/dev.thingmaker.remote/2.0.1-3.apk.
 The installed previous PC build remained healthy at the final public API v2
 health check. The extra --thingmaker-mcp process is a delegation relay, not a
 second desktop instance; process count alone is not a duplicate-instance check.
+
+Android 2.0.2 (4), from an emulator comparison against the installed PC app.
+Root cause of the collapsed sidebar drawer and empty command palette: Compose
+AndroidView gives the WebView WRAP_CONTENT layout params, so Chromium resolved
+vh/dvh to 0 (innerHeight was correct, hence the earlier --android-viewport-height
+workaround only fixed .app). MATCH_PARENT fixes every vh rule at once. With
+targetSdk 36 edge-to-edge, adjustResize no longer resizes the window; the
+composer stayed under the keyboard until imePadding() was added. Terminal
+keystrokes were reordered remotely ("echo" arrived as "ecoh") because each
+onData chunk was an independent request handled concurrently; writes are now
+serialized and coalesced client-side. Verified in the emulator: drawer,
+palette, Settings, Integrations, Agents, Big Thing, Files, a real Codex turn
+started from Android and reflected live on the desktop, terminal in the
+workspace folder with ordered input, and close confirmation ending cmd.exe.
+Open: after re-attaching, the last typed terminal command reappears unexecuted
+at the prompt (cause not investigated); Claude remote turn and physical phone
+still untested.
+
+Published Android 2.0.2 (4) through the JackApps HTTPS admin API after a dry run
+(commit acb1a03). Local and SERVER APK SHA256 agree:
+AA8BC0ED13C16E397684A6AE53917B8DD7A0550C233C501261B41577702D6959.
+URL: https://builds.jacksparrot.com/apps/dev.thingmaker.remote/2.0.2-4.apk.

@@ -13,7 +13,7 @@ El historial detallado de implementación y pruebas está en [NOTES.md](../NOTES
 | Respaldo | Rama `backup/windows-android-before-main-20261003` |
 | Windows instalado | Compilación del 2 de octubre, con servidor remoto API v2 |
 | Windows actualizado | Compilación e instalador del 3 de octubre terminados; instalación manual pendiente |
-| Android publicado | **2.0.1**, `versionCode` **3**, paquete `dev.thingmaker.remote` |
+| Android publicado | **2.0.2**, `versionCode` **4**, paquete `dev.thingmaker.remote` |
 | Acceso remoto | `https://thingmaker.jacksparrot.com`; `/health` respondió API v2 en la comprobación de esta actualización |
 | Validación móvil | Emulador Android API 35; no se ha probado todavía en un teléfono físico |
 | Proveedores | Respuestas reales de Codex verificadas; turno remoto real de Claude pendiente; Gemini no instalado/validado aquí |
@@ -42,17 +42,26 @@ bloques desplegables, etiquetas de actividad, contador de pasos y detalle de
 entrada/salida. El conflicto estaba en `styles.css`; se conservaron los estilos
 nuevos y los móviles. Se adaptaron rutas de Windows y controles de 44 px.
 
+La versión 2.0.2 corrige fallos vistos en el emulador. El WebView usaba
+`WRAP_CONTENT` y Chromium resolvía `vh` a 0, lo que aplastaba el menú lateral,
+la paleta de comandos y los paneles con altura en `vh`; ahora usa
+`MATCH_PARENT`. Con `targetSdk 36` (edge-to-edge) el teclado tapaba el
+compositor; se añadió `imePadding()`. La terminal desordenaba pulsaciones
+rápidas porque el servidor remoto atiende peticiones en paralelo; ahora las
+escrituras se envían de una en una. Files/Changes se apilan, la terminal no
+se superpone al compositor y Atrás cierra antes paleta o diálogos.
+
 ## Conectar el móvil
 
 1. Mantén encendidos el PC y ThingMaker. Los agentes se ejecutan en el PC.
 2. En los ajustes del escritorio, abre **Control remoto Android** y copia la
    clave generada en ese PC.
-3. En JackApps, refresca la lista e instala **ThingMaker Remote 2.0.1**.
+3. En JackApps, refresca la lista e instala **ThingMaker Remote 2.0.2**.
 4. Abre la app, utiliza `https://thingmaker.jacksparrot.com` y pega la clave.
 5. Selecciona un proyecto y abre o reanuda su conversación. Al añadir un
    proyecto por ruta desde Android, introduce una carpeta del **PC**.
 
-[APK publicado 2.0.1-3](https://builds.jacksparrot.com/apps/dev.thingmaker.remote/2.0.1-3.apk).
+[APK publicado 2.0.2-4](https://builds.jacksparrot.com/apps/dev.thingmaker.remote/2.0.2-4.apk).
 La descarga usa el acceso habitual de JackApps; la clave remota de ThingMaker
 sirve para conectar al PC, no para descargar APKs.
 
@@ -209,8 +218,8 @@ Las evidencias en `target/` son locales e ignoradas por Git: logs `main-*`,
 `websocket-verification.json`, `main-tool-verification.json` y las capturas de
 Android. El historial duradero de conclusiones está en `NOTES.md`.
 
-SHA256 del APK 2.0.1 publicado y comprobado en SERVER:
+SHA256 del APK 2.0.2 publicado y comprobado en SERVER:
 
 ```text
-5D1492F074C3CAC0249DA1372C4EC63CA296CEAFD96A78A86C624380A0182297
+AA8BC0ED13C16E397684A6AE53917B8DD7A0550C233C501261B41577702D6959
 ```
