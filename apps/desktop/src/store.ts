@@ -8,7 +8,7 @@
  * when a turn settles, an agent asks for input, or its process exits.
  */
 import { create } from "zustand";
-import { listen } from "@tauri-apps/api/event";
+import { listen, isRemote } from "./bridge";
 import type {
   AmendmentRecord,
   NewAmendment,
@@ -685,7 +685,7 @@ export const useStore = create<State>((set, get) => ({
   transcriptSearchOpen: false,
   announcement: "",
   uiPrefs: DEFAULT_UI_PREFS,
-  sidebarCollapsed: false,
+  sidebarCollapsed: isRemote,
   sessionDefaults: {},
   observedImages: {},
   seenImageFiles: {},
@@ -718,6 +718,33 @@ export const useStore = create<State>((set, get) => ({
       void get().loadTeamPresets();
       void listen<JobView>(JOB_EVENT, (event) => get().noteJob(event.payload));
       void listen<BigThingEvent>(BIGTHING_EVENT, (event) => get().noteBigThing(event.payload));
+      let refreshingRemote = false;
+      const refreshRemote = async () => {
+        if (refreshingRemote) return;
+        refreshingRemote = true;
+        try {
+          const workspaces = await api.workspaceList();
+          set({ workspaces });
+          await Promise.all(workspaces.map((workspace) => get().loadRecords(workspace.id)));
+          await get().rehydrate();
+        } finally { refreshingRemote = false; }
+      };
+      void listen("thingmaker://remote-state-changed", () => { void refreshRemote().catch(() => undefined); });
+      void listen("thingmaker://remote-reconnected", () => {
+        void (async () => {
+          const open = await api.sessionListOpen();
+          const sessions = { ...get().sessions };
+          let view = get().view;
+          for (const [id, session] of Object.entries(sessions)) {
+            if (open.some(entry => entry.handle.id === id && entry.handle.attachmentGeneration === session.handle.attachmentGeneration)) continue;
+            delete sessions[id];
+            if (view.kind === "session" && view.sessionId === id) view = { kind: "workspace", workspaceId: session.workspaceId };
+          }
+          set({ sessions, view });
+          await refreshRemote();
+          for (const id of Object.keys(get().sessions)) void get().refreshSnapshot(id);
+        })().catch(() => undefined);
+      });
       void listen(CLOSE_REQUESTED_EVENT, async () => {
         let activity: { id: string; active: boolean; detachedCalls: number }[] = [];
         try {
@@ -782,7 +809,7 @@ export const useStore = create<State>((set, get) => ({
   },
 
   setView(view) {
-    set({ view });
+    set({ view, ...(isRemote ? { sidebarCollapsed: true } : {}) });
     if (view.kind === "session") {
       const session = get().sessions[view.sessionId];
       if (session && session.attention !== "none") {
@@ -819,7 +846,7 @@ export const useStore = create<State>((set, get) => ({
   },
 
   async selectWorkspace(workspaceId) {
-    set({ view: { kind: "workspace", workspaceId } });
+    set({ view: { kind: "workspace", workspaceId }, ...(isRemote ? { sidebarCollapsed: true } : {}) });
     if (!get().inspections[workspaceId]) await get().inspectWorkspace(workspaceId);
   },
 
@@ -1747,7 +1774,7 @@ export const useStore = create<State>((set, get) => ({
     // is shown, not resumed: a second process on the same session is refused
     // by the agent, and would compete with the first one if it were not.
     if (mode.mode === "resume") {
-      const live = Object.values(get().sessions).find((session) => session.snapshot.agentSessionId === mode.session_id);
+      const live = Object.values(get().sessions).find((session) => session.snapshot.agentSessionId === mode.session_id && session.projection.process !== "exited");
       if (live) return get().selectSession(live.handle.id);
       try {
         const running = (await api.sessionListOpen()).find((entry) => entry.agentSessionId === mode.session_id);

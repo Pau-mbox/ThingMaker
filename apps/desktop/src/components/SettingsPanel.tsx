@@ -10,6 +10,20 @@ import {
 import { useStore, basenameOf } from "../store";
 import { api } from "../ipc";
 import { redactText } from "../redact";
+import { invoke, isRemote } from "../bridge";
+
+function RemoteAccessSection() {
+  const [key, setKey] = useState("");
+  const [error, setError] = useState("");
+  const load = (rotate = false) => invoke<string>(rotate ? "remote_key_rotate" : "remote_key_get").then(setKey).catch((e) => setError(String(e)));
+  return <section><h3>Control remoto Android</h3>
+    <p>Servidor: https://thingmaker.jacksparrot.com</p>
+    <p className="small muted">Introduce esta API key en ThingMaker Remote. El ordenador debe estar encendido y ThingMaker abierto, también en la bandeja.</p>
+    <div className="row wrap"><button className="button" onClick={() => void load()}>Mostrar API key</button>
+    {key && <><button className="button" onClick={() => void navigator.clipboard.writeText(key)}>Copiar</button><button className="button" onClick={() => void load(true)}>Generar nueva y revocar anterior</button></>}</div>
+    {key && <textarea aria-label="API key de control remoto" className="textarea" readOnly value={key} />}{error && <p>{error}</p>}
+  </section>;
+}
 
 function bytes(n: number): string {
   return n < 1024 ? `${n} B` : n < 1024 * 1024 ? `${(n / 1024).toFixed(1)} KiB` : `${(n / 1024 / 1024).toFixed(1)} MiB`;
@@ -443,6 +457,7 @@ export function SettingsPanel() {
         ))}
       </section>
 
+      {!isRemote && <RemoteAccessSection />}
       <SupportBundleSection />
       <StorageSection />
     </div>

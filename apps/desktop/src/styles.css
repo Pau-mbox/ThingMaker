@@ -30,6 +30,10 @@
   --traffic-lights: 84px;
 }
 
+:root[data-platform="windows"] {
+  --traffic-lights: 16px;
+}
+
 * {
   box-sizing: border-box;
 }
@@ -4568,4 +4572,38 @@ button.odyssey-task-title svg {
   .work-lane-bar {
     animation: none;
   }
+}
+/* Shared Android renderer: touch controls and a sidebar drawer. */
+html[data-platform="android"] { --traffic-lights: 8px; --titlebar: 52px; height: var(--android-viewport-height, 100vh); }
+.remote-connection { flex: none; display: flex; justify-content: space-between; gap: 8px; padding: 6px 12px; font-size: 11px; color: var(--muted); background: var(--panel-2); border-bottom: 1px solid var(--border); }
+.remote-offline { color: var(--warn); }
+.mobile-sidebar-backdrop { display: none; }
+@media (max-width: 640px) {
+  html[data-platform="android"] .app { height: var(--android-viewport-height, 100vh); }
+  html[data-platform="android"] .sidebar { position: absolute; inset: 0 auto 0 0; z-index: 101; width: min(86vw, 320px); padding-top: 28px; box-shadow: 8px 0 24px #0008; }
+  html[data-platform="android"] .mobile-sidebar-backdrop { display: block; position: fixed; inset: 0; z-index: 100; border: 0; background: #0008; }
+  html[data-platform="android"] .topbar { padding: 0 8px; }
+  html[data-platform="android"] .topbar-title { flex-wrap: wrap; gap: 2px 6px; }
+  html[data-platform="android"] .topbar-name { max-width: 43vw; }
+  html[data-platform="android"] .topbar-sub { display: none; }
+  html[data-platform="android"] .branch-chip { max-width: 100px; }
+  html[data-platform="android"] .topbar-actions { gap: 0; }
+  html[data-platform="android"] .icon-button { min-width: 40px; height: 40px; }
+  html[data-platform="android"] .button { min-height: 40px; }
+  html[data-platform="android"] .row-action { visibility: visible; opacity: 1; }
+  html[data-platform="android"] .panel { padding: 14px 12px; }
+  html[data-platform="android"] .session-header { padding: 8px 10px 0; }
+  html[data-platform="android"] .tabs { padding: 4px 8px 0; overflow-x: auto; flex-shrink: 0; }
+  html[data-platform="android"] .tab { white-space: nowrap; min-height: 42px; }
+  html[data-platform="android"] .tablist { flex-shrink: 0; }
+  html[data-platform="android"] .transcript { padding-left: 10px; padding-right: 10px; }
+  html[data-platform="android"] .composer { padding: 8px 10px; }
+  html[data-platform="android"] .composer-row { flex-wrap: wrap; }
+  html[data-platform="android"] .composer-meta { font-size: 10px; }
+  html[data-platform="android"] .textarea { font-size: 16px; }
+  html[data-platform="android"] .columns { grid-template-columns: 1fr; }
+  html[data-platform="android"] .welcome { padding: 16px; }
+  html[data-platform="android"] .welcome-card { max-width: 100%; }
+  html[data-platform="android"] .modal { max-width: calc(100vw - 20px); max-height: 90dvh; overflow: auto; }
+  html[data-platform="android"] pre { max-width: 100%; overflow-x: auto; }
 }

@@ -69,6 +69,8 @@ pub async fn run_login_process(
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .kill_on_drop(true);
+    #[cfg(windows)]
+    command.creation_flags(0x08000000);
     let mut child = command
         .spawn()
         .map_err(|error| DesktopError::io(format!("could not start sign-in: {error}")))?;

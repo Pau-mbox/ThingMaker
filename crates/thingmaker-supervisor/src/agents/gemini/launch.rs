@@ -103,10 +103,11 @@ pub fn conversation_path(home: &Path, conversation: &str) -> PathBuf {
 /// desktop app launched from the Dock has no shell PATH, so the installer's
 /// directory is checked first.
 pub fn find_program(home: &Path) -> Option<PathBuf> {
-    let mut candidates = vec![home.join(".local/bin/agy")];
+    let name = if cfg!(windows) { "agy.exe" } else { "agy" };
+    let mut candidates = vec![home.join(".local/bin").join(name)];
     let path = std::env::var_os("PATH").unwrap_or_default();
-    candidates.extend(std::env::split_paths(&path).map(|dir| dir.join("agy")));
-    candidates.extend([PathBuf::from("/opt/homebrew/bin/agy"), PathBuf::from("/usr/local/bin/agy")]);
+    candidates.extend(std::env::split_paths(&path).map(|dir| dir.join(name)));
+    candidates.extend([PathBuf::from("/opt/homebrew/bin").join(name), PathBuf::from("/usr/local/bin").join(name)]);
     candidates.into_iter().find(|candidate| candidate.is_file())
 }
 

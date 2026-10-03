@@ -15,6 +15,7 @@ import type { TerminalEvent, TerminalInfo } from "@thingmaker/contracts";
 import { api } from "../ipc";
 import { redactText, type Redaction } from "../redact";
 import { useStore } from "../store";
+import { listen } from "../bridge";
 
 const SCROLLBACK_LINES = 5000;
 
@@ -80,6 +81,13 @@ export function TerminalPane({ workspaceId }: { workspaceId: string }) {
     fitRef.current = fit;
     const id = info.id;
     let disposed = false;
+    const unlistenReconnect = listen("thingmaker://remote-reconnected", () => {
+      // The new subscription replays scrollback; replace, rather than append it.
+      term.reset();
+      void api.terminalList().then(entries => {
+        if (!disposed && !entries.some(entry => entry.info.id === id)) setInfo(null);
+      }).catch(() => undefined);
+    });
 
     const dataDisposable = term.onData((data) => {
       api.terminalWrite(id, data).catch((error: unknown) => setError(error));
@@ -132,6 +140,7 @@ export function TerminalPane({ workspaceId }: { workspaceId: string }) {
 
     return () => {
       disposed = true;
+      void unlistenReconnect.then(unlisten => unlisten());
       observer.disconnect();
       host.removeEventListener("paste", onPaste, true);
       dataDisposable.dispose();

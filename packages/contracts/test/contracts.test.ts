@@ -9,7 +9,7 @@ describe("contracts", () => {
   });
 
   it("labels every provider", () => {
-    expect(PROVIDERS).toEqual(["claude", "codex"]);
+    expect(PROVIDERS).toEqual(["claude", "codex", "gemini"]);
     for (const provider of PROVIDERS) expect(PROVIDER_LABELS[provider]).toBeTruthy();
   });
 });

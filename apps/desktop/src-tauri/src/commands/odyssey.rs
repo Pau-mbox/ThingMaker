@@ -13,11 +13,14 @@ use thingmaker_supervisor::odyssey_checkpoint::{self, Checkpoint};
 use thingmaker_supervisor::odyssey_notes::{self, WorkspaceNotes};
 use thingmaker_supervisor::odyssey_spend::{self, SpendModel};
 use thingmaker_supervisor::review::BlobStore;
-use thingmaker_supervisor::storage::workspaces::TrustState;
 use thingmaker_supervisor::storage::odyssey::{
-    AmendmentRecord, AmendmentRef, AmendmentState, CheckKind, CheckSource, NewAmendment, NewUsageSample, GoalEdit, JournalEntry, JournalKind, MilestoneEdit, MilestoneRecord, MilestoneState, NewOdyssey, OdysseyRecord, OdysseyState, OdysseyView, OnReport, OnUsageReset,
-    NewQuestion, PlanChangeRecord, PlanChangeState, QuestionRecord, QuestionState, StepEdit, StepRecord, StepState, StopCondition, UsageSample,
+    AmendmentRecord, AmendmentRef, AmendmentState, CheckKind, CheckSource, GoalEdit, JournalEntry,
+    JournalKind, MilestoneEdit, MilestoneRecord, MilestoneState, NewAmendment, NewOdyssey,
+    NewQuestion, NewUsageSample, OdysseyRecord, OdysseyState, OdysseyView, OnReport, OnUsageReset,
+    PlanChangeRecord, PlanChangeState, QuestionRecord, QuestionState, StepEdit, StepRecord,
+    StepState, StopCondition, UsageSample,
 };
+use thingmaker_supervisor::storage::workspaces::TrustState;
 
 use super::{CommandResult, storage_error};
 use crate::state::AppState;
@@ -57,21 +60,46 @@ pub struct ReadPlanRequest {
 /// read-only, text-only, extension-checked and size-capped, and the parsed
 /// result is a draft the user edits before anything is created.
 #[tauri::command]
-pub fn odyssey_read_plan(request: ReadPlanRequest, _state: State<'_, AppState>) -> CommandResult<String> {
+pub fn odyssey_read_plan(
+    request: ReadPlanRequest,
+    _state: State<'_, AppState>,
+) -> CommandResult<String> {
     let path = std::path::PathBuf::from(&request.path);
-    let extension = path.extension().and_then(|value| value.to_str()).unwrap_or_default().to_ascii_lowercase();
+    let extension = path
+        .extension()
+        .and_then(|value| value.to_str())
+        .unwrap_or_default()
+        .to_ascii_lowercase();
     if !matches!(extension.as_str(), "md" | "markdown" | "mdx" | "txt") {
-        return Err(thingmaker_supervisor::DesktopError::unsupported("a plan has to be a Markdown or text file"));
+        return Err(thingmaker_supervisor::DesktopError::unsupported(
+            "a plan has to be a Markdown or text file",
+        ));
     }
-    let metadata = std::fs::metadata(&path).map_err(|error| thingmaker_supervisor::DesktopError::io(format!("could not read {}: {error}", path.display())))?;
+    let metadata = std::fs::metadata(&path).map_err(|error| {
+        thingmaker_supervisor::DesktopError::io(format!(
+            "could not read {}: {error}",
+            path.display()
+        ))
+    })?;
     if !metadata.is_file() {
-        return Err(thingmaker_supervisor::DesktopError::unsupported("that is not a file"));
+        return Err(thingmaker_supervisor::DesktopError::unsupported(
+            "that is not a file",
+        ));
     }
     if metadata.len() > MAX_PLAN_BYTES {
-        return Err(thingmaker_supervisor::DesktopError::limit_exceeded("that file is larger than 1 MiB"));
+        return Err(thingmaker_supervisor::DesktopError::limit_exceeded(
+            "that file is larger than 1 MiB",
+        ));
     }
-    let bytes = std::fs::read(&path).map_err(|error| thingmaker_supervisor::DesktopError::io(format!("could not read {}: {error}", path.display())))?;
-    String::from_utf8(bytes).map_err(|_| thingmaker_supervisor::DesktopError::unsupported("that file is not UTF-8 text"))
+    let bytes = std::fs::read(&path).map_err(|error| {
+        thingmaker_supervisor::DesktopError::io(format!(
+            "could not read {}: {error}",
+            path.display()
+        ))
+    })?;
+    String::from_utf8(bytes).map_err(|_| {
+        thingmaker_supervisor::DesktopError::unsupported("that file is not UTF-8 text")
+    })
 }
 
 #[derive(Debug, Deserialize)]
@@ -96,20 +124,29 @@ pub struct RunCheckResponse {
 /// involved. It is executable code, so an untrusted workspace is refused —
 /// the same gate the Git actions use.
 #[tauri::command]
-pub fn odyssey_run_check(request: RunCheckRequest, state: State<'_, AppState>) -> CommandResult<RunCheckResponse> {
+pub fn odyssey_run_check(
+    request: RunCheckRequest,
+    state: State<'_, AppState>,
+) -> CommandResult<RunCheckResponse> {
     let workspace = state
         .with_storage(|storage| storage.workspace_get(&request.workspace_id))
         .map_err(storage_error)?
         .ok_or_else(|| thingmaker_supervisor::DesktopError::not_ready("workspace not found"))?;
     if workspace.trust_state == TrustState::Untrusted {
-        return Err(thingmaker_supervisor::DesktopError::untrusted("Choose an execution profile for this workspace before Big Thing runs checks in it."));
+        return Err(thingmaker_supervisor::DesktopError::untrusted(
+            "Choose an execution profile for this workspace before Big Thing runs checks in it.",
+        ));
     }
     let milestone = state
         .with_storage(|storage| storage.milestone_get(&request.milestone_id))
         .map_err(storage_error)?
         .ok_or_else(|| thingmaker_supervisor::DesktopError::not_ready("milestone not found"))?;
 
-    let outcome = odyssey_check::run_check(std::path::Path::new(&workspace.canonical_root), milestone.check_kind, milestone.check_spec.as_deref())?;
+    let outcome = odyssey_check::run_check(
+        std::path::Path::new(&workspace.canonical_root),
+        milestone.check_kind,
+        milestone.check_spec.as_deref(),
+    )?;
     // Evidence and verdict are written together: a run that is not recorded
     // never happened as far as the record is concerned.
     let evidence = if outcome.output.trim().is_empty() {
@@ -118,7 +155,14 @@ pub fn odyssey_run_check(request: RunCheckRequest, state: State<'_, AppState>) -
         format!("{}\n\n{}", outcome.summary, outcome.output)
     };
     let milestone = state
-        .with_storage(|storage| storage.milestone_record_check(&request.milestone_id, outcome.passed, &evidence, CheckSource::Desktop))
+        .with_storage(|storage| {
+            storage.milestone_record_check(
+                &request.milestone_id,
+                outcome.passed,
+                &evidence,
+                CheckSource::Desktop,
+            )
+        })
         .map_err(storage_error)?;
     Ok(RunCheckResponse { outcome, milestone })
 }
@@ -136,7 +180,10 @@ pub struct CheckpointRequest {
 /// Read-only for the workspace; the capture lives under the app's data
 /// directory, per goal, and the blobs are shared with the review surface.
 #[tauri::command]
-pub fn odyssey_checkpoint(request: CheckpointRequest, state: State<'_, AppState>) -> CommandResult<Checkpoint> {
+pub fn odyssey_checkpoint(
+    request: CheckpointRequest,
+    state: State<'_, AppState>,
+) -> CommandResult<Checkpoint> {
     let workspace = state
         .with_storage(|storage| storage.workspace_get(&request.workspace_id))
         .map_err(storage_error)?
@@ -149,15 +196,24 @@ pub fn odyssey_checkpoint(request: CheckpointRequest, state: State<'_, AppState>
         .ok_or_else(|| thingmaker_supervisor::DesktopError::not_ready("goal not found"))?;
     let store = state.data_dir.join("odyssey").join(&request.odyssey_id);
     let blobs = BlobStore::new(state.data_dir.join("blobs"));
-    odyssey_checkpoint::take_checkpoint(std::path::Path::new(&workspace.canonical_root), &store, &blobs)
+    odyssey_checkpoint::take_checkpoint(
+        std::path::Path::new(&workspace.canonical_root),
+        &store,
+        &blobs,
+    )
 }
 
 /// Records one usage reading with the session's token counters at that
 /// moment (docs/research/odyssey-review.md §4.1). `None` when the reading
 /// repeated the previous one.
 #[tauri::command]
-pub fn odyssey_usage_sample_add(request: NewUsageSample, state: State<'_, AppState>) -> CommandResult<Option<UsageSample>> {
-    state.with_storage(|storage| storage.usage_sample_add(&request)).map_err(storage_error)
+pub fn odyssey_usage_sample_add(
+    request: NewUsageSample,
+    state: State<'_, AppState>,
+) -> CommandResult<Option<UsageSample>> {
+    state
+        .with_storage(|storage| storage.usage_sample_add(&request))
+        .map_err(storage_error)
 }
 
 /// Samples kept for the spend model; enough for days of one-a-minute readings.
@@ -165,8 +221,13 @@ const SPEND_MODEL_SAMPLES: usize = 20_000;
 
 /// What the run's samples say the subscription window charges.
 #[tauri::command]
-pub fn odyssey_spend_model(odyssey_id: String, state: State<'_, AppState>) -> CommandResult<SpendModel> {
-    let samples = state.with_storage(|storage| storage.usage_samples(&odyssey_id, SPEND_MODEL_SAMPLES)).map_err(storage_error)?;
+pub fn odyssey_spend_model(
+    odyssey_id: String,
+    state: State<'_, AppState>,
+) -> CommandResult<SpendModel> {
+    let samples = state
+        .with_storage(|storage| storage.usage_samples(&odyssey_id, SPEND_MODEL_SAMPLES))
+        .map_err(storage_error)?;
     Ok(odyssey_spend::fit(&samples))
 }
 
@@ -179,7 +240,10 @@ pub struct NotesRequest {
 /// The handoff note and subagent notes the run has written into the
 /// workspace, with their ages. Read-only.
 #[tauri::command]
-pub fn odyssey_workspace_notes(request: NotesRequest, state: State<'_, AppState>) -> CommandResult<WorkspaceNotes> {
+pub fn odyssey_workspace_notes(
+    request: NotesRequest,
+    state: State<'_, AppState>,
+) -> CommandResult<WorkspaceNotes> {
     let workspace = state
         .with_storage(|storage| storage.workspace_get(&request.workspace_id))
         .map_err(storage_error)?
@@ -195,8 +259,13 @@ pub struct ReorderStepsRequest {
 }
 
 #[tauri::command]
-pub fn odyssey_reorder_steps(request: ReorderStepsRequest, state: State<'_, AppState>) -> CommandResult<()> {
-    state.with_storage(|storage| storage.step_reorder(&request.milestone_id, &request.ordered_ids)).map_err(storage_error)
+pub fn odyssey_reorder_steps(
+    request: ReorderStepsRequest,
+    state: State<'_, AppState>,
+) -> CommandResult<()> {
+    state
+        .with_storage(|storage| storage.step_reorder(&request.milestone_id, &request.ordered_ids))
+        .map_err(storage_error)
 }
 
 #[derive(Debug, Deserialize)]
@@ -214,15 +283,31 @@ pub struct PlanChangeAddRequest {
 
 /// Holds a plan change the agent proposed (docs/plans/odyssey.md §11.9).
 #[tauri::command]
-pub fn odyssey_plan_change_add(request: PlanChangeAddRequest, state: State<'_, AppState>) -> CommandResult<PlanChangeRecord> {
+pub fn odyssey_plan_change_add(
+    request: PlanChangeAddRequest,
+    state: State<'_, AppState>,
+) -> CommandResult<PlanChangeRecord> {
     state
-        .with_storage(|storage| storage.plan_change_add(&request.odyssey_id, &request.ops, &request.summary, request.reason.as_deref(), request.state))
+        .with_storage(|storage| {
+            storage.plan_change_add(
+                &request.odyssey_id,
+                &request.ops,
+                &request.summary,
+                request.reason.as_deref(),
+                request.state,
+            )
+        })
         .map_err(storage_error)
 }
 
 #[tauri::command]
-pub fn odyssey_plan_change_list(odyssey_id: String, state: State<'_, AppState>) -> CommandResult<Vec<PlanChangeRecord>> {
-    state.with_storage(|storage| storage.plan_change_list(&odyssey_id, 100)).map_err(storage_error)
+pub fn odyssey_plan_change_list(
+    odyssey_id: String,
+    state: State<'_, AppState>,
+) -> CommandResult<Vec<PlanChangeRecord>> {
+    state
+        .with_storage(|storage| storage.plan_change_list(&odyssey_id, 100))
+        .map_err(storage_error)
 }
 
 #[derive(Debug, Deserialize)]
@@ -235,19 +320,36 @@ pub struct PlanChangeDecideRequest {
 }
 
 #[tauri::command]
-pub fn odyssey_plan_change_decide(request: PlanChangeDecideRequest, state: State<'_, AppState>) -> CommandResult<()> {
-    state.with_storage(|storage| storage.plan_change_decide(&request.id, request.state, request.note.as_deref())).map_err(storage_error)
+pub fn odyssey_plan_change_decide(
+    request: PlanChangeDecideRequest,
+    state: State<'_, AppState>,
+) -> CommandResult<()> {
+    state
+        .with_storage(|storage| {
+            storage.plan_change_decide(&request.id, request.state, request.note.as_deref())
+        })
+        .map_err(storage_error)
 }
 
 /// Records a decision the agent handed to the user (docs/plans/odyssey.md §11.10).
 #[tauri::command]
-pub fn odyssey_question_add(request: NewQuestion, state: State<'_, AppState>) -> CommandResult<QuestionRecord> {
-    state.with_storage(|storage| storage.question_add(&request)).map_err(storage_error)
+pub fn odyssey_question_add(
+    request: NewQuestion,
+    state: State<'_, AppState>,
+) -> CommandResult<QuestionRecord> {
+    state
+        .with_storage(|storage| storage.question_add(&request))
+        .map_err(storage_error)
 }
 
 #[tauri::command]
-pub fn odyssey_question_list(odyssey_id: String, state: State<'_, AppState>) -> CommandResult<Vec<QuestionRecord>> {
-    state.with_storage(|storage| storage.question_list(&odyssey_id, 100)).map_err(storage_error)
+pub fn odyssey_question_list(
+    odyssey_id: String,
+    state: State<'_, AppState>,
+) -> CommandResult<Vec<QuestionRecord>> {
+    state
+        .with_storage(|storage| storage.question_list(&odyssey_id, 100))
+        .map_err(storage_error)
 }
 
 #[derive(Debug, Deserialize)]
@@ -260,8 +362,15 @@ pub struct QuestionSettleRequest {
 }
 
 #[tauri::command]
-pub fn odyssey_question_settle(request: QuestionSettleRequest, state: State<'_, AppState>) -> CommandResult<()> {
-    state.with_storage(|storage| storage.question_settle(&request.id, request.state, request.answer.as_deref())).map_err(storage_error)
+pub fn odyssey_question_settle(
+    request: QuestionSettleRequest,
+    state: State<'_, AppState>,
+) -> CommandResult<()> {
+    state
+        .with_storage(|storage| {
+            storage.question_settle(&request.id, request.state, request.answer.as_deref())
+        })
+        .map_err(storage_error)
 }
 
 #[derive(Debug, Serialize)]
@@ -280,34 +389,61 @@ pub struct SkillInstall {
 /// briefing without churning the user's files.
 #[tauri::command]
 pub fn odyssey_install_skill(state: State<'_, AppState>) -> CommandResult<SkillInstall> {
-    let home = state.home.clone().ok_or_else(|| thingmaker_supervisor::DesktopError::not_ready("HOME is not set"))?;
+    let home = state
+        .home
+        .clone()
+        .ok_or_else(|| thingmaker_supervisor::DesktopError::not_ready("HOME is not set"))?;
     let target = home.join(".agents/skills/big-thing/SKILL.md");
     // The same skill, installed under its earlier name, would be offered to
     // the model twice; a copy that is ours (by its name line) is retired.
     for name in ["odyssey", "super-thing"] {
         let legacy = home.join(".agents/skills").join(name);
-        if std::fs::read_to_string(legacy.join("SKILL.md")).is_ok_and(|existing| existing.starts_with(&format!("---\nname: {name}\n"))) {
+        if std::fs::read_to_string(legacy.join("SKILL.md"))
+            .is_ok_and(|existing| existing.starts_with(&format!("---\nname: {name}\n")))
+        {
             let _ = std::fs::remove_dir_all(&legacy);
         }
     }
     if std::fs::read_to_string(&target).is_ok_and(|existing| existing == SKILL_MD) {
-        return Ok(SkillInstall { path: target.to_string_lossy().into_owned(), changed: false });
+        return Ok(SkillInstall {
+            path: target.to_string_lossy().into_owned(),
+            changed: false,
+        });
     }
 
     // Through the same staging and backup path as any other skill import, so a
     // hand-edited copy is backed up rather than overwritten silently.
-    let staging_root = state.data_dir.join("imports").join(format!("odyssey-skill-{}", std::process::id()));
+    let staging_root = state
+        .data_dir
+        .join("imports")
+        .join(format!("odyssey-skill-{}", std::process::id()));
     let source = staging_root.join("source").join("big-thing");
-    std::fs::create_dir_all(&source).map_err(|error| thingmaker_supervisor::DesktopError::io(error.to_string()))?;
-    std::fs::write(source.join("SKILL.md"), SKILL_MD).map_err(|error| thingmaker_supervisor::DesktopError::io(error.to_string()))?;
+    std::fs::create_dir_all(&source)
+        .map_err(|error| thingmaker_supervisor::DesktopError::io(error.to_string()))?;
+    std::fs::write(source.join("SKILL.md"), SKILL_MD)
+        .map_err(|error| thingmaker_supervisor::DesktopError::io(error.to_string()))?;
     let staging = staging_root.join("staging");
     let outcome = (|| {
-        let plan = thingmaker_supervisor::integrations::stage_import(&source, &staging, "odyssey-skill")?;
+        let plan =
+            thingmaker_supervisor::integrations::stage_import(&source, &staging, "odyssey-skill")?;
         let skills_root = home.join(".agents/skills");
-        let backups = super::skills::skill_backup_root(&state, thingmaker_supervisor::integrations::SkillScope::User);
-        let applied = thingmaker_supervisor::integrations::apply_import(&staging, &plan, std::slice::from_ref(&"big-thing".to_string()), &skills_root, true, &backups)?;
+        let backups = super::skills::skill_backup_root(
+            &state,
+            thingmaker_supervisor::integrations::SkillScope::User,
+        );
+        let applied = thingmaker_supervisor::integrations::apply_import(
+            &staging,
+            &plan,
+            std::slice::from_ref(&"big-thing".to_string()),
+            &skills_root,
+            true,
+            &backups,
+        )?;
         Ok::<SkillInstall, thingmaker_supervisor::DesktopError>(SkillInstall {
-            path: applied.first().map(|entry| entry.path.to_string_lossy().into_owned()).unwrap_or_else(|| target.to_string_lossy().into_owned()),
+            path: applied
+                .first()
+                .map(|entry| entry.path.to_string_lossy().into_owned())
+                .unwrap_or_else(|| target.to_string_lossy().into_owned()),
             changed: true,
         })
     })();
@@ -333,15 +469,27 @@ pub struct SetPlanRequest {
 #[tauri::command]
 pub fn odyssey_set_plan(request: SetPlanRequest, state: State<'_, AppState>) -> CommandResult<()> {
     state
-        .with_storage(|storage| storage.odyssey_set_plan(&request.id, request.source.as_deref(), request.document.as_deref(), request.path.as_deref()))
+        .with_storage(|storage| {
+            storage.odyssey_set_plan(
+                &request.id,
+                request.source.as_deref(),
+                request.document.as_deref(),
+                request.path.as_deref(),
+            )
+        })
         .map_err(storage_error)
 }
 
 /// The stored plan document. Read only when the planning prompt is built, so
 /// the goal view stays small.
 #[tauri::command]
-pub fn odyssey_plan_document(id: String, state: State<'_, AppState>) -> CommandResult<Option<String>> {
-    state.with_storage(|storage| storage.odyssey_plan_document(&id)).map_err(storage_error)
+pub fn odyssey_plan_document(
+    id: String,
+    state: State<'_, AppState>,
+) -> CommandResult<Option<String>> {
+    state
+        .with_storage(|storage| storage.odyssey_plan_document(&id))
+        .map_err(storage_error)
 }
 
 #[derive(Debug, Deserialize)]
@@ -375,7 +523,10 @@ pub struct InspectRefsRequest {
 /// of 48 attachments. A path outside the workspace is refused here rather than
 /// quietly turned into something the agent cannot open.
 #[tauri::command]
-pub fn odyssey_inspect_refs(request: InspectRefsRequest, state: State<'_, AppState>) -> CommandResult<Vec<AmendmentRef>> {
+pub fn odyssey_inspect_refs(
+    request: InspectRefsRequest,
+    state: State<'_, AppState>,
+) -> CommandResult<Vec<AmendmentRef>> {
     let workspace = state
         .with_storage(|storage| storage.workspace_get(&request.workspace_id))
         .map_err(storage_error)?
@@ -389,7 +540,8 @@ pub fn odyssey_inspect_refs(request: InspectRefsRequest, state: State<'_, AppSta
         // A drop hands over absolute paths; make them relative to the
         // workspace so the agent can use them, and refuse what is outside it.
         let relative = if candidate.is_absolute() {
-            let canonical = std::fs::canonicalize(candidate).unwrap_or_else(|_| candidate.to_path_buf());
+            let canonical =
+                std::fs::canonicalize(candidate).unwrap_or_else(|_| candidate.to_path_buf());
             match canonical.strip_prefix(&canonical_root) {
                 Ok(rest) => rest.to_string_lossy().into_owned(),
                 Err(_) => {
@@ -406,12 +558,16 @@ pub fn odyssey_inspect_refs(request: InspectRefsRequest, state: State<'_, AppSta
             continue;
         }
 
-        let resolved = thingmaker_supervisor::workspace::explorer::resolve_contained(&root, &relative)?;
-        let metadata = std::fs::metadata(&resolved).map_err(|error| thingmaker_supervisor::DesktopError::io(format!("could not read {relative}: {error}")))?;
+        let resolved =
+            thingmaker_supervisor::workspace::explorer::resolve_contained(&root, &relative)?;
+        let metadata = std::fs::metadata(&resolved).map_err(|error| {
+            thingmaker_supervisor::DesktopError::io(format!("could not read {relative}: {error}"))
+        })?;
         let (kind, detail) = if metadata.is_dir() {
             let mut files = 0usize;
             let mut folders = 0usize;
-            let entries = std::fs::read_dir(&resolved).map_err(|error| thingmaker_supervisor::DesktopError::io(error.to_string()))?;
+            let entries = std::fs::read_dir(&resolved)
+                .map_err(|error| thingmaker_supervisor::DesktopError::io(error.to_string()))?;
             for entry in entries.take(MAX_DIR_SCAN).flatten() {
                 if entry.file_type().map(|kind| kind.is_dir()).unwrap_or(false) {
                     folders += 1;
@@ -424,13 +580,27 @@ pub fn odyssey_inspect_refs(request: InspectRefsRequest, state: State<'_, AppSta
                 parts.push(format!("{files} file{}", if files == 1 { "" } else { "s" }));
             }
             if folders > 0 {
-                parts.push(format!("{folders} folder{}", if folders == 1 { "" } else { "s" }));
+                parts.push(format!(
+                    "{folders} folder{}",
+                    if folders == 1 { "" } else { "s" }
+                ));
             }
-            ("directory", if parts.is_empty() { "empty".to_string() } else { parts.join(", ") })
+            (
+                "directory",
+                if parts.is_empty() {
+                    "empty".to_string()
+                } else {
+                    parts.join(", ")
+                },
+            )
         } else {
             ("file", format!("{} bytes", metadata.len()))
         };
-        out.push(AmendmentRef { path: relative, kind: kind.to_string(), detail });
+        out.push(AmendmentRef {
+            path: relative,
+            kind: kind.to_string(),
+            detail,
+        });
     }
     Ok(out)
 }
@@ -454,15 +624,20 @@ pub struct AddAmendmentRequest {
 }
 
 #[tauri::command]
-pub fn odyssey_amend_add(request: AddAmendmentRequest, state: State<'_, AppState>) -> CommandResult<AmendmentRecord> {
+pub fn odyssey_amend_add(
+    request: AddAmendmentRequest,
+    state: State<'_, AppState>,
+) -> CommandResult<AmendmentRecord> {
     if let Some(document) = &request.document
         && document.len() > MAX_AMENDMENT_DOCUMENT
     {
-        return Err(thingmaker_supervisor::DesktopError::limit_exceeded(format!(
-            "that document is {} KB. A document the agent cannot open itself is inlined in its prompt, so it has to be under {} KB — put it in the workspace and reference it instead.",
-            document.len() / 1024,
-            MAX_AMENDMENT_DOCUMENT / 1024
-        )));
+        return Err(thingmaker_supervisor::DesktopError::limit_exceeded(
+            format!(
+                "that document is {} KB. A document the agent cannot open itself is inlined in its prompt, so it has to be under {} KB — put it in the workspace and reference it instead.",
+                document.len() / 1024,
+                MAX_AMENDMENT_DOCUMENT / 1024
+            ),
+        ));
     }
     state
         .with_storage(|storage| {
@@ -479,13 +654,23 @@ pub fn odyssey_amend_add(request: AddAmendmentRequest, state: State<'_, AppState
 }
 
 #[tauri::command]
-pub fn odyssey_amend_list(odyssey_id: String, state: State<'_, AppState>) -> CommandResult<Vec<AmendmentRecord>> {
-    state.with_storage(|storage| storage.amendment_list(&odyssey_id)).map_err(storage_error)
+pub fn odyssey_amend_list(
+    odyssey_id: String,
+    state: State<'_, AppState>,
+) -> CommandResult<Vec<AmendmentRecord>> {
+    state
+        .with_storage(|storage| storage.amendment_list(&odyssey_id))
+        .map_err(storage_error)
 }
 
 #[tauri::command]
-pub fn odyssey_amend_document(id: String, state: State<'_, AppState>) -> CommandResult<Option<String>> {
-    state.with_storage(|storage| storage.amendment_document(&id)).map_err(storage_error)
+pub fn odyssey_amend_document(
+    id: String,
+    state: State<'_, AppState>,
+) -> CommandResult<Option<String>> {
+    state
+        .with_storage(|storage| storage.amendment_document(&id))
+        .map_err(storage_error)
 }
 
 #[derive(Debug, Deserialize)]
@@ -505,15 +690,25 @@ pub struct AmendToldRequest {
 
 /// Records that a prompt carried this amendment, counting the attempt.
 #[tauri::command]
-pub fn odyssey_amend_mark_told(request: AmendToldRequest, state: State<'_, AppState>) -> CommandResult<()> {
+pub fn odyssey_amend_mark_told(
+    request: AmendToldRequest,
+    state: State<'_, AppState>,
+) -> CommandResult<()> {
     state
-        .with_storage(|storage| storage.amendment_mark_told(&request.id, request.continuations_used))
+        .with_storage(|storage| {
+            storage.amendment_mark_told(&request.id, request.continuations_used)
+        })
         .map_err(storage_error)
 }
 
 #[tauri::command]
-pub fn odyssey_amend_set_state(request: AmendStateRequest, state: State<'_, AppState>) -> CommandResult<()> {
-    state.with_storage(|storage| storage.amendment_set_state(&request.id, request.state)).map_err(storage_error)
+pub fn odyssey_amend_set_state(
+    request: AmendStateRequest,
+    state: State<'_, AppState>,
+) -> CommandResult<()> {
+    state
+        .with_storage(|storage| storage.amendment_set_state(&request.id, request.state))
+        .map_err(storage_error)
 }
 
 #[derive(Debug, Deserialize)]
@@ -544,7 +739,10 @@ pub struct AdoptedPlan {
 /// in, because that is the only way to make it readable — never overwriting,
 /// and only when the caller asked for it.
 #[tauri::command]
-pub fn odyssey_adopt_plan(request: AdoptPlanRequest, state: State<'_, AppState>) -> CommandResult<AdoptedPlan> {
+pub fn odyssey_adopt_plan(
+    request: AdoptPlanRequest,
+    state: State<'_, AppState>,
+) -> CommandResult<AdoptedPlan> {
     let workspace = state
         .with_storage(|storage| storage.workspace_get(&request.workspace_id))
         .map_err(storage_error)?
@@ -555,7 +753,10 @@ pub fn odyssey_adopt_plan(request: AdoptPlanRequest, state: State<'_, AppState>)
     let canonical = std::fs::canonicalize(source).unwrap_or_else(|_| source.to_path_buf());
 
     if let Ok(relative) = canonical.strip_prefix(&canonical_root) {
-        return Ok(AdoptedPlan { path: relative.to_string_lossy().into_owned(), copied: false });
+        return Ok(AdoptedPlan {
+            path: relative.to_string_lossy().into_owned(),
+            copied: false,
+        });
     }
 
     let name = source
@@ -564,39 +765,75 @@ pub fn odyssey_adopt_plan(request: AdoptPlanRequest, state: State<'_, AppState>)
         .ok_or_else(|| thingmaker_supervisor::DesktopError::unsupported("that file has no name"))?;
     // `docs/` when the project already keeps documents there, so the copy
     // lands where a reader would look for it.
-    let folder = if root.join("docs").is_dir() { "docs" } else { "" };
-    let mut relative = if folder.is_empty() { name.to_string() } else { format!("{folder}/{name}") };
-    let (stem, extension) = name.rsplit_once('.').map_or((name, ""), |(stem, ext)| (stem, ext));
+    let folder = if root.join("docs").is_dir() {
+        "docs"
+    } else {
+        ""
+    };
+    let mut relative = if folder.is_empty() {
+        name.to_string()
+    } else {
+        format!("{folder}/{name}")
+    };
+    let (stem, extension) = name
+        .rsplit_once('.')
+        .map_or((name, ""), |(stem, ext)| (stem, ext));
     let mut attempt = 2;
     while root.join(&relative).exists() {
         // Never overwrite: a same-named file in the project is not ours.
-        let candidate = if extension.is_empty() { format!("{stem}-{attempt}") } else { format!("{stem}-{attempt}.{extension}") };
-        relative = if folder.is_empty() { candidate } else { format!("{folder}/{candidate}") };
+        let candidate = if extension.is_empty() {
+            format!("{stem}-{attempt}")
+        } else {
+            format!("{stem}-{attempt}.{extension}")
+        };
+        relative = if folder.is_empty() {
+            candidate
+        } else {
+            format!("{folder}/{candidate}")
+        };
         attempt += 1;
     }
 
-    let destination = thingmaker_supervisor::workspace::explorer::resolve_contained(&root, &relative)?;
+    let destination =
+        thingmaker_supervisor::workspace::explorer::resolve_contained(&root, &relative)?;
     if let Some(parent) = destination.parent() {
-        std::fs::create_dir_all(parent).map_err(|error| thingmaker_supervisor::DesktopError::io(error.to_string()))?;
+        std::fs::create_dir_all(parent)
+            .map_err(|error| thingmaker_supervisor::DesktopError::io(error.to_string()))?;
     }
-    std::fs::copy(source, &destination).map_err(|error| thingmaker_supervisor::DesktopError::io(format!("could not copy the document into the project: {error}")))?;
-    Ok(AdoptedPlan { path: relative, copied: true })
+    std::fs::copy(source, &destination).map_err(|error| {
+        thingmaker_supervisor::DesktopError::io(format!(
+            "could not copy the document into the project: {error}"
+        ))
+    })?;
+    Ok(AdoptedPlan {
+        path: relative,
+        copied: true,
+    })
 }
 
 /// The live goal for a session, with its milestones and journal.
 #[tauri::command]
-pub fn odyssey_for_session(request: ForSessionRequest, state: State<'_, AppState>) -> CommandResult<Option<OdysseyView>> {
+pub fn odyssey_for_session(
+    request: ForSessionRequest,
+    state: State<'_, AppState>,
+) -> CommandResult<Option<OdysseyView>> {
     // A session with no desktop row cannot have a goal yet, so read-only
     // resolution is enough and nothing is created by looking.
     let Some(session_id) = state
-        .with_storage(|storage| storage.odyssey_session_row(&request.workspace_id, &request.agent_session_id, None))
+        .with_storage(|storage| {
+            storage.odyssey_session_row(&request.workspace_id, &request.agent_session_id, None)
+        })
         .map_err(storage_error)?
     else {
         return Ok(None);
     };
-    let goal = state.with_storage(|storage| storage.odyssey_for_session(&session_id)).map_err(storage_error)?;
+    let goal = state
+        .with_storage(|storage| storage.odyssey_for_session(&session_id))
+        .map_err(storage_error)?;
     let Some(goal) = goal else { return Ok(None) };
-    state.with_storage(|storage| storage.odyssey_view(&goal.id)).map_err(storage_error)
+    state
+        .with_storage(|storage| storage.odyssey_view(&goal.id))
+        .map_err(storage_error)
 }
 
 /// What the Claude account says about itself, in the shape the runner's usage
@@ -634,16 +871,27 @@ pub struct ClaudeAccountStatus {
 /// session that will never take a prompt.
 #[tauri::command]
 pub fn odyssey_claude_preflight(state: State<'_, AppState>) -> CommandResult<ClaudeAccountStatus> {
-    use thingmaker_supervisor::agents::{Provider, claude::{auth, quota}};
+    use thingmaker_supervisor::agents::{
+        Provider,
+        claude::{auth, quota},
+    };
 
     let resolved = state.resolve_provider(Provider::Claude)?;
     // First, Claude Code's own usage data: it answers in about a second,
     // proves the account is signed in, and — unlike the model list — says
     // whether the account has room. A spent account is no place to move a run.
     let home = state.home.clone().unwrap_or_default();
-    let script = resolved.prefix_args.first().map(std::path::PathBuf::from).unwrap_or_default();
-    if let Some(binary) = thingmaker_supervisor::agents::claude::usage_probe::locate_claude_binary(&script, &home)
-        && let Ok(snapshot) = thingmaker_supervisor::agents::claude::usage_probe::read_quota(&binary, std::time::Duration::from_secs(20))
+    let script = resolved
+        .prefix_args
+        .first()
+        .map(std::path::PathBuf::from)
+        .unwrap_or_default();
+    if let Some(binary) =
+        thingmaker_supervisor::agents::claude::usage_probe::locate_claude_binary(&script, &home)
+        && let Ok(snapshot) = thingmaker_supervisor::agents::claude::usage_probe::read_quota(
+            &binary,
+            std::time::Duration::from_secs(20),
+        )
     {
         if let Some(delegation) = state.delegation.get() {
             delegation.note_quota(snapshot.clone());
@@ -656,7 +904,12 @@ pub fn odyssey_claude_preflight(state: State<'_, AppState>) -> CommandResult<Cla
                 problem: None,
             });
         }
-        return Ok(ClaudeAccountStatus { available: true, reset_at_unix: None, message: None, problem: None });
+        return Ok(ClaudeAccountStatus {
+            available: true,
+            reset_at_unix: None,
+            message: None,
+            problem: None,
+        });
     }
     // Without it, the model list: slower, and it proves sign-in only.
     let scratch = state.data_dir.join("provider-probe");
@@ -697,7 +950,10 @@ fn now_unix_seconds() -> u64 {
 /// their repository, and a run silently rewriting it would be a run editing
 /// the project outside its own plan.
 #[tauri::command]
-pub fn odyssey_install_delegate(workspace_id: String, state: State<'_, AppState>) -> CommandResult<SkillInstall> {
+pub fn odyssey_install_delegate(
+    workspace_id: String,
+    state: State<'_, AppState>,
+) -> CommandResult<SkillInstall> {
     let record = state
         .with_storage(|storage| storage.workspace_get(&workspace_id))
         .map_err(storage_error)?
@@ -706,9 +962,17 @@ pub fn odyssey_install_delegate(workspace_id: String, state: State<'_, AppState>
     // The delegate as it was installed under the feature's earlier name: an
     // untouched copy is retired, so the agent is not offered two of them. A
     // tuned one stays; it is the user's.
-    for (file, name, article) in [("odyssey-delegate.md", "Odyssey", "an"), ("super-thing-delegate.md", "Super Thing", "a")] {
-        let legacy = std::path::Path::new(&record.canonical_root).join(".claude/agents").join(file);
-        let legacy_text = DELEGATE_MD.replace("big-thing-delegate", file.trim_end_matches(".md")).replace("a Big Thing", &format!("{article} {name}")).replace("Big Thing", name);
+    for (file, name, article) in [
+        ("odyssey-delegate.md", "Odyssey", "an"),
+        ("super-thing-delegate.md", "Super Thing", "a"),
+    ] {
+        let legacy = std::path::Path::new(&record.canonical_root)
+            .join(".claude/agents")
+            .join(file);
+        let legacy_text = DELEGATE_MD
+            .replace("big-thing-delegate", file.trim_end_matches(".md"))
+            .replace("a Big Thing", &format!("{article} {name}"))
+            .replace("Big Thing", name);
         if std::fs::read_to_string(&legacy).is_ok_and(|existing| existing == legacy_text) {
             let _ = std::fs::remove_file(&legacy);
         }
@@ -716,17 +980,30 @@ pub fn odyssey_install_delegate(workspace_id: String, state: State<'_, AppState>
     let target = std::path::Path::new(&record.canonical_root).join(DELEGATE_PATH);
     match std::fs::read_to_string(&target) {
         Ok(existing) if existing == DELEGATE_MD => {
-            return Ok(SkillInstall { path: target.to_string_lossy().into_owned(), changed: false });
+            return Ok(SkillInstall {
+                path: target.to_string_lossy().into_owned(),
+                changed: false,
+            });
         }
         // Somebody has tuned it. That is theirs to keep.
-        Ok(_) => return Ok(SkillInstall { path: target.to_string_lossy().into_owned(), changed: false }),
+        Ok(_) => {
+            return Ok(SkillInstall {
+                path: target.to_string_lossy().into_owned(),
+                changed: false,
+            });
+        }
         Err(_) => {}
     }
     if let Some(parent) = target.parent() {
-        std::fs::create_dir_all(parent).map_err(|error| thingmaker_supervisor::DesktopError::io(error.to_string()))?;
+        std::fs::create_dir_all(parent)
+            .map_err(|error| thingmaker_supervisor::DesktopError::io(error.to_string()))?;
     }
-    std::fs::write(&target, DELEGATE_MD).map_err(|error| thingmaker_supervisor::DesktopError::io(error.to_string()))?;
-    Ok(SkillInstall { path: target.to_string_lossy().into_owned(), changed: true })
+    std::fs::write(&target, DELEGATE_MD)
+        .map_err(|error| thingmaker_supervisor::DesktopError::io(error.to_string()))?;
+    Ok(SkillInstall {
+        path: target.to_string_lossy().into_owned(),
+        changed: true,
+    })
 }
 
 #[derive(Debug, Deserialize)]
@@ -750,26 +1027,48 @@ pub struct RepointRequest {
 /// workspace notes carry across; the transcript does not, which is why the
 /// move journals a row the runner reads as "brief this one from scratch".
 #[tauri::command]
-pub fn odyssey_repoint(request: RepointRequest, state: State<'_, AppState>) -> CommandResult<OdysseyView> {
+pub fn odyssey_repoint(
+    request: RepointRequest,
+    state: State<'_, AppState>,
+) -> CommandResult<OdysseyView> {
     let session_id = state
-        .with_storage(|storage| storage.odyssey_session_row(&request.workspace_id, &request.agent_session_id, Some(request.provider.unwrap_or_default())))
+        .with_storage(|storage| {
+            storage.odyssey_session_row(
+                &request.workspace_id,
+                &request.agent_session_id,
+                Some(request.provider.unwrap_or_default()),
+            )
+        })
         .map_err(storage_error)?
-        .ok_or_else(|| thingmaker_supervisor::DesktopError::not_ready("that session has no desktop record"))?;
-    let goal = state.with_storage(|storage| storage.odyssey_repoint(&request.id, &session_id)).map_err(storage_error)?;
+        .ok_or_else(|| {
+            thingmaker_supervisor::DesktopError::not_ready("that session has no desktop record")
+        })?;
+    let goal = state
+        .with_storage(|storage| storage.odyssey_repoint(&request.id, &session_id))
+        .map_err(storage_error)?;
     state
         .with_storage(|storage| storage.odyssey_view(&goal.id))
         .map_err(storage_error)?
-        .ok_or_else(|| thingmaker_supervisor::DesktopError::not_ready("the goal went away while it was moving"))
+        .ok_or_else(|| {
+            thingmaker_supervisor::DesktopError::not_ready("the goal went away while it was moving")
+        })
 }
 
 #[tauri::command]
 pub fn odyssey_view(id: String, state: State<'_, AppState>) -> CommandResult<Option<OdysseyView>> {
-    state.with_storage(|storage| storage.odyssey_view(&id)).map_err(storage_error)
+    state
+        .with_storage(|storage| storage.odyssey_view(&id))
+        .map_err(storage_error)
 }
 
 #[tauri::command]
-pub fn odyssey_list(workspace_id: String, state: State<'_, AppState>) -> CommandResult<Vec<OdysseyRecord>> {
-    state.with_storage(|storage| storage.odyssey_list(&workspace_id)).map_err(storage_error)
+pub fn odyssey_list(
+    workspace_id: String,
+    state: State<'_, AppState>,
+) -> CommandResult<Vec<OdysseyRecord>> {
+    state
+        .with_storage(|storage| storage.odyssey_list(&workspace_id))
+        .map_err(storage_error)
 }
 
 #[derive(Debug, Deserialize)]
@@ -816,12 +1115,21 @@ pub struct CreateRequest {
 }
 
 #[tauri::command]
-pub fn odyssey_create(request: CreateRequest, state: State<'_, AppState>) -> CommandResult<OdysseyView> {
+pub fn odyssey_create(
+    request: CreateRequest,
+    state: State<'_, AppState>,
+) -> CommandResult<OdysseyView> {
     // The goal is created for a live session, so its desktop row is upserted
     // rather than required: the catalog may not have reconciled it yet.
     let session_id = match &request.agent_session_id {
         Some(agent_session_id) => state
-            .with_storage(|storage| storage.odyssey_session_row(&request.workspace_id, agent_session_id, Some(request.provider.unwrap_or_default())))
+            .with_storage(|storage| {
+                storage.odyssey_session_row(
+                    &request.workspace_id,
+                    agent_session_id,
+                    Some(request.provider.unwrap_or_default()),
+                )
+            })
             .map_err(storage_error)?,
         None => None,
     };
@@ -845,11 +1153,15 @@ pub fn odyssey_create(request: CreateRequest, state: State<'_, AppState>) -> Com
         account_policy: request.account_policy,
         team: request.team,
     };
-    let created = state.with_storage(|storage| storage.odyssey_create(&new)).map_err(storage_error)?;
+    let created = state
+        .with_storage(|storage| storage.odyssey_create(&new))
+        .map_err(storage_error)?;
     state
         .with_storage(|storage| storage.odyssey_view(&created.id))
         .map_err(storage_error)?
-        .ok_or_else(|| thingmaker_supervisor::DesktopError::io("the goal disappeared after it was created"))
+        .ok_or_else(|| {
+            thingmaker_supervisor::DesktopError::io("the goal disappeared after it was created")
+        })
 }
 
 #[derive(Debug, Deserialize)]
@@ -861,13 +1173,20 @@ pub struct EditGoalRequest {
 }
 
 #[tauri::command]
-pub fn odyssey_edit_goal(request: EditGoalRequest, state: State<'_, AppState>) -> CommandResult<OdysseyRecord> {
-    state.with_storage(|storage| storage.odyssey_edit_goal(&request.id, &request.edit)).map_err(storage_error)
+pub fn odyssey_edit_goal(
+    request: EditGoalRequest,
+    state: State<'_, AppState>,
+) -> CommandResult<OdysseyRecord> {
+    state
+        .with_storage(|storage| storage.odyssey_edit_goal(&request.id, &request.edit))
+        .map_err(storage_error)
 }
 
 #[tauri::command]
 pub fn odyssey_delete(id: String, state: State<'_, AppState>) -> CommandResult<()> {
-    state.with_storage(|storage| storage.odyssey_delete(&id)).map_err(storage_error)
+    state
+        .with_storage(|storage| storage.odyssey_delete(&id))
+        .map_err(storage_error)
 }
 
 #[derive(Debug, Deserialize)]
@@ -886,9 +1205,21 @@ pub struct AddMilestoneRequest {
 }
 
 #[tauri::command]
-pub fn odyssey_add_milestone(request: AddMilestoneRequest, state: State<'_, AppState>) -> CommandResult<MilestoneRecord> {
+pub fn odyssey_add_milestone(
+    request: AddMilestoneRequest,
+    state: State<'_, AppState>,
+) -> CommandResult<MilestoneRecord> {
     state
-        .with_storage(|storage| storage.milestone_add(&request.odyssey_id, &request.title, &request.detail, request.check_kind, request.check_spec.as_deref(), request.section.as_deref()))
+        .with_storage(|storage| {
+            storage.milestone_add(
+                &request.odyssey_id,
+                &request.title,
+                &request.detail,
+                request.check_kind,
+                request.check_spec.as_deref(),
+                request.section.as_deref(),
+            )
+        })
         .map_err(storage_error)
 }
 
@@ -901,8 +1232,13 @@ pub struct EditMilestoneRequest {
 }
 
 #[tauri::command]
-pub fn odyssey_edit_milestone(request: EditMilestoneRequest, state: State<'_, AppState>) -> CommandResult<MilestoneRecord> {
-    state.with_storage(|storage| storage.milestone_edit(&request.id, &request.edit)).map_err(storage_error)
+pub fn odyssey_edit_milestone(
+    request: EditMilestoneRequest,
+    state: State<'_, AppState>,
+) -> CommandResult<MilestoneRecord> {
+    state
+        .with_storage(|storage| storage.milestone_edit(&request.id, &request.edit))
+        .map_err(storage_error)
 }
 
 #[derive(Debug, Deserialize)]
@@ -914,15 +1250,22 @@ pub struct ReorderRequest {
 }
 
 #[tauri::command]
-pub fn odyssey_reorder_milestones(request: ReorderRequest, state: State<'_, AppState>) -> CommandResult<()> {
+pub fn odyssey_reorder_milestones(
+    request: ReorderRequest,
+    state: State<'_, AppState>,
+) -> CommandResult<()> {
     state
-        .with_storage(|storage| storage.milestone_reorder(&request.odyssey_id, &request.ordered_ids))
+        .with_storage(|storage| {
+            storage.milestone_reorder(&request.odyssey_id, &request.ordered_ids)
+        })
         .map_err(storage_error)
 }
 
 #[tauri::command]
 pub fn odyssey_delete_milestone(id: String, state: State<'_, AppState>) -> CommandResult<()> {
-    state.with_storage(|storage| storage.milestone_delete(&id)).map_err(storage_error)
+    state
+        .with_storage(|storage| storage.milestone_delete(&id))
+        .map_err(storage_error)
 }
 
 #[derive(Debug, Deserialize)]
@@ -935,8 +1278,13 @@ pub struct SetStateRequest {
 /// Moves a goal between runner states. The runner writes every transition here
 /// before acting on it, so a reload continues from the record.
 #[tauri::command]
-pub fn odyssey_set_state(request: SetStateRequest, state: State<'_, AppState>) -> CommandResult<()> {
-    state.with_storage(|storage| storage.odyssey_set_state(&request.id, request.state)).map_err(storage_error)
+pub fn odyssey_set_state(
+    request: SetStateRequest,
+    state: State<'_, AppState>,
+) -> CommandResult<()> {
+    state
+        .with_storage(|storage| storage.odyssey_set_state(&request.id, request.state))
+        .map_err(storage_error)
 }
 
 #[derive(Debug, Deserialize)]
@@ -948,7 +1296,10 @@ pub struct ContinuationRequest {
 }
 
 #[tauri::command]
-pub fn odyssey_record_continuation(request: ContinuationRequest, state: State<'_, AppState>) -> CommandResult<()> {
+pub fn odyssey_record_continuation(
+    request: ContinuationRequest,
+    state: State<'_, AppState>,
+) -> CommandResult<()> {
     state
         .with_storage(|storage| storage.odyssey_record_continuation(&request.id, request.tokens))
         .map_err(storage_error)
@@ -962,8 +1313,13 @@ pub struct MilestoneStateRequest {
 }
 
 #[tauri::command]
-pub fn odyssey_set_milestone_state(request: MilestoneStateRequest, state: State<'_, AppState>) -> CommandResult<()> {
-    state.with_storage(|storage| storage.milestone_set_state(&request.id, request.state)).map_err(storage_error)
+pub fn odyssey_set_milestone_state(
+    request: MilestoneStateRequest,
+    state: State<'_, AppState>,
+) -> CommandResult<()> {
+    state
+        .with_storage(|storage| storage.milestone_set_state(&request.id, request.state))
+        .map_err(storage_error)
 }
 
 #[derive(Debug, Deserialize)]
@@ -976,8 +1332,13 @@ pub struct ReportRequest {
 /// Records the model's own claim. It moves the milestone to `reported`; only a
 /// check or the user can verify it.
 #[tauri::command]
-pub fn odyssey_record_report(request: ReportRequest, state: State<'_, AppState>) -> CommandResult<()> {
-    state.with_storage(|storage| storage.milestone_record_report(&request.id, &request.note)).map_err(storage_error)
+pub fn odyssey_record_report(
+    request: ReportRequest,
+    state: State<'_, AppState>,
+) -> CommandResult<()> {
+    state
+        .with_storage(|storage| storage.milestone_record_report(&request.id, &request.note))
+        .map_err(storage_error)
 }
 
 #[derive(Debug, Deserialize)]
@@ -991,9 +1352,19 @@ pub struct CheckRequest {
 }
 
 #[tauri::command]
-pub fn odyssey_record_check(request: CheckRequest, state: State<'_, AppState>) -> CommandResult<MilestoneRecord> {
+pub fn odyssey_record_check(
+    request: CheckRequest,
+    state: State<'_, AppState>,
+) -> CommandResult<MilestoneRecord> {
     state
-        .with_storage(|storage| storage.milestone_record_check(&request.id, request.passed, &request.output, request.source))
+        .with_storage(|storage| {
+            storage.milestone_record_check(
+                &request.id,
+                request.passed,
+                &request.output,
+                request.source,
+            )
+        })
         .map_err(storage_error)
 }
 
@@ -1012,7 +1383,10 @@ pub struct JournalRequest {
 }
 
 #[tauri::command]
-pub fn odyssey_journal_append(request: JournalRequest, state: State<'_, AppState>) -> CommandResult<JournalEntry> {
+pub fn odyssey_journal_append(
+    request: JournalRequest,
+    state: State<'_, AppState>,
+) -> CommandResult<JournalEntry> {
     state
         .with_storage(|storage| {
             storage.odyssey_journal_append(
@@ -1039,9 +1413,19 @@ pub struct AddStepRequest {
 }
 
 #[tauri::command]
-pub fn odyssey_add_step(request: AddStepRequest, state: State<'_, AppState>) -> CommandResult<StepRecord> {
+pub fn odyssey_add_step(
+    request: AddStepRequest,
+    state: State<'_, AppState>,
+) -> CommandResult<StepRecord> {
     state
-        .with_storage(|storage| storage.step_add(&request.milestone_id, &request.title, &request.detail, &request.depends_on))
+        .with_storage(|storage| {
+            storage.step_add(
+                &request.milestone_id,
+                &request.title,
+                &request.detail,
+                &request.depends_on,
+            )
+        })
         .map_err(storage_error)
 }
 
@@ -1054,8 +1438,13 @@ pub struct EditStepRequest {
 }
 
 #[tauri::command]
-pub fn odyssey_edit_step(request: EditStepRequest, state: State<'_, AppState>) -> CommandResult<StepRecord> {
-    state.with_storage(|storage| storage.step_edit(&request.id, &request.edit)).map_err(storage_error)
+pub fn odyssey_edit_step(
+    request: EditStepRequest,
+    state: State<'_, AppState>,
+) -> CommandResult<StepRecord> {
+    state
+        .with_storage(|storage| storage.step_edit(&request.id, &request.edit))
+        .map_err(storage_error)
 }
 
 #[derive(Debug, Deserialize)]
@@ -1074,9 +1463,19 @@ pub struct AssignStepRequest {
 /// from a subagent named after the task; the harness and model come from the
 /// session stream, so they are evidence rather than the agent's word.
 #[tauri::command]
-pub fn odyssey_assign_step(request: AssignStepRequest, state: State<'_, AppState>) -> CommandResult<()> {
+pub fn odyssey_assign_step(
+    request: AssignStepRequest,
+    state: State<'_, AppState>,
+) -> CommandResult<()> {
     state
-        .with_storage(|storage| storage.step_assign(&request.id, request.agent_name.as_deref(), request.harness.as_deref(), request.model.as_deref()))
+        .with_storage(|storage| {
+            storage.step_assign(
+                &request.id,
+                request.agent_name.as_deref(),
+                request.harness.as_deref(),
+                request.model.as_deref(),
+            )
+        })
         .map_err(storage_error)
 }
 
@@ -1090,13 +1489,20 @@ pub struct StepStateRequest {
 }
 
 #[tauri::command]
-pub fn odyssey_set_step_state(request: StepStateRequest, state: State<'_, AppState>) -> CommandResult<()> {
+pub fn odyssey_set_step_state(
+    request: StepStateRequest,
+    state: State<'_, AppState>,
+) -> CommandResult<()> {
     state
-        .with_storage(|storage| storage.step_set_state(&request.id, request.state, request.note.as_deref()))
+        .with_storage(|storage| {
+            storage.step_set_state(&request.id, request.state, request.note.as_deref())
+        })
         .map_err(storage_error)
 }
 
 #[tauri::command]
 pub fn odyssey_delete_step(id: String, state: State<'_, AppState>) -> CommandResult<()> {
-    state.with_storage(|storage| storage.step_delete(&id)).map_err(storage_error)
+    state
+        .with_storage(|storage| storage.step_delete(&id))
+        .map_err(storage_error)
 }

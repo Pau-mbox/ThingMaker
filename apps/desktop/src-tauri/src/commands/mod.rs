@@ -6,6 +6,7 @@
 pub mod app;
 pub mod artifacts;
 pub mod attachments;
+pub mod bigthing;
 pub mod delegation;
 pub mod git;
 pub mod mcp;
@@ -15,7 +16,6 @@ pub mod review;
 pub mod runtime_env;
 pub mod session;
 pub mod skills;
-pub mod bigthing;
 pub mod support;
 pub mod terminal;
 pub mod workspace;

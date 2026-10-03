@@ -11,7 +11,10 @@ use serde::{Deserialize, Serialize};
 use tauri::State;
 use thingmaker_supervisor::{
     DesktopError,
-    integrations::{ContextSources, SkillFrontmatter, SkillScope, context_sources, parse_frontmatter, write_config_checked},
+    integrations::{
+        ContextSources, SkillFrontmatter, SkillScope, context_sources, parse_frontmatter,
+        write_config_checked,
+    },
     storage::content_hash,
 };
 
@@ -19,7 +22,9 @@ use super::{CommandResult, storage_error};
 use crate::state::AppState;
 
 fn home(state: &AppState) -> CommandResult<PathBuf> {
-    state.home.clone().ok_or_else(|| DesktopError::not_ready("HOME is not set; the user skills directory is unknown"))
+    state.home.clone().ok_or_else(|| {
+        DesktopError::not_ready("HOME is not set; the user skills directory is unknown")
+    })
 }
 
 fn workspace_root(state: &AppState, workspace_id: &str) -> CommandResult<PathBuf> {
@@ -31,7 +36,10 @@ fn workspace_root(state: &AppState, workspace_id: &str) -> CommandResult<PathBuf
 }
 
 #[tauri::command]
-pub fn context_sources_for_workspace(workspace_id: String, state: State<'_, AppState>) -> CommandResult<ContextSources> {
+pub fn context_sources_for_workspace(
+    workspace_id: String,
+    state: State<'_, AppState>,
+) -> CommandResult<ContextSources> {
     let root = workspace_root(&state, &workspace_id)?;
     Ok(context_sources(&root, state.home.as_deref()))
 }
@@ -39,11 +47,22 @@ pub fn context_sources_for_workspace(workspace_id: String, state: State<'_, AppS
 /// Which editable file a read/write addresses. Every target resolves to a
 /// path the desktop is allowed to edit; arbitrary paths are refused.
 #[derive(Debug, Clone, Deserialize)]
-#[serde(rename_all = "snake_case", rename_all_fields = "camelCase", tag = "kind")]
+#[serde(
+    rename_all = "snake_case",
+    rename_all_fields = "camelCase",
+    tag = "kind"
+)]
 pub enum ConfigTarget {
     /// A workspace's `AGENTS.md` (Codex) or `CLAUDE.md` (Claude Code).
-    Instructions { workspace_id: String, file: InstructionFileName },
-    Skill { scope: SkillScope, workspace_id: Option<String>, directory_name: String },
+    Instructions {
+        workspace_id: String,
+        file: InstructionFileName,
+    },
+    Skill {
+        scope: SkillScope,
+        workspace_id: Option<String>,
+        directory_name: String,
+    },
 }
 
 /// The instruction files the desktop edits, one per provider convention.
@@ -67,20 +86,34 @@ impl InstructionFileName {
 fn skill_dir_name_ok(name: &str) -> bool {
     !name.is_empty()
         && name.len() <= 100
-        && name.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_' || b == b'.')
+        && name
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_' || b == b'.')
         && !name.starts_with('.')
 }
 
-pub(crate) fn resolve_target(state: &AppState, target: &ConfigTarget) -> CommandResult<(PathBuf, &'static str)> {
+pub(crate) fn resolve_target(
+    state: &AppState,
+    target: &ConfigTarget,
+) -> CommandResult<(PathBuf, &'static str)> {
     match target {
-        ConfigTarget::Instructions { workspace_id, file } => Ok((workspace_root(state, workspace_id)?.join(file.as_str()), "markdown")),
-        ConfigTarget::Skill { scope, workspace_id, directory_name } => {
+        ConfigTarget::Instructions { workspace_id, file } => Ok((
+            workspace_root(state, workspace_id)?.join(file.as_str()),
+            "markdown",
+        )),
+        ConfigTarget::Skill {
+            scope,
+            workspace_id,
+            directory_name,
+        } => {
             if !skill_dir_name_ok(directory_name) {
                 return Err(DesktopError::io("invalid skill directory name"));
             }
             let base = match scope {
                 SkillScope::Project => {
-                    let id = workspace_id.as_deref().ok_or_else(|| DesktopError::io("project skills need a workspace"))?;
+                    let id = workspace_id
+                        .as_deref()
+                        .ok_or_else(|| DesktopError::io("project skills need a workspace"))?;
                     workspace_root(state, id)?.join(".agents/skills")
                 }
                 SkillScope::User => home(state)?.join(".agents/skills"),
@@ -104,14 +137,23 @@ pub struct ConfigFile {
 }
 
 #[tauri::command]
-pub fn config_read_file(target: ConfigTarget, state: State<'_, AppState>) -> CommandResult<ConfigFile> {
+pub fn config_read_file(
+    target: ConfigTarget,
+    state: State<'_, AppState>,
+) -> CommandResult<ConfigFile> {
     let (path, language) = resolve_target(&state, &target)?;
     let (content, hash, exists) = match std::fs::read(&path) {
         Ok(bytes) => {
             if bytes.len() > 4 * 1024 * 1024 {
-                return Err(DesktopError::limit_exceeded("configuration file exceeds 4 MiB"));
+                return Err(DesktopError::limit_exceeded(
+                    "configuration file exceeds 4 MiB",
+                ));
             }
-            (String::from_utf8_lossy(&bytes).into_owned(), Some(content_hash(&bytes)), true)
+            (
+                String::from_utf8_lossy(&bytes).into_owned(),
+                Some(content_hash(&bytes)),
+                true,
+            )
         }
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => (String::new(), None, false),
         Err(error) => return Err(DesktopError::io(error.to_string())),
@@ -147,15 +189,23 @@ pub struct ConfigWriteOutcome {
 }
 
 #[tauri::command]
-pub fn config_write_file(request: ConfigWriteRequest, state: State<'_, AppState>) -> CommandResult<ConfigWriteOutcome> {
+pub fn config_write_file(
+    request: ConfigWriteRequest,
+    state: State<'_, AppState>,
+) -> CommandResult<ConfigWriteOutcome> {
     let (path, language) = resolve_target(&state, &request.target)?;
     if request.content.len() > 4 * 1024 * 1024 {
-        return Err(DesktopError::limit_exceeded("configuration file exceeds 4 MiB"));
+        return Err(DesktopError::limit_exceeded(
+            "configuration file exceeds 4 MiB",
+        ));
     }
     if language == "markdown" && matches!(request.target, ConfigTarget::Skill { .. }) {
         let frontmatter = parse_frontmatter(&request.content);
         if !frontmatter.problems.is_empty() {
-            return Err(DesktopError::io(format!("SKILL.md is invalid: {}", frontmatter.problems.join("; "))));
+            return Err(DesktopError::io(format!(
+                "SKILL.md is invalid: {}",
+                frontmatter.problems.join("; ")
+            )));
         }
     }
     let hash = write_config_checked(&path, request.expected_hash.as_deref(), &request.content)?;
@@ -193,7 +243,10 @@ pub struct SkillCreateRequest {
 /// Creates a skill directory with a template SKILL.md (CFG-10). Fails if it
 /// already exists so nothing is overwritten.
 #[tauri::command]
-pub fn skill_create(request: SkillCreateRequest, state: State<'_, AppState>) -> CommandResult<ConfigFile> {
+pub fn skill_create(
+    request: SkillCreateRequest,
+    state: State<'_, AppState>,
+) -> CommandResult<ConfigFile> {
     let target = ConfigTarget::Skill {
         scope: request.scope,
         workspace_id: request.workspace_id,
@@ -201,37 +254,55 @@ pub fn skill_create(request: SkillCreateRequest, state: State<'_, AppState>) -> 
     };
     let (path, _) = resolve_target(&state, &target)?;
     if path.exists() {
-        return Err(DesktopError::conflict("a skill with this directory name already exists"));
+        return Err(DesktopError::conflict(
+            "a skill with this directory name already exists",
+        ));
     }
-    let parent = path.parent().ok_or_else(|| DesktopError::io("invalid skill path"))?;
+    let parent = path
+        .parent()
+        .ok_or_else(|| DesktopError::io("invalid skill path"))?;
     std::fs::create_dir_all(parent).map_err(|e| DesktopError::io(e.to_string()))?;
     let template = format!(
         "---\nname: {}\ndescription: Describe when an agent should load this skill\n---\n\n# {}\n\nInstructions the agent follows after loading this skill.\n",
-        request.directory_name.to_ascii_lowercase().replace(['_', '.'], "-"),
+        request
+            .directory_name
+            .to_ascii_lowercase()
+            .replace(['_', '.'], "-"),
         request.directory_name
     );
     write_config_checked(&path, None, &template)?;
     config_read_file(target, state)
 }
 
-
 // ---------------------------------------------------------------------------
 // Skill import (CFG-10)
 // ---------------------------------------------------------------------------
 
-use thingmaker_supervisor::integrations::{AppliedSkill, ImportPlan, RemovedSkill, annotate_collisions, apply_import, remove_skill, stage_import};
+use thingmaker_supervisor::integrations::{
+    AppliedSkill, ImportPlan, RemovedSkill, annotate_collisions, apply_import, remove_skill,
+    stage_import,
+};
 
 fn staging_dir(state: &AppState, staging_id: &str) -> CommandResult<PathBuf> {
-    if staging_id.len() != 36 || !staging_id.chars().all(|c| c.is_ascii_hexdigit() || c == '-') {
+    if staging_id.len() != 36
+        || !staging_id
+            .chars()
+            .all(|c| c.is_ascii_hexdigit() || c == '-')
+    {
         return Err(DesktopError::io("invalid staging id"));
     }
     Ok(state.data_dir.join("imports").join(staging_id))
 }
 
-fn skills_root_for(state: &AppState, scope: SkillScope, workspace_id: Option<&str>) -> CommandResult<(PathBuf, PathBuf)> {
+fn skills_root_for(
+    state: &AppState,
+    scope: SkillScope,
+    workspace_id: Option<&str>,
+) -> CommandResult<(PathBuf, PathBuf)> {
     match scope {
         SkillScope::Project => {
-            let id = workspace_id.ok_or_else(|| DesktopError::io("project skills need a workspace"))?;
+            let id =
+                workspace_id.ok_or_else(|| DesktopError::io("project skills need a workspace"))?;
             let root = workspace_root(state, id)?;
             Ok((root.join(".agents/skills"), root))
         }
@@ -242,7 +313,12 @@ fn skills_root_for(state: &AppState, scope: SkillScope, workspace_id: Option<&st
     }
 }
 
-fn stage_and_annotate(state: &AppState, source: &Path, scope: SkillScope, workspace_id: Option<&str>) -> CommandResult<ImportPlan> {
+fn stage_and_annotate(
+    state: &AppState,
+    source: &Path,
+    scope: SkillScope,
+    workspace_id: Option<&str>,
+) -> CommandResult<ImportPlan> {
     let staging_id = uuid::Uuid::new_v4().to_string();
     let staging = staging_dir(state, &staging_id)?;
     let mut plan = match stage_import(source, &staging, &staging_id) {
@@ -253,12 +329,16 @@ fn stage_and_annotate(state: &AppState, source: &Path, scope: SkillScope, worksp
         }
     };
     let root = match scope {
-        SkillScope::Project => workspace_id.map(|id| workspace_root(state, id)).transpose()?.unwrap_or_else(|| PathBuf::from("/nonexistent")),
+        SkillScope::Project => workspace_id
+            .map(|id| workspace_root(state, id))
+            .transpose()?
+            .unwrap_or_else(|| PathBuf::from("/nonexistent")),
         SkillScope::User => PathBuf::from("/nonexistent"),
     };
     annotate_collisions(&mut plan, scope, &root, state.home.as_deref());
     let cache = serde_json::to_vec(&plan).map_err(|e| DesktopError::io(e.to_string()))?;
-    std::fs::write(staging.join(".plan.json"), cache).map_err(|e| DesktopError::io(e.to_string()))?;
+    std::fs::write(staging.join(".plan.json"), cache)
+        .map_err(|e| DesktopError::io(e.to_string()))?;
     Ok(plan)
 }
 
@@ -273,18 +353,36 @@ pub struct SkillImportPickRequest {
 
 /// Native picker for a skill folder or a .zip archive; stages and describes it.
 #[tauri::command]
-pub async fn skill_import_pick(request: SkillImportPickRequest, app: tauri::AppHandle, state: State<'_, AppState>) -> CommandResult<Option<ImportPlan>> {
+pub async fn skill_import_pick(
+    request: SkillImportPickRequest,
+    app: tauri::AppHandle,
+    state: State<'_, AppState>,
+) -> CommandResult<Option<ImportPlan>> {
     use tauri_plugin_dialog::DialogExt;
     let kind = request.kind.clone();
     let picked = tauri::async_runtime::spawn_blocking(move || {
         let dialog = app.dialog().file();
-        if kind == "zip" { dialog.add_filter("Zip archive", &["zip"]).blocking_pick_file() } else { dialog.blocking_pick_folder() }
+        if kind == "zip" {
+            dialog
+                .add_filter("Zip archive", &["zip"])
+                .blocking_pick_file()
+        } else {
+            dialog.blocking_pick_folder()
+        }
     })
     .await
     .map_err(|e| DesktopError::io(e.to_string()))?;
     let Some(path) = picked else { return Ok(None) };
-    let path = path.into_path().map_err(|e| DesktopError::io(e.to_string()))?;
-    stage_and_annotate(&state, &path, request.scope, request.workspace_id.as_deref()).map(Some)
+    let path = path
+        .into_path()
+        .map_err(|e| DesktopError::io(e.to_string()))?;
+    stage_and_annotate(
+        &state,
+        &path,
+        request.scope,
+        request.workspace_id.as_deref(),
+    )
+    .map(Some)
 }
 
 #[derive(Debug, Deserialize)]
@@ -297,11 +395,27 @@ pub struct SkillImportPathsRequest {
 
 /// Drag-and-drop entry point: the first folder or .zip among the dropped paths.
 #[tauri::command]
-pub fn skill_import_from_paths(request: SkillImportPathsRequest, state: State<'_, AppState>) -> CommandResult<Option<ImportPlan>> {
-    let Some(path) = request.paths.iter().map(PathBuf::from).find(|p| p.is_dir() || p.extension().and_then(|e| e.to_str()).is_some_and(|e| e.eq_ignore_ascii_case("zip"))) else {
-        return Err(DesktopError::unsupported("drop a skill folder or a .zip archive"));
+pub fn skill_import_from_paths(
+    request: SkillImportPathsRequest,
+    state: State<'_, AppState>,
+) -> CommandResult<Option<ImportPlan>> {
+    let Some(path) = request.paths.iter().map(PathBuf::from).find(|p| {
+        p.is_dir()
+            || p.extension()
+                .and_then(|e| e.to_str())
+                .is_some_and(|e| e.eq_ignore_ascii_case("zip"))
+    }) else {
+        return Err(DesktopError::unsupported(
+            "drop a skill folder or a .zip archive",
+        ));
     };
-    stage_and_annotate(&state, &path, request.scope, request.workspace_id.as_deref()).map(Some)
+    stage_and_annotate(
+        &state,
+        &path,
+        request.scope,
+        request.workspace_id.as_deref(),
+    )
+    .map(Some)
 }
 
 #[derive(Debug, Deserialize)]
@@ -314,7 +428,10 @@ pub struct SkillImportAnnotateRequest {
 
 /// Recomputes collisions for a staged plan when the target scope changes.
 #[tauri::command]
-pub fn skill_import_annotate(request: SkillImportAnnotateRequest, state: State<'_, AppState>) -> CommandResult<ImportPlan> {
+pub fn skill_import_annotate(
+    request: SkillImportAnnotateRequest,
+    state: State<'_, AppState>,
+) -> CommandResult<ImportPlan> {
     let staging = staging_dir(&state, &request.staging_id)?;
     let plan_path = staging.join(".plan.json");
     let mut plan: ImportPlan = match std::fs::read(&plan_path) {
@@ -325,7 +442,12 @@ pub fn skill_import_annotate(request: SkillImportAnnotateRequest, state: State<'
         }
     };
     let root = match request.scope {
-        SkillScope::Project => request.workspace_id.as_deref().map(|id| workspace_root(&state, id)).transpose()?.unwrap_or_else(|| PathBuf::from("/nonexistent")),
+        SkillScope::Project => request
+            .workspace_id
+            .as_deref()
+            .map(|id| workspace_root(&state, id))
+            .transpose()?
+            .unwrap_or_else(|| PathBuf::from("/nonexistent")),
         SkillScope::User => PathBuf::from("/nonexistent"),
     };
     annotate_collisions(&mut plan, request.scope, &root, state.home.as_deref());
@@ -343,13 +465,25 @@ pub struct SkillImportApplyRequest {
 }
 
 #[tauri::command]
-pub fn skill_import_apply(request: SkillImportApplyRequest, state: State<'_, AppState>) -> CommandResult<Vec<AppliedSkill>> {
+pub fn skill_import_apply(
+    request: SkillImportApplyRequest,
+    state: State<'_, AppState>,
+) -> CommandResult<Vec<AppliedSkill>> {
     let staging = staging_dir(&state, &request.staging_id)?;
-    let plan_bytes = std::fs::read(staging.join(".plan.json")).map_err(|_| DesktopError::not_ready("import staging expired; pick the source again"))?;
-    let plan: ImportPlan = serde_json::from_slice(&plan_bytes).map_err(|e| DesktopError::io(e.to_string()))?;
+    let plan_bytes = std::fs::read(staging.join(".plan.json"))
+        .map_err(|_| DesktopError::not_ready("import staging expired; pick the source again"))?;
+    let plan: ImportPlan =
+        serde_json::from_slice(&plan_bytes).map_err(|e| DesktopError::io(e.to_string()))?;
     let (skills_root, _) = skills_root_for(&state, request.scope, request.workspace_id.as_deref())?;
     let backups = skill_backup_root(&state, request.scope);
-    let applied = apply_import(&staging, &plan, &request.selected, &skills_root, request.replace, &backups)?;
+    let applied = apply_import(
+        &staging,
+        &plan,
+        &request.selected,
+        &skills_root,
+        request.replace,
+        &backups,
+    )?;
     let _ = std::fs::remove_dir_all(&staging);
     Ok(applied)
 }
@@ -362,7 +496,6 @@ pub fn skill_import_discard(staging_id: String, state: State<'_, AppState>) -> C
     }
     Ok(())
 }
-
 
 /// Backups of replaced or removed skills live in the app data directory, never
 /// inside a skills root (agents would list them).
@@ -385,8 +518,15 @@ pub struct SkillRemoveRequest {
 
 /// Removes an installed skill (CFG-10). Reversible when `keep_backup` is set.
 #[tauri::command]
-pub fn skill_remove(request: SkillRemoveRequest, state: State<'_, AppState>) -> CommandResult<RemovedSkill> {
+pub fn skill_remove(
+    request: SkillRemoveRequest,
+    state: State<'_, AppState>,
+) -> CommandResult<RemovedSkill> {
     let (skills_root, _) = skills_root_for(&state, request.scope, request.workspace_id.as_deref())?;
     let backups = skill_backup_root(&state, request.scope);
-    remove_skill(&skills_root, &request.directory_name, request.keep_backup.then_some(backups.as_path()))
+    remove_skill(
+        &skills_root,
+        &request.directory_name,
+        request.keep_backup.then_some(backups.as_path()),
+    )
 }

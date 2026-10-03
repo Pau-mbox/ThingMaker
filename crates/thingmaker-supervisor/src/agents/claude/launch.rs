@@ -147,14 +147,25 @@ pub fn locate_adapter(
         return check_pair(node, script, "the adapter chosen in Settings");
     }
     if let Some(value) = env_override.filter(|value| !value.trim().is_empty()) {
-        let (script, node) = match value.split_once(':') {
+        // A semicolon separates Windows paths; a drive letter is never
+        // mistaken for the legacy Unix script:node separator.
+        let pair = if cfg!(windows) { value.split_once(';') } else { value.split_once(':') };
+        let (script, node) = match pair {
             Some((script, node)) => (PathBuf::from(script), Some(PathBuf::from(node))),
             None => (PathBuf::from(value.as_str()), None),
         };
-        let node = node.or_else(|| node_beside(&script)).unwrap_or_else(|| PathBuf::from("/usr/bin/env"));
+        let node = node.or_else(|| node_beside(&script)).or_else(find_node)
+            .ok_or_else(|| DesktopError::not_ready("Node.js was not found. Install Node.js or choose its executable in Settings."))?;
         return check_pair(node, script, ADAPTER_ENV);
     }
     for prefix in npm_prefixes(home) {
+        #[cfg(windows)]
+        {
+            let script = prefix.join("node_modules").join(ADAPTER_PACKAGE).join(ADAPTER_ENTRY);
+            if script.is_file() && let Some(node) = find_node() {
+                return Ok((node, script));
+            }
+        }
         let script = prefix.join("lib/node_modules").join(ADAPTER_PACKAGE).join(ADAPTER_ENTRY);
         if script.is_file() {
             let node = prefix.join("bin/node");
@@ -203,9 +214,21 @@ fn npm_prefixes(home: &Path) -> Vec<PathBuf> {
         .collect();
     nvm.sort_by(|a, b| b.0.cmp(&a.0));
     let mut prefixes: Vec<PathBuf> = nvm.into_iter().map(|(_, path)| path).collect();
+    #[cfg(windows)]
+    {
+        prefixes.push(home.join("AppData/Roaming/npm"));
+        if let Some(prefix) = std::env::var_os("NPM_CONFIG_PREFIX") { prefixes.push(prefix.into()); }
+        prefixes.extend(std::env::split_paths(&std::env::var_os("PATH").unwrap_or_default()));
+    }
     prefixes.push(PathBuf::from("/opt/homebrew"));
     prefixes.push(PathBuf::from("/usr/local"));
     prefixes
+}
+
+fn find_node() -> Option<PathBuf> {
+    let name = if cfg!(windows) { "node.exe" } else { "node" };
+    std::env::split_paths(&std::env::var_os("PATH").unwrap_or_default())
+        .map(|dir| dir.join(name)).find(|path| path.is_file())
 }
 
 #[cfg(test)]

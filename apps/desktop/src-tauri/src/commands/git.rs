@@ -31,14 +31,21 @@ fn workspace(state: &AppState, workspace_id: &str) -> CommandResult<WorkspaceRec
         .ok_or_else(|| DesktopError::not_ready("workspace not found"))
 }
 
-fn git_workspace(state: &AppState, workspace_id: &str) -> CommandResult<(WorkspaceRecord, PathBuf)> {
+fn git_workspace(
+    state: &AppState,
+    workspace_id: &str,
+) -> CommandResult<(WorkspaceRecord, PathBuf)> {
     let record = workspace(state, workspace_id)?;
     if record.trust_state == TrustState::Untrusted {
-        return Err(DesktopError::untrusted("Choose an execution profile for this workspace before running Git operations from the desktop."));
+        return Err(DesktopError::untrusted(
+            "Choose an execution profile for this workspace before running Git operations from the desktop.",
+        ));
     }
     let root = PathBuf::from(&record.canonical_root);
     if !review::is_git_repository(&root) {
-        return Err(DesktopError::unsupported("This workspace is not a Git repository."));
+        return Err(DesktopError::unsupported(
+            "This workspace is not a Git repository.",
+        ));
     }
     Ok((record, root))
 }
@@ -85,7 +92,12 @@ pub struct RevertRequest {
 #[tauri::command]
 pub fn git_revert_file(request: RevertRequest, state: State<'_, AppState>) -> CommandResult<()> {
     let (_, root) = git_workspace(&state, &request.workspace_id)?;
-    review::revert_file(&root, &request.path, &request.expected_hash, request.untracked)
+    review::revert_file(
+        &root,
+        &request.path,
+        &request.expected_hash,
+        request.untracked,
+    )
 }
 
 #[derive(Debug, Deserialize)]
@@ -112,7 +124,10 @@ pub struct CommitRequest {
 }
 
 #[tauri::command]
-pub fn git_commit(request: CommitRequest, state: State<'_, AppState>) -> CommandResult<review::CommitOutcome> {
+pub fn git_commit(
+    request: CommitRequest,
+    state: State<'_, AppState>,
+) -> CommandResult<review::CommitOutcome> {
     let (_, root) = git_workspace(&state, &request.workspace_id)?;
     review::commit(&root, &request.message)
 }
@@ -160,32 +175,60 @@ pub struct FileVersions {
 }
 
 #[tauri::command]
-pub fn review_file_versions(request: VersionsRequest, state: State<'_, AppState>) -> CommandResult<FileVersions> {
+pub fn review_file_versions(
+    request: VersionsRequest,
+    state: State<'_, AppState>,
+) -> CommandResult<FileVersions> {
     let record = workspace(&state, &request.workspace_id)?;
     let root = PathBuf::from(&record.canonical_root);
     resolve_contained(&root, &request.path)?;
     let current = read_text(&root, &request.path, 0, 200_000).ok();
     let (after, after_hash) = match &current {
-        Some(read) if !read.binary && !read.truncated => (Some(read.content.clone()), Some(read.content_hash.clone())),
+        Some(read) if !read.binary && !read.truncated => {
+            (Some(read.content.clone()), Some(read.content_hash.clone()))
+        }
         _ => (None, current.as_ref().map(|r| r.content_hash.clone())),
     };
     match request.scope.as_str() {
         "baseline" | "session_baseline" => {
             let blobs = BlobStore::new(state.data_dir.join("blobs"));
             let before = match &request.before_hash {
-                Some(hash) => blobs.get(hash)?.map(|bytes| String::from_utf8_lossy(&bytes).into_owned()),
+                Some(hash) => blobs
+                    .get(hash)?
+                    .map(|bytes| String::from_utf8_lossy(&bytes).into_owned()),
                 None => None,
             };
-            Ok(FileVersions { path: request.path, before, after, before_label: "baseline".into(), after_label: "working tree".into(), after_hash })
+            Ok(FileVersions {
+                path: request.path,
+                before,
+                after,
+                before_label: "baseline".into(),
+                after_label: "working tree".into(),
+                after_hash,
+            })
         }
         "working_tree" => {
             let before = review::show_file(&root, ":0", &request.path)?;
-            Ok(FileVersions { path: request.path, before, after, before_label: "index".into(), after_label: "working tree".into(), after_hash })
+            Ok(FileVersions {
+                path: request.path,
+                before,
+                after,
+                before_label: "index".into(),
+                after_label: "working tree".into(),
+                after_hash,
+            })
         }
         "staged" => {
             let before = review::show_file(&root, "HEAD", &request.path)?;
             let index = review::show_file(&root, ":0", &request.path)?;
-            Ok(FileVersions { path: request.path, before, after: index, before_label: "HEAD".into(), after_label: "index".into(), after_hash: None })
+            Ok(FileVersions {
+                path: request.path,
+                before,
+                after: index,
+                before_label: "HEAD".into(),
+                after_label: "index".into(),
+                after_hash: None,
+            })
         }
         other => Err(DesktopError::io(format!("unknown scope {other}"))),
     }
@@ -202,16 +245,32 @@ pub struct WorktreeView {
 }
 
 fn managed_root(state: &AppState, record: &WorkspaceRecord) -> PathBuf {
-    state.data_dir.join("worktrees").join(&record.workspace_hash)
+    state
+        .data_dir
+        .join("worktrees")
+        .join(&record.workspace_hash)
 }
 
 #[tauri::command]
-pub fn worktree_list(workspace_id: String, state: State<'_, AppState>) -> CommandResult<WorktreeView> {
+pub fn worktree_list(
+    workspace_id: String,
+    state: State<'_, AppState>,
+) -> CommandResult<WorktreeView> {
     let record = workspace(&state, &workspace_id)?;
     let root = PathBuf::from(&record.canonical_root);
-    let git = if review::is_git_repository(&root) { review::worktree_list(&root)? } else { Vec::new() };
-    let managed = state.with_storage(|s| s.worktree_list(&record.id)).map_err(storage_error)?;
-    Ok(WorktreeView { git, managed, managed_root: managed_root(&state, &record).to_string_lossy().into_owned() })
+    let git = if review::is_git_repository(&root) {
+        review::worktree_list(&root)?
+    } else {
+        Vec::new()
+    };
+    let managed = state
+        .with_storage(|s| s.worktree_list(&record.id))
+        .map_err(storage_error)?;
+    Ok(WorktreeView {
+        git,
+        managed,
+        managed_root: managed_root(&state, &record).to_string_lossy().into_owned(),
+    })
 }
 
 #[derive(Debug, Deserialize)]
@@ -235,29 +294,60 @@ pub struct WorktreeCreated {
 }
 
 #[tauri::command]
-pub fn worktree_create(request: WorktreeCreateRequest, state: State<'_, AppState>) -> CommandResult<WorktreeCreated> {
+pub fn worktree_create(
+    request: WorktreeCreateRequest,
+    state: State<'_, AppState>,
+) -> CommandResult<WorktreeCreated> {
     let (record, root) = git_workspace(&state, &request.workspace_id)?;
     let slug: String = request
         .branch
         .chars()
-        .map(|c| if c.is_ascii_alphanumeric() || c == '-' || c == '_' || c == '.' { c } else { '-' })
+        .map(|c| {
+            if c.is_ascii_alphanumeric() || c == '-' || c == '_' || c == '.' {
+                c
+            } else {
+                '-'
+            }
+        })
         .collect();
     let path = managed_root(&state, &record).join(slug);
-    let (patch, untracked) = if request.carry_uncommitted { review::uncommitted_snapshot(&root)? } else { (String::new(), Vec::new()) };
+    let (patch, untracked) = if request.carry_uncommitted {
+        review::uncommitted_snapshot(&root)?
+    } else {
+        (String::new(), Vec::new())
+    };
     review::worktree_add(&root, &path, &request.branch, &request.base_ref)?;
     if request.carry_uncommitted {
         review::transfer_uncommitted(&root, &path, &patch, &untracked)?;
     }
     let worktree = state
-        .with_storage(|s| s.worktree_insert(&record.id, &path.to_string_lossy(), &request.branch, &request.base_ref))
+        .with_storage(|s| {
+            s.worktree_insert(
+                &record.id,
+                &path.to_string_lossy(),
+                &request.branch,
+                &request.base_ref,
+            )
+        })
         .map_err(storage_error)?;
     // The worktree is its own workspace root; it inherits nothing implicitly,
     // so the user reviews and trusts it like any other folder.
     let identity = WorkspaceIdentity::resolve(&path)?;
     let workspace = state
-        .with_storage(|s| s.workspace_upsert(&identity.canonical_root.to_string_lossy(), &identity.display_path, &identity.workspace_hash))
+        .with_storage(|s| {
+            s.workspace_upsert(
+                &identity.canonical_root.to_string_lossy(),
+                &identity.display_path,
+                &identity.workspace_hash,
+            )
+        })
         .map_err(storage_error)?;
-    Ok(WorktreeCreated { record: worktree, workspace, carried_patch_bytes: patch.len(), carried_untracked: untracked.len() })
+    Ok(WorktreeCreated {
+        record: worktree,
+        workspace,
+        carried_patch_bytes: patch.len(),
+        carried_untracked: untracked.len(),
+    })
 }
 
 #[derive(Debug, Deserialize)]
@@ -280,51 +370,97 @@ pub struct WorktreeRemovePreview {
 
 /// What removal would do, so the renderer can show it before confirming.
 #[tauri::command]
-pub fn worktree_remove_preview(request: WorktreeRemoveRequest, state: State<'_, AppState>) -> CommandResult<WorktreeRemovePreview> {
+pub fn worktree_remove_preview(
+    request: WorktreeRemoveRequest,
+    state: State<'_, AppState>,
+) -> CommandResult<WorktreeRemovePreview> {
     let record = workspace(&state, &request.workspace_id)?;
-    let worktrees = state.with_storage(|s| s.worktree_list(&record.id)).map_err(storage_error)?;
-    let worktree = worktrees.into_iter().find(|w| w.id == request.worktree_id).ok_or_else(|| DesktopError::not_ready("worktree not found"))?;
+    let worktrees = state
+        .with_storage(|s| s.worktree_list(&record.id))
+        .map_err(storage_error)?;
+    let worktree = worktrees
+        .into_iter()
+        .find(|w| w.id == request.worktree_id)
+        .ok_or_else(|| DesktopError::not_ready("worktree not found"))?;
     let path = PathBuf::from(&worktree.path);
     let live = state.actors_under(&path);
     let (dirty, untracked) = if path.exists() {
         let status = review::git_status(&path)?;
         (
-            status.iter().filter(|e| !e.untracked).map(|e| e.path.clone()).collect(),
-            status.iter().filter(|e| e.untracked).map(|e| e.path.clone()).collect(),
+            status
+                .iter()
+                .filter(|e| !e.untracked)
+                .map(|e| e.path.clone())
+                .collect(),
+            status
+                .iter()
+                .filter(|e| e.untracked)
+                .map(|e| e.path.clone())
+                .collect(),
         )
     } else {
         (Vec::new(), Vec::new())
     };
-    Ok(WorktreeRemovePreview { path: worktree.path, branch: worktree.branch, live_sessions: live, dirty_files: dirty, untracked_files: untracked, pinned: worktree.pinned })
+    Ok(WorktreeRemovePreview {
+        path: worktree.path,
+        branch: worktree.branch,
+        live_sessions: live,
+        dirty_files: dirty,
+        untracked_files: untracked,
+        pinned: worktree.pinned,
+    })
 }
 
 /// Removes a managed worktree after snapshotting its dirty and untracked files
 /// into the blob store (recorded as a `worktree_cleanup` baseline). Refuses
 /// while sessions are attached to it or when pinned.
 #[tauri::command]
-pub fn worktree_remove(request: WorktreeRemoveRequest, state: State<'_, AppState>) -> CommandResult<Option<String>> {
+pub fn worktree_remove(
+    request: WorktreeRemoveRequest,
+    state: State<'_, AppState>,
+) -> CommandResult<Option<String>> {
     let (record, root) = git_workspace(&state, &request.workspace_id)?;
-    let worktrees = state.with_storage(|s| s.worktree_list(&record.id)).map_err(storage_error)?;
-    let worktree = worktrees.into_iter().find(|w| w.id == request.worktree_id).ok_or_else(|| DesktopError::not_ready("worktree not found"))?;
+    let worktrees = state
+        .with_storage(|s| s.worktree_list(&record.id))
+        .map_err(storage_error)?;
+    let worktree = worktrees
+        .into_iter()
+        .find(|w| w.id == request.worktree_id)
+        .ok_or_else(|| DesktopError::not_ready("worktree not found"))?;
     if worktree.pinned {
-        return Err(DesktopError::conflict("this worktree is pinned; unpin it first"));
+        return Err(DesktopError::conflict(
+            "this worktree is pinned; unpin it first",
+        ));
     }
     let path = PathBuf::from(&worktree.path);
     let live = state.actors_under(&path);
     if !live.is_empty() {
-        return Err(DesktopError::conflict(format!("{} live session(s) still use this worktree; stop them first", live.len())));
+        return Err(DesktopError::conflict(format!(
+            "{} live session(s) still use this worktree; stop them first",
+            live.len()
+        )));
     }
     let mut snapshot_id = None;
     if path.exists() {
         let blobs = BlobStore::new(state.data_dir.join("blobs"));
         let manifest = capture_baseline(&path, &blobs)?;
         let saved = state
-            .with_storage(|s| s.baseline_insert(&record.id, None, "worktree_cleanup", Some(&worktree.branch), &manifest))
+            .with_storage(|s| {
+                s.baseline_insert(
+                    &record.id,
+                    None,
+                    "worktree_cleanup",
+                    Some(&worktree.branch),
+                    &manifest,
+                )
+            })
             .map_err(storage_error)?;
         snapshot_id = Some(saved.id);
         review::worktree_remove(&root, &path, true)?;
     }
-    state.with_storage(|s| s.worktree_mark_removed(&worktree.id)).map_err(storage_error)?;
+    state
+        .with_storage(|s| s.worktree_mark_removed(&worktree.id))
+        .map_err(storage_error)?;
     Ok(snapshot_id)
 }
 
@@ -337,7 +473,9 @@ pub struct PinRequest {
 
 #[tauri::command]
 pub fn worktree_pin(request: PinRequest, state: State<'_, AppState>) -> CommandResult<()> {
-    state.with_storage(|s| s.worktree_set_pinned(&request.worktree_id, request.pinned)).map_err(storage_error)
+    state
+        .with_storage(|s| s.worktree_set_pinned(&request.worktree_id, request.pinned))
+        .map_err(storage_error)
 }
 
 // --- External editors (EDT-01) -----------------------------------------------
@@ -363,36 +501,61 @@ pub struct OpenInEditorRequest {
 
 fn find_on_path(name: &str) -> Option<PathBuf> {
     let path_var = std::env::var_os("PATH")?;
-    std::env::split_paths(&path_var).map(|dir| dir.join(name)).find(|candidate| candidate.is_file())
+    std::env::split_paths(&path_var)
+        .map(|dir| dir.join(name))
+        .find(|candidate| candidate.is_file())
 }
 
 /// Opens a workspace file in an allowlisted editor with validated arguments.
 #[tauri::command]
-pub fn open_in_editor(request: OpenInEditorRequest, state: State<'_, AppState>) -> CommandResult<()> {
+pub fn open_in_editor(
+    request: OpenInEditorRequest,
+    state: State<'_, AppState>,
+) -> CommandResult<()> {
     let record = workspace(&state, &request.workspace_id)?;
     let root = Path::new(&record.canonical_root);
     let target = resolve_contained(root, &request.relative)?;
     let line = request.line.unwrap_or(1).max(1);
     let (program, args): (PathBuf, Vec<String>) = match request.editor {
         EditorProfile::Vscode => (
-            find_on_path("code").ok_or_else(|| DesktopError::unsupported("VS Code's `code` command is not on PATH"))?,
+            find_on_path("code").ok_or_else(|| {
+                DesktopError::unsupported("VS Code's `code` command is not on PATH")
+            })?,
             vec!["--goto".into(), format!("{}:{line}", target.display())],
         ),
         EditorProfile::Cursor => (
-            find_on_path("cursor").ok_or_else(|| DesktopError::unsupported("Cursor's `cursor` command is not on PATH"))?,
+            find_on_path("cursor").ok_or_else(|| {
+                DesktopError::unsupported("Cursor's `cursor` command is not on PATH")
+            })?,
             vec!["--goto".into(), format!("{}:{line}", target.display())],
         ),
         EditorProfile::Rider => (
-            find_on_path("rider").ok_or_else(|| DesktopError::unsupported("JetBrains Rider's `rider` command is not on PATH"))?,
-            vec!["--line".into(), line.to_string(), target.display().to_string()],
+            find_on_path("rider").ok_or_else(|| {
+                DesktopError::unsupported("JetBrains Rider's `rider` command is not on PATH")
+            })?,
+            vec![
+                "--line".into(),
+                line.to_string(),
+                target.display().to_string(),
+            ],
         ),
         EditorProfile::System => {
             if cfg!(target_os = "macos") {
-                (PathBuf::from("/usr/bin/open"), vec![target.display().to_string()])
+                (
+                    PathBuf::from("/usr/bin/open"),
+                    vec![target.display().to_string()],
+                )
             } else if cfg!(target_os = "windows") {
-                (PathBuf::from("explorer"), vec![target.display().to_string()])
+                (
+                    PathBuf::from("explorer"),
+                    vec![target.display().to_string()],
+                )
             } else {
-                (find_on_path("xdg-open").ok_or_else(|| DesktopError::unsupported("xdg-open not found"))?, vec![target.display().to_string()])
+                (
+                    find_on_path("xdg-open")
+                        .ok_or_else(|| DesktopError::unsupported("xdg-open not found"))?,
+                    vec![target.display().to_string()],
+                )
             }
         }
     };

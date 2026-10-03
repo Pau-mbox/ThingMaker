@@ -13,19 +13,27 @@ pub fn now_ms() -> i64 {
         .unwrap_or(0)
 }
 
-#[cfg(unix)]
+#[cfg(any(unix, windows))]
 fn local_parts(at_ms: i64) -> Option<libc::tm> {
     let seconds = (at_ms.div_euclid(1000)) as libc::time_t;
     // SAFETY: `localtime_r` writes only into the `tm` it is given.
     let mut tm: libc::tm = unsafe { std::mem::zeroed() };
-    let result = unsafe { libc::localtime_r(&seconds, &mut tm) };
-    if result.is_null() { None } else { Some(tm) }
+    #[cfg(unix)]
+    let valid = !unsafe { libc::localtime_r(&seconds, &mut tm) }.is_null();
+    #[cfg(windows)]
+    let valid = unsafe { libc::localtime_s(&mut tm, &seconds) } == 0;
+    if valid { Some(tm) } else { None }
+}
+
+#[cfg(windows)]
+unsafe extern "C" {
+    fn _mktime64(tm: *mut libc::tm) -> i64;
 }
 
 /// The next instant after `now_ms` at which the local clock reads
 /// `hour:minute` — today if that is still ahead, else tomorrow.
 pub fn next_local_time(now_ms: i64, hour: u32, minute: u32) -> i64 {
-    #[cfg(unix)]
+    #[cfg(any(unix, windows))]
     {
         if let Some(mut tm) = local_parts(now_ms) {
             tm.tm_hour = hour as libc::c_int;
@@ -33,9 +41,13 @@ pub fn next_local_time(now_ms: i64, hour: u32, minute: u32) -> i64 {
             tm.tm_sec = 0;
             tm.tm_isdst = -1;
             // SAFETY: `mktime` normalises the struct it is given.
-            let seconds = unsafe { libc::mktime(&mut tm) };
+            #[cfg(unix)]
+            #[allow(clippy::unnecessary_cast)] // time_t is 32-bit on some supported Unix targets.
+            let seconds = unsafe { libc::mktime(&mut tm) } as i64;
+            #[cfg(windows)]
+            let seconds = unsafe { _mktime64(&mut tm) };
             if seconds != -1 {
-                let mut at = seconds as i64 * 1000;
+                let mut at = seconds * 1000;
                 if at <= now_ms {
                     at += 24 * 60 * 60_000;
                 }
@@ -56,7 +68,7 @@ pub fn next_local_time(now_ms: i64, hour: u32, minute: u32) -> i64 {
 
 /// `HH:MM` in local time, for messages.
 pub fn local_hhmm(at_ms: i64) -> String {
-    #[cfg(unix)]
+    #[cfg(any(unix, windows))]
     {
         if let Some(tm) = local_parts(at_ms) {
             return format!("{:02}:{:02}", tm.tm_hour, tm.tm_min);

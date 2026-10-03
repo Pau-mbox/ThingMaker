@@ -7,7 +7,7 @@
  * safe — which is the whole point of it existing.
  */
 import { useCallback, useEffect, useState } from "react";
-import { getCurrentWebview } from "@tauri-apps/api/webview";
+import { getCurrentWebview } from "../bridge";
 import type { AmendmentRecord, AmendmentRef } from "@thingmaker/contracts";
 import { useStore } from "../store";
 import { api } from "../ipc";

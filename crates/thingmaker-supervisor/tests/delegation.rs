@@ -167,7 +167,7 @@ impl Client {
 async fn an_orchestrator_delegates_over_mcp_and_awaits_the_report() {
     let Some((delegation, launcher, changes)) = service(&[]) else { return };
     let dir = tempfile::tempdir().unwrap();
-    let socket = DelegationSocket::bind(delegation.clone(), dir.path().join("mcp.sock")).unwrap();
+    let socket = DelegationSocket::bind(delegation.clone(), thingmaker_supervisor::delegation::socket::socket_path(dir.path())).unwrap();
     let token = delegation.register("cx-orchestrator", Provider::Claude, dir.path().to_path_buf(), team());
 
     // A stranger's token gets nothing.

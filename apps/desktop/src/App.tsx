@@ -13,6 +13,17 @@ import { IntegrationsPanel } from "./components/IntegrationsPanel";
 import { TeamsView } from "./components/TeamsView";
 import { CommandPalette } from "./components/CommandPalette";
 import { IconFolder, IconKey } from "./components/icons";
+import { isRemote, listen, disconnectRemote } from "./bridge";
+import { useState } from "react";
+
+function RemoteConnection() {
+  const [status, setStatus] = useState("connected");
+  useEffect(() => { const unlisten = listen<string>("thingmaker://connection", event => {
+    setStatus(event.payload);
+    if (event.payload === "connected" && useStore.getState().error?.code === "IO") { useStore.getState().clearError(); void useStore.getState().bootstrap(); }
+  }); return () => { void unlisten.then(fn => fn()); }; }, []);
+  return <div className={`remote-connection ${status === "connected" ? "" : "remote-offline"}`} role="status"><span>{status === "connected" ? "Conectado al PC" : status === "unauthorized" ? "API key incorrecta o revocada" : status === "update-required" ? "Actualiza ThingMaker en el PC" : "Reconectando con el PC…"}</span><button className="link" onClick={disconnectRemote} type="button">Desconectar</button></div>;
+}
 
 function Welcome() {
   const addWorkspaceByPicker = useStore((s) => s.addWorkspaceByPicker);
@@ -72,6 +83,12 @@ export function App() {
   useEffect(() => {
     void bootstrap();
   }, [bootstrap]);
+  useEffect(() => {
+    if (!isRemote) return;
+    const back = () => useStore.getState().toggleSidebar();
+    window.addEventListener("thingmaker-mobile-back", back);
+    return () => window.removeEventListener("thingmaker-mobile-back", back);
+  }, []);
 
   useKeyboardShortcuts();
 
@@ -83,7 +100,9 @@ export function App() {
       <CommandPalette />
       <CloseRequestDialog />
       <LockedResumeDialog />
+      {isRemote && <RemoteConnection />}
       <div className="shell">
+        {isRemote && !sidebarCollapsed && <button className="mobile-sidebar-backdrop" aria-label="Cerrar menú" onClick={() => useStore.getState().toggleSidebar()} />}
         {!sidebarCollapsed && (
           <ErrorBoundary label="sidebar">
             <Sidebar />

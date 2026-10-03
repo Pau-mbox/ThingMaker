@@ -80,7 +80,9 @@ fn valid_clock(value: &str) -> bool {
 
 pub fn load_settings(state: &AppState) -> NotificationSettings {
     state
-        .with_storage(|storage| storage.setting_get::<NotificationSettings>(SETTINGS_KEY, GLOBAL_SCOPE))
+        .with_storage(|storage| {
+            storage.setting_get::<NotificationSettings>(SETTINGS_KEY, GLOBAL_SCOPE)
+        })
         .ok()
         .flatten()
         .unwrap_or_default()
@@ -92,23 +94,43 @@ pub fn settings_get(state: State<'_, AppState>) -> CommandResult<NotificationSet
 }
 
 #[tauri::command]
-pub fn settings_set(settings: NotificationSettings, state: State<'_, AppState>) -> CommandResult<NotificationSettings> {
+pub fn settings_set(
+    settings: NotificationSettings,
+    state: State<'_, AppState>,
+) -> CommandResult<NotificationSettings> {
     if !valid_clock(&settings.quiet_hours_start) || !valid_clock(&settings.quiet_hours_end) {
         return Err(DesktopError::io("quiet hours must be HH:MM (24-hour)"));
     }
-    if settings.muted_workspace_ids.len() > 1000 || settings.muted_workspace_ids.iter().any(|id| id.len() > 128) {
+    if settings.muted_workspace_ids.len() > 1000
+        || settings.muted_workspace_ids.iter().any(|id| id.len() > 128)
+    {
         return Err(DesktopError::io("invalid muted workspace list"));
     }
     // A goal that could not continue at all, or a nonsense budget, would be a
     // setting that quietly breaks the runner.
     if settings.odyssey_max_continuations < 1 || settings.odyssey_max_continuations > 10_000 {
-        return Err(DesktopError::io("the Big Thing continuation limit must be between 1 and 10000"));
+        return Err(DesktopError::io(
+            "the Big Thing continuation limit must be between 1 and 10000",
+        ));
     }
-    if settings.odyssey_token_budget.is_some_and(|budget| budget < 1) {
-        return Err(DesktopError::io("a Big Thing token budget must be positive, or unset"));
+    if settings
+        .odyssey_token_budget
+        .is_some_and(|budget| budget < 1)
+    {
+        return Err(DesktopError::io(
+            "a Big Thing token budget must be positive, or unset",
+        ));
     }
-    if [&settings.claude_orchestrator_model, &settings.claude_orchestrator_effort].iter().any(|value| value.as_ref().is_some_and(|text| text.len() > 128)) {
-        return Err(DesktopError::io("the Claude model or effort is not a valid id"));
+    if [
+        &settings.claude_orchestrator_model,
+        &settings.claude_orchestrator_effort,
+    ]
+    .iter()
+    .any(|value| value.as_ref().is_some_and(|text| text.len() > 128))
+    {
+        return Err(DesktopError::io(
+            "the Claude model or effort is not a valid id",
+        ));
     }
     state
         .with_storage(|storage| storage.setting_set(SETTINGS_KEY, GLOBAL_SCOPE, &settings))
@@ -120,7 +142,9 @@ pub fn settings_set(settings: NotificationSettings, state: State<'_, AppState>) 
 #[tauri::command]
 pub fn app_hide_to_tray(app: AppHandle) -> CommandResult<()> {
     if let Some(window) = app.get_webview_window("main") {
-        window.hide().map_err(|error| DesktopError::io(error.to_string()))?;
+        window
+            .hide()
+            .map_err(|error| DesktopError::io(error.to_string()))?;
     }
     Ok(())
 }
@@ -135,9 +159,7 @@ pub fn show_main_window(app: &AppHandle) {
 
 /// Stops every attached helper within a bounded budget, then exits.
 pub async fn quit_and_stop(app: AppHandle, stop_sessions: bool) {
-    if stop_sessions
-        && let Some(state) = app.try_state::<AppState>()
-    {
+    if stop_sessions && let Some(state) = app.try_state::<AppState>() {
         state.terminals.close_all();
         let ids = state.actor_ids();
         let actors: Vec<_> = ids.iter().filter_map(|id| state.remove_actor(id)).collect();
@@ -147,7 +169,9 @@ pub async fn quit_and_stop(app: AppHandle, stop_sessions: bool) {
     app.exit(0);
 }
 
-async fn futures_join_all<F: std::future::Future>(futures: impl IntoIterator<Item = F>) -> Vec<F::Output> {
+async fn futures_join_all<F: std::future::Future>(
+    futures: impl IntoIterator<Item = F>,
+) -> Vec<F::Output> {
     let mut handles = Vec::new();
     for future in futures {
         handles.push(Box::pin(future));
@@ -188,8 +212,15 @@ pub async fn confirm_dialog(request: ConfirmRequest, app: AppHandle) -> CommandR
         app.dialog()
             .message(request.message)
             .title(request.title)
-            .kind(if request.warning { MessageDialogKind::Warning } else { MessageDialogKind::Info })
-            .buttons(MessageDialogButtons::OkCancelCustom(request.ok_label, request.cancel_label))
+            .kind(if request.warning {
+                MessageDialogKind::Warning
+            } else {
+                MessageDialogKind::Info
+            })
+            .buttons(MessageDialogButtons::OkCancelCustom(
+                request.ok_label,
+                request.cancel_label,
+            ))
             .blocking_show()
     })
     .await
@@ -234,7 +265,12 @@ mod tests {
     #[test]
     fn clock_validation_and_defaults() {
         assert!(valid_clock("00:00") && valid_clock("23:59") && valid_clock("7:05"));
-        assert!(!valid_clock("24:00") && !valid_clock("12") && !valid_clock("12:60") && !valid_clock("a:b"));
+        assert!(
+            !valid_clock("24:00")
+                && !valid_clock("12")
+                && !valid_clock("12:60")
+                && !valid_clock("a:b")
+        );
         let defaults = NotificationSettings::default();
         assert!(defaults.enabled && defaults.close_behavior == CloseBehavior::Ask);
         let parsed: NotificationSettings = serde_json::from_str("{\"enabled\": false}").unwrap();
@@ -242,24 +278,44 @@ mod tests {
     }
 }
 
-
 /// Small, non-secret UI preferences (composer keys, context bundles, layout)
 /// stored in the metadata database under the `ui` scope.
 #[tauri::command]
-pub fn pref_get(key: String, state: State<'_, AppState>) -> CommandResult<Option<serde_json::Value>> {
+pub fn pref_get(
+    key: String,
+    state: State<'_, AppState>,
+) -> CommandResult<Option<serde_json::Value>> {
     if key.is_empty() || key.len() > 200 {
-        return Err(thingmaker_supervisor::DesktopError::io("invalid preference key"));
+        return Err(thingmaker_supervisor::DesktopError::io(
+            "invalid preference key",
+        ));
     }
-    state.with_storage(|s| s.setting_get::<serde_json::Value>(&key, "ui")).map_err(super::storage_error)
+    state
+        .with_storage(|s| s.setting_get::<serde_json::Value>(&key, "ui"))
+        .map_err(super::storage_error)
 }
 
 #[tauri::command]
-pub fn pref_set(key: String, value: serde_json::Value, state: State<'_, AppState>) -> CommandResult<()> {
+pub fn pref_set(
+    key: String,
+    value: serde_json::Value,
+    state: State<'_, AppState>,
+) -> CommandResult<()> {
     if key.is_empty() || key.len() > 200 {
-        return Err(thingmaker_supervisor::DesktopError::io("invalid preference key"));
+        return Err(thingmaker_supervisor::DesktopError::io(
+            "invalid preference key",
+        ));
     }
-    if serde_json::to_vec(&value).map(|v| v.len()).unwrap_or(usize::MAX) > 256 * 1024 {
-        return Err(thingmaker_supervisor::DesktopError::limit_exceeded("preference exceeds 256 KiB"));
+    if serde_json::to_vec(&value)
+        .map(|v| v.len())
+        .unwrap_or(usize::MAX)
+        > 256 * 1024
+    {
+        return Err(thingmaker_supervisor::DesktopError::limit_exceeded(
+            "preference exceeds 256 KiB",
+        ));
     }
-    state.with_storage(|s| s.setting_set(&key, "ui", &value)).map_err(super::storage_error)
+    state
+        .with_storage(|s| s.setting_set(&key, "ui", &value))
+        .map_err(super::storage_error)
 }

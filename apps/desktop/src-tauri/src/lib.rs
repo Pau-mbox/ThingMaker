@@ -10,10 +10,13 @@
 //! tray, the app quits after stopping agents, or the renderer asks.
 
 pub mod commands;
+mod remote;
+mod remote_dispatch;
+mod remote_ws;
 pub mod state;
 
 use tauri::{
-    Emitter, Manager, RunEvent, WindowEvent,
+    Emitter, Manager, WindowEvent,
     menu::{Menu, MenuItem},
     tray::TrayIconBuilder,
 };
@@ -24,7 +27,8 @@ pub const CLOSE_REQUESTED_EVENT: &str = "thingmaker://close-requested";
 
 /// Handle used to attach the rolling file layer once the data directory is
 /// known (REL-05). Logs never carry prompt content or credentials.
-type FileLayer = Option<Box<dyn tracing_subscriber::Layer<tracing_subscriber::Registry> + Send + Sync>>;
+type FileLayer =
+    Option<Box<dyn tracing_subscriber::Layer<tracing_subscriber::Registry> + Send + Sync>>;
 
 /// Brings data over from before the app was called ThingMaker.
 ///
@@ -37,8 +41,14 @@ fn migrate_legacy_data(data_dir: &std::path::Path) {
     if data_dir.join("thingmaker.db").exists() {
         return;
     }
-    let Some(parent) = data_dir.parent() else { return };
-    let legacy_id = if data_dir.ends_with("dev.thingmaker.desktop.dev") { "dev.claudex.desktop.dev" } else { "dev.claudex.desktop" };
+    let Some(parent) = data_dir.parent() else {
+        return;
+    };
+    let legacy_id = if data_dir.ends_with("dev.thingmaker.desktop.dev") {
+        "dev.claudex.desktop.dev"
+    } else {
+        "dev.claudex.desktop"
+    };
     let legacy = parent.join(legacy_id);
     if !legacy.join("claudex.db").is_file() {
         return;
@@ -71,7 +81,10 @@ fn migrate_legacy_data(data_dir: &std::path::Path) {
             }
             eprintln!("ThingMaker: brought data over from {}", legacy.display());
         }
-        Err(error) => eprintln!("ThingMaker: could not bring data over from {}: {error}", legacy.display()),
+        Err(error) => eprintln!(
+            "ThingMaker: could not bring data over from {}: {error}",
+            legacy.display()
+        ),
     }
 }
 
@@ -79,8 +92,10 @@ pub fn run() {
     use tracing_subscriber::{Layer, layer::SubscriberExt, util::SubscriberInitExt};
     // One global filter for both outputs: per-layer filters cannot live inside
     // a reloadable slot that starts empty (they would have no FilterId).
-    let filter = tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info"));
-    let (file_layer, file_handle) = tracing_subscriber::reload::Layer::<FileLayer, tracing_subscriber::Registry>::new(None);
+    let filter = tracing_subscriber::EnvFilter::try_from_default_env()
+        .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info"));
+    let (file_layer, file_handle) =
+        tracing_subscriber::reload::Layer::<FileLayer, tracing_subscriber::Registry>::new(None);
     let file_handle = std::sync::Arc::new(file_handle);
     tracing_subscriber::registry()
         .with(file_layer)
@@ -88,7 +103,8 @@ pub fn run() {
         .with(filter)
         .init();
     // Kept alive for the process lifetime so buffered log lines are flushed.
-    static LOG_GUARD: std::sync::OnceLock<tracing_appender::non_blocking::WorkerGuard> = std::sync::OnceLock::new();
+    static LOG_GUARD: std::sync::OnceLock<tracing_appender::non_blocking::WorkerGuard> =
+        std::sync::OnceLock::new();
 
     let app = tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
@@ -107,13 +123,18 @@ pub fn run() {
                 let appender = tracing_appender::rolling::daily(&logs_dir, "desktop.log");
                 let (writer, guard) = tracing_appender::non_blocking(appender);
                 let _ = LOG_GUARD.set(guard);
-                let layer = tracing_subscriber::fmt::layer().with_ansi(false).with_target(true).with_writer(writer).boxed();
+                let layer = tracing_subscriber::fmt::layer()
+                    .with_ansi(false)
+                    .with_target(true)
+                    .with_writer(writer)
+                    .boxed();
                 let _ = file_handle.modify(|slot| *slot = Some(layer));
             }
             let resource_dir = app.path().resource_dir().ok();
             let state = state::AppState::initialize(&data_dir, resource_dir.as_deref())
                 .map_err(|error| format!("could not initialize desktop state: {error}"))?;
             app.manage(state);
+            remote::start(app.handle());
             // Delegation is an addition, not a precondition: without its
             // socket, sessions open as plain ones.
             if let Err(error) = commands::delegation::start(app.handle()) {
@@ -123,7 +144,8 @@ pub fn run() {
             commands::bigthing::start(app.handle());
 
             let show = MenuItem::with_id(app, "show", "Show ThingMaker", true, None::<&str>)?;
-            let quit = MenuItem::with_id(app, "quit", "Quit and stop local tasks", true, None::<&str>)?;
+            let quit =
+                MenuItem::with_id(app, "quit", "Quit and stop local tasks", true, None::<&str>)?;
             let menu = Menu::with_items(app, &[&show, &quit])?;
             let mut tray = TrayIconBuilder::with_id("main")
                 .menu(&menu)
@@ -138,8 +160,11 @@ pub fn run() {
                 });
             // A transparent silhouette, not the Dock tile. macOS template rendering
             // automatically supplies the right color for light and dark menu bars.
-            let tray_icon = tauri::image::Image::from_bytes(include_bytes!("../icons/tray-icon.png"))?;
-            tray = tray.icon(tray_icon).icon_as_template(cfg!(target_os = "macos"));
+            let tray_icon =
+                tauri::image::Image::from_bytes(include_bytes!("../icons/tray-icon.png"))?;
+            tray = tray
+                .icon(tray_icon)
+                .icon_as_template(cfg!(target_os = "macos"));
             tray.build(app)?;
             Ok(())
         })
@@ -170,6 +195,8 @@ pub fn run() {
             }
         })
         .invoke_handler(tauri::generate_handler![
+            remote::remote_key_get,
+            remote::remote_key_rotate,
             commands::workspace::execution_profiles,
             commands::workspace::workspace_inspect,
             commands::workspace::workspace_trust,
@@ -354,7 +381,7 @@ pub fn run() {
 
     app.run(|app, event| {
         #[cfg(target_os = "macos")]
-        if let RunEvent::Reopen { .. } = event {
+        if let tauri::RunEvent::Reopen { .. } = event {
             show_main_window(app);
         }
         #[cfg(not(target_os = "macos"))]

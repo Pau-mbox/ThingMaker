@@ -6,7 +6,7 @@
  * and are kept as a backup directory.
  */
 import { useEffect, useState } from "react";
-import { getCurrentWebview } from "@tauri-apps/api/webview";
+import { getCurrentWebview } from "../bridge";
 import type { ImportPlan, SkillScope } from "@thingmaker/contracts";
 import { api } from "../ipc";
 import { useStore } from "../store";

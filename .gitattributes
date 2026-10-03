@@ -1,0 +1,4 @@
+# Protocol text and fixtures must keep the same newlines on all hosts.
+runtime/** text eol=lf
+*.sh text eol=lf
+*.py text eol=lf

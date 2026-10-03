@@ -86,13 +86,21 @@ impl EnvironmentProfile {
     pub fn with_tool_paths(mut self, home: &std::path::Path) -> Self {
         let mut nvm: Vec<std::path::PathBuf> = std::fs::read_dir(home.join(".nvm/versions/node")).into_iter().flatten().flatten().map(|entry| entry.path().join("bin")).collect();
         nvm.sort();
-        let candidates = nvm.into_iter().rev().take(1).chain([
+        #[cfg_attr(not(windows), allow(unused_mut))]
+        let mut candidates: Vec<_> = nvm.into_iter().rev().take(1).chain([
             std::path::PathBuf::from("/opt/homebrew/bin"),
             std::path::PathBuf::from("/usr/local/bin"),
             home.join(".local/bin"),
             home.join(".cargo/bin"),
             home.join(".bun/bin"),
-        ]);
+        ]).collect();
+        #[cfg(windows)]
+        {
+            candidates.push(home.join("AppData/Roaming/npm"));
+            if let Some(program_files) = std::env::var_os("ProgramFiles") {
+                candidates.push(std::path::PathBuf::from(program_files).join("nodejs"));
+            }
+        }
         for dir in candidates {
             if dir.is_dir() {
                 self.extra_path.push(dir.to_string_lossy().into_owned());
@@ -118,22 +126,28 @@ impl EnvironmentProfile {
     ) -> BTreeMap<String, String> {
         let mut env = BTreeMap::new();
         for (name, value) in parent {
-            let inherited = self.inherit_names.iter().any(|n| n == &name)
+            let inherited = self.inherit_names.iter().any(|n| if cfg!(windows) { n.eq_ignore_ascii_case(&name) } else { n == &name })
                 || self.allow_names.iter().any(|n| n == &name)
                 || self.inherit_prefixes.iter().any(|prefix| name.starts_with(prefix));
             if inherited {
+                // Windows environment names are case insensitive. Normalize
+                // PATH before adding tool directories (Explorer uses Path).
+                let name = if cfg!(windows) && name.eq_ignore_ascii_case("PATH") { "PATH".to_string() } else { name };
                 env.insert(name, value);
             }
         }
         if !self.extra_path.is_empty() {
             let current = env.get("PATH").cloned().unwrap_or_default();
-            let mut parts: Vec<String> = current.split(':').filter(|part| !part.is_empty()).map(str::to_string).collect();
+            let mut parts: Vec<std::path::PathBuf> = std::env::split_paths(&current).collect();
             for dir in &self.extra_path {
-                if !parts.contains(dir) {
-                    parts.push(dir.clone());
+                let dir = std::path::PathBuf::from(dir);
+                if !parts.contains(&dir) {
+                    parts.push(dir);
                 }
             }
-            env.insert("PATH".into(), parts.join(":"));
+            if let Ok(path) = std::env::join_paths(parts) {
+                env.insert("PATH".into(), path.to_string_lossy().into_owned());
+            }
         }
         for (name, value) in &self.set {
             env.insert(name.clone(), value.clone());
@@ -169,12 +183,28 @@ mod tests {
         let mut profile = EnvironmentProfile::trusted_local();
         profile.extra_path = vec!["/opt/tools".into(), "/bin".into()];
         let env = profile.resolve(parent());
-        assert_eq!(env.get("PATH").map(String::as_str), Some("/usr/bin:/bin:/opt/tools"));
+        let expected = if cfg!(windows) { "/usr/bin:/bin;/opt/tools;/bin" } else { "/usr/bin:/bin:/opt/tools" };
+        assert_eq!(env.get("PATH").map(String::as_str), Some(expected));
         let temp = tempfile::tempdir().unwrap();
         std::fs::create_dir_all(temp.path().join(".nvm/versions/node/v24.1.0/bin")).unwrap();
         std::fs::create_dir_all(temp.path().join(".local/bin")).unwrap();
         let found = EnvironmentProfile::trusted_local().with_tool_paths(temp.path()).extra_path;
-        assert!(found.first().unwrap().ends_with("v24.1.0/bin") && found.iter().any(|dir| dir.ends_with(".local/bin")));
+        assert!(std::path::Path::new(found.first().unwrap()).ends_with("v24.1.0/bin") && found.iter().any(|dir| std::path::Path::new(dir).ends_with(".local/bin")));
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn windows_path_preserves_drive_letters_and_inherited_mixed_case_names() {
+        let mut profile = EnvironmentProfile::trusted_local();
+        profile.extra_path = vec![r"C:\Tools\node".into(), r"D:\Tools\bin".into()];
+        let env = profile.resolve(vec![
+            ("Path".into(), r"C:\Windows\System32;D:\Tools\bin".into()),
+            ("windir".into(), r"C:\Windows".into()),
+            ("OPENAI_API_KEY".into(), "should-not-be-inherited".into()),
+        ]);
+        assert_eq!(env["PATH"], r"C:\Windows\System32;D:\Tools\bin;C:\Tools\node");
+        assert_eq!(env["windir"], r"C:\Windows");
+        assert!(!env.contains_key("OPENAI_API_KEY"));
     }
 
     #[test]

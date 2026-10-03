@@ -135,6 +135,40 @@ which worker did each task, and the project memory.
 
 ### 2. Build and install ThingMaker
 
+#### Windows (local port)
+
+Install Node.js 24, pnpm 10+, Rust stable, and Visual Studio with **Desktop
+development with C++** plus a Windows 10/11 SDK. WebView2 Runtime is required
+and the installer can install it when missing.
+
+```powershell
+pnpm install --frozen-lockfile
+pnpm app
+```
+
+This builds an x64 NSIS installer and installs ThingMaker for the current
+user. Open **ThingMaker** from the Start menu. Quit it from the tray menu
+before rebuilding/updating. The installer is under `target/release/bundle/nsis`.
+Set `THINGMAKER_INSTALL_DIR` to an absolute path before running `pnpm app` to
+choose another installation directory; subsequent builds remember that path.
+
+On Windows, teams use an owner-only local named pipe, the terminal uses
+ConPTY with `cmd.exe`, and private runtime variables use Windows Credential
+Manager (up to 2560 bytes per value). Codex is discovered in the Codex desktop
+app's versioned install folder or on PATH. Claude's adapter is found in the
+Windows npm global prefix; install it using the provider instructions above.
+Sign in through the Providers panel if the provider CLI has no active login.
+
+For development, load the compiler environment and use the Windows window
+configuration:
+
+```powershell
+. ./scripts/windows-build-env.ps1
+pnpm --filter @thingmaker/desktop exec tauri dev --config src-tauri/tauri.dev.conf.json --config src-tauri/tauri.windows.conf.json
+```
+
+#### macOS
+
 You need Rust (stable), Node 24 (via [nvm](https://github.com/nvm-sh/nvm)),
 pnpm 10 and Xcode's command line tools.
 

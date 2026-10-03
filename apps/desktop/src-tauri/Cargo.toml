@@ -33,6 +33,12 @@ blake3 = { workspace = true }
 tempfile = { workspace = true }
 toml = "=1.1.5"
 uuid = { workspace = true }
+axum = { version = "0.8", features = ["ws"] }
+futures-util = "0.3"
+subtle = "2.6"
 
 [target.'cfg(target_os = "macos")'.dependencies]
 security-framework = "=3.7.0"
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "=0.61.2", features = ["Win32_Foundation", "Win32_Security_Credentials"] }
