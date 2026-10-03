@@ -634,7 +634,9 @@ pub fn item_updates(item: &Value, completed: bool) -> Vec<Value> {
                 command.clone(),
                 "execute",
                 "shell",
-                json!({ "command": command, "cwd": item.get("cwd") }),
+                // Codex parses the command itself into reads, listings and
+                // searches; the transcript labels steps from them.
+                json!({ "command": command, "cwd": item.get("cwd"), "actions": item.get("commandActions") }),
                 Some(json!({ "exitCode": item.get("exitCode"), "output": item.get("aggregatedOutput"), "durationMs": item.get("durationMs") })),
                 None,
             )
@@ -896,6 +898,8 @@ mod tests {
         assert_eq!(done[0]["sessionUpdate"], "tool_call_update");
         assert_eq!(done[0]["status"], "failed");
         assert_eq!(done[0]["rawOutput"]["exitCode"], 1);
+        let read = item_updates(&json!({"type": "commandExecution", "id": "c2", "command": "sed -n 1,40p a.rs", "status": "completed", "commandActions": [{"type": "read", "command": "sed -n 1,40p a.rs", "name": "a.rs", "path": "/w/a.rs"}]}), true);
+        assert_eq!(read[0]["rawInput"]["actions"][0]["type"], "read", "Codex's own reading of the command reaches the transcript");
 
         let image = item_updates(&json!({"type": "imageGeneration", "id": "ig_1", "status": "completed", "result": "", "revisedPrompt": "a cat", "savedPath": "/w/out/cat.png", "failure": null}), true);
         assert_eq!(image[0]["rawOutput"]["savedPath"], "/w/out/cat.png");
