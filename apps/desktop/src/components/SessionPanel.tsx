@@ -1,4 +1,4 @@
-import { memo, useCallback, useEffect, useMemo, useRef, useState, type ClipboardEvent, type KeyboardEvent, type ReactElement } from "react";
+import { Fragment, memo, useCallback, useEffect, useMemo, useRef, useState, type ClipboardEvent, type KeyboardEvent, type ReactElement } from "react";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import type { ContentBlock, Mention, Provider, ToolPatch } from "@thingmaker/contracts";
 import { PROVIDER_LABELS } from "@thingmaker/contracts";
@@ -14,6 +14,8 @@ import { ContextPane } from "./ContextPane";
 import { ArtifactsPane } from "./ArtifactsPane";
 import { ActivityBar } from "./ActivityBar";
 import { ToolGroup } from "./ToolGroup";
+import { DocCard } from "./DocCard";
+import { docsNamedIn, docsWrittenBy } from "../markdownDocs";
 import { ImagesPane } from "./ImagesPane";
 import { OdysseyPane } from "./OdysseyPane";
 import { AttachmentThumb, BlockImage, InlineImage, workspaceImageRenderer } from "./InlineImage";
@@ -294,6 +296,38 @@ export function groupCards(cards: Card[]): CardGroup[] {
     else out.push({ kind: "single", card });
   }
   return out.map((group) => (group.kind === "runtime" && group.cards.length === 1 ? { kind: "single", card: group.cards[0] as Card } : group));
+}
+
+type PlacedDoc = { path: string; version: string; verb: "wrote" | "named" };
+
+/**
+ * Where each Markdown document goes in the transcript: under the last run
+ * that wrote it, so its card shows the file as it is now; or, when nothing
+ * shown wrote it, under the last agent message that names it. Once each.
+ */
+export function placeDocs(groups: CardGroup[], tools: Map<string, ToolPatch>, roots: string[]): Map<number, PlacedDoc[]> {
+  const written = new Map<string, { index: number; version: string }>();
+  const named = new Map<string, number>();
+  groups.forEach((group, index) => {
+    if (group.kind === "work") {
+      for (const card of group.cards) {
+        if (card.kind !== "tool") continue;
+        const patch = tools.get(card.toolCallId);
+        if (!patch) continue;
+        for (const path of docsWrittenBy(patch, roots)) {
+          const before = written.get(path);
+          written.set(path, { index, version: `${before?.index === index ? before.version : ""}${card.toolCallId}:${patch.status ?? ""};` });
+        }
+      }
+    } else if (group.kind === "single" && group.card.kind === "message" && group.card.message.role === "agent") {
+      for (const path of docsNamedIn(messageText(group.card), roots)) named.set(path, index);
+    }
+  });
+  const placed = new Map<number, PlacedDoc[]>();
+  const put = (index: number, doc: PlacedDoc) => placed.set(index, [...(placed.get(index) ?? []), doc]);
+  for (const [path, at] of written) put(at.index, { path, version: at.version, verb: "wrote" });
+  for (const [path, index] of named) if (!written.has(path)) put(index, { path, version: "", verb: "named" });
+  return placed;
 }
 
 function bytesLabel(n: number): string {
@@ -586,6 +620,7 @@ export function SessionPanel({ sessionId }: { sessionId: string }) {
   // Images the agents made or looked at, each under the card where it first
   // appears. Recomputed when the stream moves, not on every render.
   const workspaceRoot = useStore((s) => s.workspaces.find((w) => w.id === s.sessions[sessionId]?.workspaceId)?.canonicalRoot ?? "");
+  const workspaceDisplay = useStore((s) => s.workspaces.find((w) => w.id === s.sessions[sessionId]?.workspaceId)?.displayPath ?? "");
   const lastSequence = session?.projection.lastSequence;
   const sessionJobs = useStore((s) => s.jobs[sessionId] ?? EMPTY_LIST);
   // A worker does a task for its orchestrator; a Big Thing is led from the
@@ -622,6 +657,8 @@ export function SessionPanel({ sessionId }: { sessionId: string }) {
   const mediaOk = { image: projection.capabilities?.promptImage ?? false, audio: projection.capabilities?.promptAudio ?? false };
   const windowStart = Math.max(0, filteredCards.length - visible);
   const shownCards = filteredCards.slice(windowStart);
+  const transcriptGroups = groupCards(shownCards);
+  const docPlaces = placeDocs(transcriptGroups, projection.toolCalls, [workspaceRoot, workspaceDisplay].filter(Boolean));
 
   const onKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
     if (mention && mention.matches.length > 0) {
@@ -789,8 +826,9 @@ export function SessionPanel({ sessionId }: { sessionId: string }) {
             </div>
           )}
           <div aria-busy={active} className="transcript" ref={transcriptRef}>
-            {groupCards(shownCards).map((group, index, groups) =>
-              group.kind === "single" ? (
+            {transcriptGroups.map((group, index, groups) => (
+              <Fragment key={group.kind === "single" ? group.card.key : group.key}>
+              {group.kind === "single" ? (
                 <CardView card={group.card} images={cardImages.get(group.card.key)} key={group.card.key} sessionId={sessionId} />
               ) : group.kind === "work" ? (
                 <ToolGroup
@@ -810,8 +848,12 @@ export function SessionPanel({ sessionId }: { sessionId: string }) {
                     <CardView card={card} key={card.key} sessionId={sessionId} />
                   ))}
                 </details>
-              ),
-            )}
+              )}
+              {docPlaces.get(index)?.map((doc) => (
+                <DocCard key={`doc|${doc.path}`} relative={doc.path} sessionId={sessionId} verb={doc.verb} version={doc.version} workspaceId={session.workspaceId} />
+              ))}
+              </Fragment>
+            ))}
             {/* What this session has changed on disk, at the end of the
                 reading order so it is the last thing before the composer. */}
             {projection.cards.length > 0 && <CodeChangesCard refreshKey={projection.cards.length} sessionId={sessionId} workspaceId={session.workspaceId} />}

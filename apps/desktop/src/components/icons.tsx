@@ -197,3 +197,24 @@ export const IconAgents = (p: IconProps) => (
     <path d="M10.3 7.6 7.2 15.7M13.7 7.6l3.1 8.1M8 18h8" />
   </Svg>
 );
+
+export const IconDoc = (p: IconProps) => (
+  <Svg {...p}>
+    <path d="M7 3h7l5 5v11a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2Z" />
+    <path d="M14 3v5h5M9 13h6M9 17h4" />
+  </Svg>
+);
+
+/** Big Thing: a summit with a flag on it. */
+export const IconSummit = (p: IconProps) => (
+  <Svg {...p}>
+    <path d="M3 20 10 9l3 4 2-3 6 10H3Z" />
+    <path d="M10 9V3l4 1.5L10 6" />
+  </Svg>
+);
+
+export const IconExternal = (p: IconProps) => (
+  <Svg {...p}>
+    <path d="M14 4h6v6M20 4l-9 9M18 14v4a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4" />
+  </Svg>
+);

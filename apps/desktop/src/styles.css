@@ -4713,3 +4713,131 @@ button.odyssey-task-title svg {
 .tool-group-live {
   border-color: var(--border-strong);
 }
+
+/* A Markdown document in the transcript: name, the top of it, actions. */
+.doc-card {
+  border: 1px solid var(--border);
+  border-left: 2px solid var(--accent);
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+  background: var(--panel);
+  overflow: hidden;
+}
+
+.doc-card-head,
+.doc-viewer-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding: 7px 10px;
+  color: var(--text-2);
+}
+
+.doc-card-head {
+  border-bottom: 1px solid var(--border);
+  background: var(--panel-2);
+}
+
+.doc-card-name {
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--text);
+  font: inherit;
+  font-family: var(--mono);
+  font-size: 12.5px;
+  cursor: pointer;
+}
+
+.doc-card-name:hover span:last-child {
+  text-decoration: underline;
+}
+
+.doc-card-meta {
+  white-space: nowrap;
+}
+
+.doc-actions {
+  display: inline-flex;
+  gap: 2px;
+  margin-left: auto;
+}
+
+.doc-action {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 7px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--muted);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.doc-action:hover {
+  background: var(--panel-3);
+  color: var(--text);
+}
+
+.doc-action-bigthing {
+  color: var(--accent);
+}
+
+.doc-action-bigthing:hover {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.doc-card-preview {
+  position: relative;
+  padding: 8px 14px 4px;
+}
+
+.doc-card-preview .markdown {
+  font-size: 12.5px;
+}
+
+.doc-card-folded {
+  max-height: 220px;
+  overflow: hidden;
+}
+
+.doc-card-folded::after {
+  content: "";
+  position: absolute;
+  inset: auto 0 0;
+  height: 48px;
+  background: linear-gradient(transparent, var(--panel));
+  pointer-events: none;
+}
+
+.doc-card-more {
+  margin: 0 14px 8px;
+}
+
+.modal.doc-viewer {
+  width: min(860px, 92vw);
+  max-width: none;
+  height: 86vh;
+  padding: 0;
+  overflow: hidden;
+}
+
+.doc-viewer-head {
+  border-bottom: 1px solid var(--border);
+}
+
+.doc-viewer-head .doc-actions {
+  margin-left: auto;
+}
+
+.doc-viewer-body {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 18px 28px 28px;
+}

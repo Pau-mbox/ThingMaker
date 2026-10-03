@@ -1075,6 +1075,14 @@ function NewGoalForm({ sessionId, workspaceId, agentSessionId }: { sessionId: st
     [setError],
   );
 
+  // A document sent here from the transcript plans the goal, as a drop would.
+  const sentDoc = useStore((s) => s.bigThingDoc[sessionId]);
+  useEffect(() => {
+    if (!sentDoc) return;
+    const path = useStore.getState().takeBigThingDoc(sessionId);
+    if (path) void readDocument([path]);
+  }, [sentDoc, sessionId, readDocument]);
+
   // Tauri hands the webview file paths rather than File objects, so the drop
   // is read natively and this listener only routes it.
   useEffect(() => {
@@ -1334,6 +1342,18 @@ export function OdysseyPane({ sessionId }: { sessionId: string }) {
   const [editingGoal, setEditingGoal] = useState(false);
   const [briefingOpen, setBriefingOpen] = useState(false);
   const [amendOpen, setAmendOpen] = useState(false);
+  const [amendPaths, setAmendPaths] = useState<string[]>([]);
+  // A document sent from the transcript to a session that already has a
+  // goal is work to add to it.
+  const sentDoc = useStore((s) => s.bigThingDoc[sessionId]);
+  const hasGoal = Boolean(view);
+  useEffect(() => {
+    if (!sentDoc || !hasGoal) return;
+    const path = useStore.getState().takeBigThingDoc(sessionId);
+    if (!path) return;
+    setAmendPaths([path]);
+    setAmendOpen(true);
+  }, [sentDoc, hasGoal, sessionId]);
   const [tab, setTab] = useState<"roadmap" | "inbox" | "documents" | "team" | "history" | "changes" | "settings">("roadmap");
   const inbox = useInboxItems(sessionId, view);
   const [goalTitle, setGoalTitle] = useState("");
@@ -1538,7 +1558,18 @@ export function OdysseyPane({ sessionId }: { sessionId: string }) {
         <span>Saved in this app's database, not in your project.</span>
       </footer>
 
-      {amendOpen && <AmendDialog odysseyId={goal.id} onClose={() => setAmendOpen(false)} sessionId={sessionId} workspaceId={session.workspaceId} />}
+      {amendOpen && (
+        <AmendDialog
+          initialPaths={amendPaths}
+          odysseyId={goal.id}
+          onClose={() => {
+            setAmendOpen(false);
+            setAmendPaths([]);
+          }}
+          sessionId={sessionId}
+          workspaceId={session.workspaceId}
+        />
+      )}
 
       {briefingOpen && (
         <div aria-modal="true" className="modal-backdrop" onClick={() => setBriefingOpen(false)} role="dialog">

@@ -254,6 +254,12 @@ type State = {
   applyContextBundle: (sessionId: string, bundle: ContextBundle) => void;
   setPaletteOpen: (open: boolean) => void;
   setSessionTab: (tab: SessionTab) => void;
+  /** A document on its way to a session's Big Thing tab, by absolute path. */
+  bigThingDoc: Record<string, string>;
+  /** Opens Big Thing with this document: a new goal planned from it, or a change to the running one. */
+  sendDocToBigThing: (sessionId: string, path: string) => void;
+  /** The document waiting for this session's Big Thing tab, taken once. */
+  takeBigThingDoc: (sessionId: string) => string | null;
   setTranscriptSearchOpen: (open: boolean) => void;
   announce: (text: string) => void;
   toggleSidebar: () => void;
@@ -685,6 +691,7 @@ export const useStore = create<State>((set, get) => ({
   transcriptSearchOpen: false,
   announcement: "",
   uiPrefs: DEFAULT_UI_PREFS,
+  bigThingDoc: {},
   sidebarCollapsed: false,
   sessionDefaults: {},
   observedImages: {},
@@ -1630,6 +1637,19 @@ export const useStore = create<State>((set, get) => ({
 
   setSessionTab(tab) {
     set({ sessionTab: tab });
+  },
+
+  sendDocToBigThing(sessionId, path) {
+    set({ bigThingDoc: { ...get().bigThingDoc, [sessionId]: path }, sessionTab: "odyssey" });
+  },
+
+  takeBigThingDoc(sessionId) {
+    const path = get().bigThingDoc[sessionId] ?? null;
+    if (path) {
+      const { [sessionId]: _taken, ...rest } = get().bigThingDoc;
+      set({ bigThingDoc: rest });
+    }
+    return path;
   },
 
   setTranscriptSearchOpen(open) {
