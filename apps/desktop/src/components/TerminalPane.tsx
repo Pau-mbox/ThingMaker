@@ -89,8 +89,22 @@ export function TerminalPane({ workspaceId }: { workspaceId: string }) {
       }).catch(() => undefined);
     });
 
+    // One write in flight at a time: the remote transport handles requests
+    // concurrently, so parallel keystrokes could reach the shell out of order.
+    let queued = "";
+    let writing = false;
+    const flush = () => {
+      if (writing || !queued || disposed) return;
+      const text = queued;
+      queued = "";
+      writing = true;
+      api.terminalWrite(id, text)
+        .catch((error: unknown) => setError(error))
+        .finally(() => { writing = false; flush(); });
+    };
     const dataDisposable = term.onData((data) => {
-      api.terminalWrite(id, data).catch((error: unknown) => setError(error));
+      queued += data;
+      flush();
     });
     const resizeDisposable = term.onResize(({ cols, rows }) => {
       api.terminalResize(id, cols, rows).catch(() => undefined);

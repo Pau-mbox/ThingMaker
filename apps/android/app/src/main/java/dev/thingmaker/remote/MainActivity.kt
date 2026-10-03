@@ -46,7 +46,7 @@ class MainActivity : ComponentActivity() {
         window.statusBarColor = android.graphics.Color.rgb(17, 17, 19)
         window.navigationBarColor = android.graphics.Color.rgb(17, 17, 19)
         val vault = Vault(this)
-        setContent { MaterialTheme(colorScheme = darkColorScheme()) { Surface(Modifier.fillMaxSize().systemBarsPadding()) { Remote(vault, this) } } }
+        setContent { MaterialTheme(colorScheme = darkColorScheme()) { Surface(Modifier.fillMaxSize().systemBarsPadding().imePadding()) { Remote(vault, this) } } }
     }
 }
 @Composable private fun Remote(vault: Vault, activity: MainActivity) {
@@ -68,7 +68,11 @@ class MainActivity : ComponentActivity() {
         var web by remember { mutableStateOf<RemoteWebView?>(null) }
         DisposableEffect(connection) { onDispose { web?.destroy(); web = null } }
         BackHandler { if (web?.canGoBack() == true) web?.goBack() else web?.evaluateJavascript("window.dispatchEvent(new CustomEvent('thingmaker-mobile-back'))", null) }
-        androidx.compose.ui.viewinterop.AndroidView(modifier = Modifier.fillMaxSize(), factory = { RemoteWebView(activity, connection.url, connection.key) { api = null; secret = ""; vault.clear() }.also { web = it } })
+        androidx.compose.ui.viewinterop.AndroidView(modifier = Modifier.fillMaxSize(), factory = { RemoteWebView(activity, connection.url, connection.key) { api = null; secret = ""; vault.clear() }.also {
+            // AndroidView defaults to WRAP_CONTENT, which makes Chromium resolve vh/dvh to 0.
+            it.layoutParams = android.view.ViewGroup.LayoutParams(android.view.ViewGroup.LayoutParams.MATCH_PARENT, android.view.ViewGroup.LayoutParams.MATCH_PARENT)
+            web = it
+        } })
     } else {
         Column(Modifier.fillMaxSize().padding(24.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
             Text("ThingMaker", style = MaterialTheme.typography.headlineLarge)

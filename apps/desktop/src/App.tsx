@@ -85,7 +85,16 @@ export function App() {
   }, [bootstrap]);
   useEffect(() => {
     if (!isRemote) return;
-    const back = () => useStore.getState().toggleSidebar();
+    // Android Back closes the topmost layer first, as Escape does on the desktop.
+    const back = () => {
+      const state = useStore.getState();
+      if (state.paletteOpen) return state.setPaletteOpen(false);
+      if (document.querySelector('[aria-modal="true"]')) {
+        (document.activeElement ?? document.body).dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+        return;
+      }
+      state.toggleSidebar();
+    };
     window.addEventListener("thingmaker-mobile-back", back);
     return () => window.removeEventListener("thingmaker-mobile-back", back);
   }, []);
