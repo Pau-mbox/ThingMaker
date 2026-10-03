@@ -1,4 +1,6 @@
 import { useEffect } from "react";
+import { IS_REMOTE } from "./remote/mode";
+import { ConnectionBanner } from "./remote/ConnectionBanner";
 import { useStore } from "./store";
 import { TopBar } from "./components/TopBar";
 import { Sidebar } from "./components/Sidebar";
@@ -22,7 +24,7 @@ function Welcome() {
   return (
     <div className="welcome">
       <div className="welcome-card">
-        <img className="welcome-brand-icon" src="/thingmaker-icon.png" alt="" draggable={false} />
+        <img className="welcome-brand-icon" src={`${import.meta.env.BASE_URL}thingmaker-icon.png`} alt="" draggable={false} />
         <h1>ThingMaker</h1>
         <p className="muted">One desktop for Claude Code and Codex on your own subscriptions: sessions you can observe, steer, review and hand between providers.</p>
         <div className="welcome-actions">
@@ -76,15 +78,16 @@ export function App() {
   useKeyboardShortcuts();
 
   return (
-    <div className={`app ${sidebarCollapsed ? "sidebar-collapsed" : ""}`} data-reduce-motion={reducedMotion === "reduce" ? "true" : undefined}>
+    <div className={`app ${sidebarCollapsed && !IS_REMOTE ? "sidebar-collapsed" : ""} ${IS_REMOTE ? `app-remote remote-view-${view.kind}` : ""}`} data-reduce-motion={reducedMotion === "reduce" ? "true" : undefined}>
       <div aria-live="polite" className="sr-only" role="status">
         {announcement}
       </div>
       <CommandPalette />
       <CloseRequestDialog />
       <LockedResumeDialog />
+      {IS_REMOTE && <ConnectionBanner />}
       <div className="shell">
-        {!sidebarCollapsed && (
+        {(!sidebarCollapsed || IS_REMOTE) && (
           <ErrorBoundary label="sidebar">
             <Sidebar />
           </ErrorBoundary>

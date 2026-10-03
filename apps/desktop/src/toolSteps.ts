@@ -324,7 +324,7 @@ export function stepDoing(step: Step): string {
   const part = step.parts[0];
   if (step.sentence && (!part || !part.target)) return step.sentence.charAt(0).toLowerCase() + step.sentence.slice(1);
   if (!part) return "working";
-  return [VERB_ING[part.verb], part.target].filter(Boolean).join(" ");
+  return [VERB_ING[part.verb], part.target === "." ? "the project" : part.target].filter(Boolean).join(" ");
 }
 
 /** "Explored · read 6 files, searched 9 times" for a run of steps. */

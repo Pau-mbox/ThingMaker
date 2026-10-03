@@ -394,14 +394,14 @@ export function Sidebar() {
   return (
     <nav aria-label="Workspaces and sessions" className="sidebar">
       <div className="sidebar-top" data-tauri-drag-region>
-        <button aria-label="Hide sidebar (⌘B)" className="icon-button" onClick={toggleSidebar} title="Hide sidebar (⌘B)" type="button">
+        <button aria-label="Hide sidebar (⌘B)" className="icon-button remote-hidden" onClick={toggleSidebar} title="Hide sidebar (⌘B)" type="button">
           <IconSidebar />
         </button>
         <span className="sidebar-brand" data-tauri-drag-region>
-          <img className="brand-icon" src="/thingmaker-icon.png" alt="" draggable={false} />
+          <img className="brand-icon" src={`${import.meta.env.BASE_URL}thingmaker-icon.png`} alt="" draggable={false} />
           ThingMaker
         </span>
-        <button aria-label="Add workspace (⌘O)" className="icon-button" onClick={() => void addWorkspaceByPicker()} title="Add workspace (⌘O)" type="button">
+        <button aria-label="Add workspace (⌘O)" className="icon-button remote-hidden" onClick={() => void addWorkspaceByPicker()} title="Add workspace (⌘O)" type="button">
           <IconPlus />
         </button>
       </div>
@@ -487,7 +487,7 @@ export function Sidebar() {
                   </button>
                   <button
                     aria-label="Remove workspace from the list"
-                    className="icon-button icon-button-xs"
+                    className="icon-button icon-button-xs remote-hidden"
                     onClick={() => setRemoving({ id: workspace.id, name: project, live: liveCount })}
                     title="Remove from ThingMaker (files and agent transcripts stay on disk)"
                     type="button"
@@ -619,7 +619,7 @@ export function Sidebar() {
             </div>
           );
         })}
-        <div className="row">
+        <div className="row remote-hidden">
           <button
             className={`icon-button ${view.kind === "signin" ? "on" : ""}`}
             onClick={() => {

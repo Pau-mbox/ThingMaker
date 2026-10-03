@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { PhoneSection } from "./PhoneSection";
 import {
   CLAUDE_ORCHESTRATOR_EFFORT,
   CLAUDE_ORCHESTRATOR_MODEL,
@@ -443,6 +444,7 @@ export function SettingsPanel() {
         ))}
       </section>
 
+      <PhoneSection />
       <SupportBundleSection />
       <StorageSection />
     </div>

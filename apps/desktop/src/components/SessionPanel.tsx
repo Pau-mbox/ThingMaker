@@ -14,6 +14,7 @@ import { ContextPane } from "./ContextPane";
 import { ArtifactsPane } from "./ArtifactsPane";
 import { ActivityBar } from "./ActivityBar";
 import { ToolGroup } from "./ToolGroup";
+import { IS_REMOTE } from "../remote/mode";
 import { DocCard } from "./DocCard";
 import { docsNamedIn, docsWrittenBy } from "../markdownDocs";
 import { ImagesPane } from "./ImagesPane";
@@ -779,14 +780,14 @@ export function SessionPanel({ sessionId }: { sessionId: string }) {
         <button
           aria-label="Terminal"
           aria-pressed={tab === "terminal"}
-          className={`icon-button icon-button-xs tab-icon ${tab === "terminal" ? "on" : ""}`}
+          className={`icon-button icon-button-xs tab-icon remote-hidden ${tab === "terminal" ? "on" : ""}`}
           onClick={() => setTab("terminal")}
           title="Terminal"
           type="button"
         >
           <IconTerminal size={15} />
         </button>
-        <ViewsMenu onPick={setTab} tab={tab} />
+        {!IS_REMOTE && <ViewsMenu onPick={setTab} tab={tab} />}
       </div>
       {active && <div aria-hidden="true" className="progress-line" />}
       {tab === "transcript" && (
@@ -987,7 +988,7 @@ export function SessionPanel({ sessionId }: { sessionId: string }) {
         <div className="composer-row">
           <button
             aria-label="Attach media"
-            className="icon-button"
+            className="icon-button remote-hidden"
             disabled={!canSend}
             onClick={() =>
               api

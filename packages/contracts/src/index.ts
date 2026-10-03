@@ -948,6 +948,27 @@ export type BigThingEvent =
 
 export const BIGTHING_EVENT = "thingmaker://bigthing";
 
+/** Phone access changed: a phone paired, connected or left; the bridge started or stopped. */
+export const REMOTE_EVENT = "thingmaker://remote";
+
+/** A phone paired with this Mac. */
+export type RemoteDevice = { id: string; name: string; pairedAt: number; lastSeen: number | null; connected: boolean };
+
+/** An open pairing: the QR the phone scans, and the code it carries. */
+export type RemotePairing = { code: string; expiresAt: number; payload: string; qrSvg: string };
+
+export type RemoteStatus = {
+  enabled: boolean;
+  port: number;
+  /** This Mac's name, as the phone shows it. */
+  name: string;
+  /** This Mac's Tailscale addresses; empty when Tailscale is not running. */
+  tailscale: string[];
+  listening: string[];
+  devices: RemoteDevice[];
+  pairing: RemotePairing | null;
+};
+
 /** Where a goal is moved: an open session by handle, or a fresh one. */
 export type BigThingMoveTarget = { kind: "session"; handle: string } | { kind: "new"; provider: Provider };
 
@@ -1510,6 +1531,11 @@ export const COMMANDS = {
   cleanupRun: "cleanup_run",
   prefGet: "pref_get",
   prefSet: "pref_set",
+  remoteStatus: "remote_status",
+  remoteSetEnabled: "remote_set_enabled",
+  remotePairStart: "remote_pair_start",
+  remotePairCancel: "remote_pair_cancel",
+  remoteDeviceRevoke: "remote_device_revoke",
 } as const;
 
 export type CommandName = (typeof COMMANDS)[keyof typeof COMMANDS];

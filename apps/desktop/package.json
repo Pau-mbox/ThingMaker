@@ -5,7 +5,8 @@
   "type": "module",
   "scripts": {
     "dev:vite": "vite",
-    "build:vite": "tsc --noEmit -p tsconfig.json && vite build",
+    "build:vite": "tsc --noEmit -p tsconfig.json && vite build && vite build --mode remote",
+    "build:remote": "vite build --mode remote",
     "tauri": "tauri",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "test": "vitest run",

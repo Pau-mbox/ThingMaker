@@ -311,7 +311,7 @@ pub async fn session_open(request: OpenRequest, state: State<'_, AppState>) -> C
     })
 }
 
-fn actor_for(state: &AppState, handle: &SessionHandle) -> CommandResult<SessionActor> {
+pub(crate) fn actor_for(state: &AppState, handle: &SessionHandle) -> CommandResult<SessionActor> {
     let actor = state
         .actor(&handle.id)
         .ok_or_else(|| DesktopError::not_ready("session is not attached in this application"))?;

@@ -4572,6 +4572,7 @@ button.odyssey-task-title svg {
 
 /* A run of tool calls, folded into one line with a plain line per step. */
 .tool-group {
+  flex: none;
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   background: var(--panel);
@@ -4716,6 +4717,8 @@ button.odyssey-task-title svg {
 
 /* A Markdown document in the transcript: name, the top of it, actions. */
 .doc-card {
+  /* The transcript is a flex column: without this a card shrinks to nothing. */
+  flex: none;
   border: 1px solid var(--border);
   border-left: 2px solid var(--accent);
   border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
@@ -4840,4 +4843,172 @@ button.odyssey-task-title svg {
   min-height: 0;
   overflow: auto;
   padding: 18px 28px 28px;
+}
+
+/* Settings → Phone */
+.phone-pairing {
+  display: flex;
+  gap: 18px;
+  align-items: center;
+  margin: 8px 0;
+}
+
+.phone-qr {
+  flex: none;
+  width: 220px;
+  height: 220px;
+  padding: 8px;
+  border-radius: var(--radius-sm);
+  background: #fff;
+}
+
+.phone-qr svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.phone-code {
+  font-size: 22px;
+  letter-spacing: 0.08em;
+  margin: 6px 0;
+}
+
+.phone-devices {
+  list-style: none;
+  margin: 10px 0 0;
+  padding: 0;
+}
+
+.phone-devices li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 0;
+  border-top: 1px solid var(--border);
+}
+
+.phone-devices .link {
+  margin-left: auto;
+}
+
+.phone-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--muted);
+}
+
+.phone-dot-on {
+  background: var(--ok);
+}
+
+/* ---------- The phone's screens (the remote build) ---------- */
+.app-remote {
+  --titlebar: 52px;
+  --traffic-lights: 12px;
+}
+
+.app-remote .remote-hidden {
+  display: none !important;
+}
+
+/* One screen at a time: the sessions, or the session. */
+.app-remote .sidebar {
+  width: 100%;
+  border-right: 0;
+}
+
+.app-remote:not(.remote-view-welcome):not(.remote-view-workspace) .sidebar {
+  display: none;
+}
+
+.app-remote.remote-view-welcome .main,
+.app-remote.remote-view-workspace .main {
+  display: none;
+}
+
+.app-remote .sidebar-top {
+  padding: 0 12px;
+}
+
+.app-remote .topbar {
+  padding: 0 8px;
+  gap: 4px;
+}
+
+.app-remote .remote-back {
+  width: 36px;
+  height: 36px;
+  font-size: 28px;
+  line-height: 1;
+  color: var(--text);
+}
+
+.app-remote .topbar-title {
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0;
+  overflow: hidden;
+}
+
+.app-remote .topbar-name {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.app-remote .branch-chip {
+  display: none;
+}
+
+.app-remote .remote-banner {
+  margin: 0;
+  border-radius: 0;
+  text-align: center;
+}
+
+/* Finger-sized rows and controls. */
+.app-remote .sidebar-sessions button,
+.app-remote .sidebar-session {
+  min-height: 40px;
+}
+
+.app-remote .tab {
+  padding: 10px 12px;
+}
+
+.app-remote .composer textarea {
+  font-size: 16px;
+}
+
+.app-remote .transcript {
+  padding-left: 10px;
+  padding-right: 10px;
+}
+
+.app-remote .modal {
+  width: 100vw;
+  max-width: 100vw;
+  max-height: 100vh;
+  border-radius: 0;
+}
+
+.app-remote .doc-actions {
+  flex-wrap: wrap;
+}
+
+.app-remote .doc-card-meta,
+.app-remote .tool-group-detail {
+  white-space: normal;
+}
+
+.app-remote .work-lane {
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+
+.app-remote .work-lane-task {
+  grid-column: 1 / -1;
+  white-space: normal;
 }

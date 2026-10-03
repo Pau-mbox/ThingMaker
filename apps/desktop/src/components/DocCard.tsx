@@ -69,10 +69,10 @@ function Actions({ sessionId, workspaceId, relative, onOpen }: { sessionId: stri
           <IconDoc size={13} /> Open
         </button>
       )}
-      <button className="doc-action" onClick={actions.reveal} title="Show it in Finder" type="button">
+      <button className="doc-action remote-hidden" onClick={actions.reveal} title="Show it in Finder" type="button">
         <IconFolder size={13} /> Finder
       </button>
-      <button className="doc-action" onClick={actions.edit} title="Open it in the system's editor for Markdown" type="button">
+      <button className="doc-action remote-hidden" onClick={actions.edit} title="Open it in the system's editor for Markdown" type="button">
         <IconExternal size={13} /> Editor
       </button>
       <button

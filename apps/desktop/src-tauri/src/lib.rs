@@ -10,6 +10,7 @@
 //! tray, the app quits after stopping agents, or the renderer asks.
 
 pub mod commands;
+pub mod remote;
 pub mod state;
 
 use tauri::{
@@ -121,6 +122,8 @@ pub fn run() {
             }
             // Big Thing runs in the host, whether or not a window is open.
             commands::bigthing::start(app.handle());
+            // Phone access over Tailscale; off until turned on in Settings.
+            remote::start(app.handle(), data_dir.clone());
 
             let show = MenuItem::with_id(app, "show", "Show ThingMaker", true, None::<&str>)?;
             let quit = MenuItem::with_id(app, "quit", "Quit and stop local tasks", true, None::<&str>)?;
@@ -177,6 +180,11 @@ pub fn run() {
             commands::workspace::workspace_remove,
             commands::workspace::workspace_pick,
             commands::workspace::reveal_in_finder,
+            remote::remote_status,
+            remote::remote_set_enabled,
+            remote::remote_pair_start,
+            remote::remote_pair_cancel,
+            remote::remote_device_revoke,
             commands::session::session_open,
             commands::session::session_subscribe,
             commands::session::session_snapshot,

@@ -3,6 +3,7 @@
  * sit over the sidebar), is draggable, and carries the current view's title
  * plus global actions. Runtime facts moved to the sidebar footer.
  */
+import { IS_REMOTE } from "../remote/mode";
 import { useEffect } from "react";
 import { basenameOf, sessionTitle, useStore } from "../store";
 import { IconBranch, IconCommand, IconExport, IconPlug, IconSidebar } from "./icons";
@@ -50,8 +51,18 @@ export function TopBar() {
   else if (view.kind === "integrations") title = "Integrations";
 
   return (
-    <header className={`topbar ${sidebarCollapsed ? "topbar-inset" : ""}`} data-tauri-drag-region>
-      {sidebarCollapsed && (
+    <header className={`topbar ${sidebarCollapsed && !IS_REMOTE ? "topbar-inset" : ""}`} data-tauri-drag-region>
+      {IS_REMOTE && view.kind !== "welcome" && view.kind !== "workspace" && (
+        <button
+          aria-label="Back to sessions"
+          className="icon-button remote-back"
+          onClick={() => setView(workspaceId ? { kind: "workspace", workspaceId } : { kind: "welcome" })}
+          type="button"
+        >
+          ‹
+        </button>
+      )}
+      {sidebarCollapsed && !IS_REMOTE && (
         <button aria-label="Show sidebar (⌘B)" className="icon-button" onClick={toggleSidebar} title="Show sidebar (⌘B)" type="button">
           <IconSidebar />
         </button>
@@ -85,7 +96,7 @@ export function TopBar() {
         {view.kind === "session" && (
           <button
             aria-label="Export the transcript as Markdown"
-            className="icon-button icon-button-xs topbar-quiet"
+            className="icon-button icon-button-xs topbar-quiet remote-hidden"
             onClick={() => void exportTranscript(view.sessionId)}
             title="Export the transcript as Markdown…"
             type="button"
@@ -94,7 +105,7 @@ export function TopBar() {
           </button>
         )}
       </div>
-      <div className="topbar-actions">
+      <div className="topbar-actions remote-hidden">
         <button
           className={`icon-button ${view.kind === "integrations" ? "on" : ""}`}
           onClick={() => setView({ kind: "integrations" })}
