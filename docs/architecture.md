@@ -12,11 +12,19 @@ each provider's **own official program** out of process:
 | Codex | `codex app-server` | Codex app-server JSON-RPC, bridged to ACP inside the supervisor | ChatGPT plan |
 | Gemini (worker or plain session) | Antigravity CLI `agy` (`stream-json` mode) | NDJSON events, bridged to ACP inside the supervisor | Google account (Antigravity quota), shared with the Antigravity app |
 
-Subscriptions only, never API keys. The desktop never reads, stores or passes
+Subscriptions only, never provider API keys. The desktop never reads, stores or passes
 on a provider token: each program signs in through its provider's own flow and
 keeps its credentials in its own store. Decisions are in
 [`docs/adr`](adr/README.md); the providers' terms behind them are summarised in
 [ADR-009](adr/ADR-009-providers-through-official-programs.md).
+
+This checkout's Windows/Android adaptation adds a separate remote-control key
+and a loopback HTTP/WebSocket host inside Tauri. Android bundles the same React
+renderer and reaches the existing Rust actors through a typed command allowlist;
+provider programs still run locally over stdio. See
+[ADR-011](adr/ADR-011-shared-android-remote-ui.md) for the trust boundary and
+the [Windows/Android guide](windows-android.md) for deployment, reconnects,
+release status and remaining validation.
 
 
 ## Status by provider and feature
@@ -110,6 +118,10 @@ docs/                         architecture, decisions (adr/), release notes
 ## Prerequisites (development)
 
 - Rust stable (see `rust-toolchain.toml`); Xcode command line tools on macOS.
+- Windows: Visual Studio with C++ and a Windows SDK, MSVC Rust toolchain and
+  WebView2; load `scripts/windows-build-env.ps1` for native builds.
+- Android: Java 17 and SDK 36; build the shared renderer before Gradle packaging.
+  See the [platform build instructions](windows-android.md#compilar-y-actualizar).
 - Node 22.12+ (Node 24 LTS via nvm is used; `.nvmrc`) and pnpm 10. jsdom rejects Node 25.
 - Python 3 for the mock ACP peers used by tests.
 - **Claude Code:** `npm install -g @agentclientprotocol/claude-agent-acp`
@@ -145,6 +157,10 @@ actions (pin, archive, rename), an "Archived (N)" disclosure, and a footer
 with each provider's quota and quick access to Providers and Settings. Every
 session is durable in its agent's own transcript; "archive" hides a session
 from the list and is reversible, never a deletion.
+
+The Windows configuration uses a native window frame. Android uses the same
+components with a sidebar drawer, scrollable tabs and touch controls. Tool calls
+are grouped into expandable activity runs with live labels and step counts.
 
 ## Renderer hardening notes
 

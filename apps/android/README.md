@@ -13,8 +13,11 @@ Build the shared desktop renderer first, then package it with Java 17 / SDK 36:
     cd apps/android
     .\gradlew.bat assembleDebug
 
-Package: `dev.thingmaker.remote`, version 2.0.0 (2). Internal distribution via
+Package: `dev.thingmaker.remote`, version **2.0.1 (3)**. Internal distribution via
 JackApps; subsequent builds must preserve the signing key and bump versionCode.
+Published APK: [2.0.1-3.apk](https://builds.jacksparrot.com/apps/dev.thingmaker.remote/2.0.1-3.apk).
+Full setup, operations, release history and deployment status:
+[Windows and Android guide](../../docs/windows-android.md).
 
 Server: `https://thingmaker.jacksparrot.com`, loopback origin 18420 inside the
 desktop. `ThingMakerRemoteForward` runs an authenticated SSH reverse forward to
@@ -23,6 +26,11 @@ can be added on the PC or by entering a PC folder path in Android. The APK ships
 the same React components as desktop: projects, conversations, provider/model
 selection, tool cards, approvals, review, files, terminal, teams, Big Thing and
 integrations. Small screens use a sidebar drawer and scrollable tabs.
+Version 2.0.1 integrates upstream `4326772`: expandable activity groups,
+progress labels and step counts, adapted to Windows paths and 44px mobile
+touch targets. The new Codex `commandActions` metadata requires installing
+the corresponding new PC build; the APK also works with the installed older
+server, using its existing tool data.
 
 Native OkHttp connects to authenticated `wss://thingmaker.jacksparrot.com/v2/ws`;
 the key is an Authorization header, never JS storage or a URL parameter. Typed
@@ -43,3 +51,8 @@ REST v1 remains compatible with the first APK. `/health` now reports API 2.
 Validation: `scripts/verify-websocket.py` against the real public tunnel, plus
 Android emulator UI testing. `scripts/android-ui-probe.py` is a debug-only helper
 used through an authorized ADB-forwarded WebView debugger (never a public port).
+The 2.0.1 emulator run verified saved login, a real Codex shell action displayed
+as a collapsed/expanded group, 44px step controls and no horizontal overflow.
+Physical phone testing and a real remote Claude turn remain pending. The latest
+Windows installer was built but automatic installation was blocked; see the
+guide before treating the new desktop build as deployed.

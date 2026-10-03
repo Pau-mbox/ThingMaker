@@ -9,6 +9,8 @@
 
 <p align="center">
   <img alt="macOS" src="https://img.shields.io/badge/macOS-Apple%20silicon-111?logo=apple&logoColor=white">
+  <img alt="Windows local port" src="https://img.shields.io/badge/Windows-local%20port-0078D4">
+  <img alt="Android remote" src="https://img.shields.io/badge/Android-remote%20UI-3DDC84">
   <img alt="Tauri 2" src="https://img.shields.io/badge/Tauri-2-24C8DB?logo=tauri&logoColor=white">
   <img alt="Rust" src="https://img.shields.io/badge/Rust-supervisor-B7410E?logo=rust&logoColor=white">
   <img alt="React" src="https://img.shields.io/badge/React-TypeScript-3178C6?logo=react&logoColor=white">
@@ -25,8 +27,15 @@ keeps working while you sleep and moves to another account when one runs out.
 Watch everything — every agent,
 every tool call, every image it makes — in one window.
 
-No API keys, ever. ThingMaker drives each provider's **own official program**
+No provider API keys. ThingMaker drives each provider's **own official program**
 with your own sign-in, and never reads, stores or passes on a token.
+The local Android adaptation uses a separate PC-generated API key to authorize
+remote control; it is not a provider credential or a billing key.
+
+For this checkout's Windows installation, Android releases, WebSocket transport,
+502 recovery and verified deployment status, see the
+[Windows and Android guide](docs/windows-android.md) (Spanish) and
+[implementation log](NOTES.md).
 
 ## Why
 
@@ -52,6 +61,8 @@ with your own sign-in, and never reads, stores or passes on a token.
 | 🖼️ **Inline images** | Images agents generate or read show up right in the transcript, including Codex's generated images. |
 | 🔌 **MCP servers in one click** | Install Playwright, Context7, GitHub and others from a catalog, or paste any server's config or `mcp add` command. ThingMaker test-starts it, then writes it through each provider's own `mcp add`, so Claude Code, Codex and Antigravity all have it. Secrets stay in the keychain as `${NAME}` references. |
 | 🔍 **Review and tools** | Diffs and baselines, git staging and commits, worktrees, an integrated terminal, file browsing, artifacts and skills. |
+| 📱 **Android remote UI (local adaptation)** | The same React interface on your phone, with authenticated WebSocket commands and live events. Agents, files and terminals execute on your PC. See [setup and limitations](docs/windows-android.md). |
+| 🧾 **Readable activity** | Consecutive tool calls are grouped into expandable runs, with progress, step counts and raw details. Windows paths and mobile touch controls are adapted in this checkout. |
 | 🔐 **Your accounts, your machine** | Each provider signs in through its own flow and keeps its own credentials. Switch accounts from the Providers panel. Everything runs locally. |
 
 ## How it works
@@ -224,6 +235,7 @@ Live tests against the real providers are opt-in and spend a few tokens:
 | Where | What |
 | --- | --- |
 | `apps/desktop` | the Tauri app: React interface (`src/`) and the host's commands (`src-tauri/`) |
+| `apps/android` | Android onboarding, encrypted connection storage and WebView for the shared React renderer |
 | `crates/thingmaker-supervisor` | the engine: transport, ACP client, provider bridges, delegation, Big Thing (`bigthing/`), session actors, storage |
 | `packages/contracts` | the TypeScript types of the desktop API |
 | `packages/test-fixtures` | mock providers, captured from the real programs |
@@ -244,6 +256,12 @@ Live tests against the real providers are opt-in and spend a few tokens:
 
 ThingMaker is young and moving fast. It is built and used daily on macOS
 (Apple silicon).
+
+This checkout also contains a validated Windows port and Android remote client.
+Android **2.0.1 (3)** is published in JackApps. Upstream `main` through
+`4326772` is integrated locally. Its Windows installer is built but awaits
+manual installation; the installed PC app still uses the preceding build.
+See the [dated validation and remaining checks](docs/windows-android.md#estado-verificado).
 
 ## License
 

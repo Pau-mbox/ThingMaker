@@ -1,8 +1,16 @@
 # Windows port — 2026-10-02
 
 Upstream snapshot: `7bb7f89e0b66539f1d69b3ff56dcf71f27bc90ef`.
-The Windows adaptation is local source changes in this checkout; it has not
-been published upstream.
+The Windows/Android adaptation is committed locally in this checkout; it has
+not been published upstream. The sections below are dated historical evidence.
+
+## Current status — 2026-10-03
+
+Upstream main at 4326772 is merged locally, preserving Windows and Android.
+Android 2.0.1 (versionCode 3) is published in JackApps and tested in the emulator.
+The new Windows NSIS installer is built but not installed: automatic execution
+was rejected by policy. The PC still runs the 2026-10-02 build with API v2.
+See docs/windows-android.md for the consolidated setup and verified status.
 
 ## Implementation
 
@@ -173,7 +181,7 @@ Portrait viewport was 939 CSS pixels with no horizontal overflow. Screenshot:
 target/android-shared-final.png. Physical phone and remote Claude turn untested.
 
 Published ThingMaker Remote 2.0.0 (versionCode 2) through JackApps HTTPS admin API;
-catalog confirms it is latest. Local and SERVER APK SHA256 agree:
+catalog confirmed it was latest at that publication. Local and SERVER APK SHA256 agree:
 7E49682773B0D1D7E94F83271B0F7CB9CCAFC150B62E974172D00B5B4AFC4D33.
 URL: https://builds.jacksparrot.com/apps/dev.thingmaker.remote/2.0.0-2.apk
 PC final NSIS installer exited 0; public /health reports API 2. Existing key and
@@ -208,3 +216,11 @@ not yet include the new Codex commandActions metadata; the new Rust bridge is
 covered by tests but not validated in the installed host. New installer:
 target/release/bundle/nsis/ThingMaker_0.0.0_x64-setup.exe. Manual installation
 is still required. Physical Android device testing remains outstanding.
+
+Published Android 2.0.1 (3) through the JackApps HTTPS admin API after a dry run.
+Local and SERVER APK SHA256 agree:
+5D1492F074C3CAC0249DA1372C4EC63CA296CEAFD96A78A86C624380A0182297.
+URL: https://builds.jacksparrot.com/apps/dev.thingmaker.remote/2.0.1-3.apk.
+The installed previous PC build remained healthy at the final public API v2
+health check. The extra --thingmaker-mcp process is a delegation relay, not a
+second desktop instance; process count alone is not a duplicate-instance check.
