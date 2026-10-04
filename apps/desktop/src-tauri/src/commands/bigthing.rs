@@ -33,7 +33,7 @@ pub fn start(app: &AppHandle) {
     let host = std::sync::Arc::new(HostEngine { app: app.clone() });
     let engine = Engine::new(state.storage.clone(), host, state.delegation.get().cloned(), state.data_dir.clone());
     if let Some(delegation) = state.delegation.get() {
-        delegation.set_extension(std::sync::Arc::new(engine.clone()));
+        delegation.add_extension(std::sync::Arc::new(engine.clone()));
     }
     let _ = state.engine.set(engine.clone());
     tauri::async_runtime::spawn(async move { engine.start(TICK_INTERVAL) });

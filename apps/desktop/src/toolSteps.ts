@@ -282,6 +282,34 @@ function editedCount(patch: ToolPatch): number {
   return many ? Number(many[1]) : 1;
 }
 
+/** ThingMaker's own team tools, in words. */
+const TEAM_TOOLS: Record<string, string> = {
+  list_workers: "Looked at the team",
+  delegate: "Delegated a task",
+  await_jobs: "Waited for the workers",
+  job_status: "Checked a worker's job",
+  cancel_job: "Cancelled a worker's job",
+  phone_status: "Checked the phone",
+  phone_install: "Installed an app on the phone",
+  memory_read: "Read the project memory",
+  memory_write: "Wrote to the project memory",
+  board: "Read the task board",
+  bigthing_report: "Reported a milestone",
+  bigthing_task: "Moved a task",
+  bigthing_ask: "Asked you a question",
+  bigthing_propose_plan: "Proposed the plan",
+  bigthing_amend: "Proposed a plan change",
+};
+
+/** An MCP tool's call, `mcp__server__tool` (Claude) or `server · tool` (Codex), as words. */
+export function mcpLabel(title: string): string | null {
+  const match = /^mcp__([^_]+(?:_[^_]+)*?)__(.+)$/.exec(title) ?? /^([\w.-]+) · ([\w.-]+)$/.exec(title);
+  if (!match) return null;
+  const [, server, tool] = match as unknown as [string, string, string];
+  if (server === "team" && TEAM_TOOLS[tool]) return TEAM_TOOLS[tool] as string;
+  return `${tool.replace(/_/g, " ")} · ${server}`;
+}
+
 /** The step a tool call is. */
 export function stepOf(patch: ToolPatch, roots: (string | null | undefined)[]): Step {
   const running = patch.status === "in_progress" || patch.status === "pending";
@@ -302,7 +330,8 @@ export function stepOf(patch: ToolPatch, roots: (string | null | undefined)[]): 
   }
   if (verb === "edit") return { verb, sentence: title, parts: [{ verb, target: null, extra: null, files: editedCount(patch) }], running, failed };
   if (verb === "read") return { verb, sentence: title, parts: [{ verb, target: null, extra: null, files: 1 }], running, failed };
-  return { verb, sentence: short(title, 100), parts: [{ verb, target: null, extra: null, files: 0 }], running, failed };
+  const named = mcpLabel(patch.title ?? "") ?? mcpLabel(patch.name ?? "");
+  return { verb, sentence: short(named ?? title, 100), parts: [{ verb, target: null, extra: null, files: 0 }], running, failed };
 }
 
 /** The step as one line of plain text, for a live label or a test. */

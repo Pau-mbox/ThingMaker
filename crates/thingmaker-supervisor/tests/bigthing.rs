@@ -182,7 +182,7 @@ fn fixture_with(flags: &[&str]) -> Option<Fixture> {
         delegation: Some(delegation.clone()),
     });
     let engine = Engine::new(storage.clone(), Arc::new(Host(host.clone())), Some(delegation.clone()), temp.path().join("data"));
-    delegation.set_extension(Arc::new(engine.clone()));
+    delegation.add_extension(Arc::new(engine.clone()));
     *jobs.lock().unwrap() = Some(engine.clone());
     engine.start(Duration::from_millis(500));
     Some(Fixture { _temp: temp, host, engine, storage, delegation })

@@ -238,7 +238,7 @@ fn tools_for(delegation: &Delegation, caller: &Caller) -> Value {
         Caller::Orchestrator { .. } => tools().as_array().cloned().unwrap_or_default(),
         Caller::Worker { .. } => Vec::new(),
     };
-    if let Some(extension) = delegation.extension() {
+    for extension in delegation.extensions() {
         list.extend(extension.tools(caller));
     }
     Value::Array(list)
@@ -258,7 +258,7 @@ pub async fn handle(delegation: &Delegation, caller: &Caller, message: &Value) -
                 Caller::Orchestrator { .. } => INSTRUCTIONS.to_string(),
                 Caller::Worker { .. } => WORKER_INSTRUCTIONS.to_string(),
             };
-            if let Some(extra) = delegation.extension().and_then(|extension| extension.instructions(caller)) {
+            for extra in delegation.extensions().iter().filter_map(|extension| extension.instructions(caller)) {
                 instructions.push(' ');
                 instructions.push_str(&extra);
             }
@@ -274,7 +274,7 @@ pub async fn handle(delegation: &Delegation, caller: &Caller, message: &Value) -
         "tools/call" => {
             let name = params.get("name").and_then(Value::as_str).unwrap_or_default();
             let arguments = params.get("arguments").cloned().unwrap_or_else(|| json!({}));
-            match delegation.extension().and_then(|extension| extension.call(caller, name, &arguments)) {
+            match delegation.extensions().iter().find_map(|extension| extension.call(caller, name, &arguments)) {
                 Some(answer) => answer.await,
                 None => match caller {
                     Caller::Orchestrator { session, .. } => call_tool(delegation, session, name, &arguments).await,

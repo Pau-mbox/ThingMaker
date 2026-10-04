@@ -309,7 +309,7 @@ struct Inner {
     on_change: Box<dyn Fn(&JobView) + Send + Sync>,
     state: Mutex<State>,
     changed: watch::Sender<u64>,
-    extension: std::sync::RwLock<Option<Arc<dyn TeamExtension>>>,
+    extensions: std::sync::RwLock<Vec<Arc<dyn TeamExtension>>>,
     reaper: std::sync::atomic::AtomicBool,
     idle: Mutex<Duration>,
 }
@@ -348,7 +348,7 @@ impl Delegation {
                 on_change: Box::new(on_change),
                 state: Mutex::new(State::default()),
                 changed,
-                extension: std::sync::RwLock::new(None),
+                extensions: std::sync::RwLock::new(Vec::new()),
                 reaper: std::sync::atomic::AtomicBool::new(false),
                 idle: Mutex::new(WORKER_IDLE),
             }),
@@ -393,12 +393,14 @@ impl Delegation {
     }
 
     /// Adds another service's tools to every `team` server.
-    pub fn set_extension(&self, extension: Arc<dyn TeamExtension>) {
-        *self.inner.extension.write().unwrap_or_else(|poisoned| poisoned.into_inner()) = Some(extension);
+    /// Adds tools to the team server: Big Thing's, the phone's. Each is
+    /// asked in the order it was added.
+    pub fn add_extension(&self, extension: Arc<dyn TeamExtension>) {
+        self.inner.extensions.write().unwrap_or_else(|poisoned| poisoned.into_inner()).push(extension);
     }
 
-    pub fn extension(&self) -> Option<Arc<dyn TeamExtension>> {
-        self.inner.extension.read().unwrap_or_else(|poisoned| poisoned.into_inner()).clone()
+    pub fn extensions(&self) -> Vec<Arc<dyn TeamExtension>> {
+        self.inner.extensions.read().unwrap_or_else(|poisoned| poisoned.into_inner()).clone()
     }
 
     /// The orchestrator's workspace root and provider.

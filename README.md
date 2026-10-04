@@ -196,7 +196,10 @@ gets an **Install on phone** button (on the phone: **Install on this phone**).
 The phone downloads it over Tailscale, checks its SHA-256, and Android asks
 you to confirm — once, the first time, it also asks you to let ThingMaker
 install apps. That includes updates of the ThingMaker app itself: run
-`pnpm phone` and send `ThingMaker-phone.apk`.
+`pnpm phone` and send `ThingMaker-phone.apk`. Agents can do the same: every
+session has `phone_status` and `phone_install` on its team server, so "build
+it and put it on my phone" ends with the install on the phone, waiting only
+for you to tap Install.
 
 ## Development
 

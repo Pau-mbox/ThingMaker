@@ -1,7 +1,7 @@
 /** Tool calls read as steps a person can follow, from what each provider reported. */
 import { describe, expect, it } from "vitest";
 import type { ToolPatch } from "@thingmaker/contracts";
-import { readShell, stepDoing, stepOf, stepText, summarize } from "./toolSteps";
+import { mcpLabel, readShell, stepDoing, stepOf, stepText, summarize } from "./toolSteps";
 
 const ROOT = "/Users/me/UnityProjects/P3";
 const patch = (fields: Partial<ToolPatch>): ToolPatch => ({ toolCallId: "t", title: null, status: "completed", toolKind: "execute", content: null, rawInput: null, rawOutput: null, name: null, locations: null, meta: null, present: [], cleared: [], ...fields });
@@ -58,6 +58,14 @@ describe("other tools", () => {
     expect(summarize(steps)).toEqual({ title: "Explored", detail: "read 2 files, searched 1 time" });
     expect(summarize([stepOf(patch({ toolKind: "edit", title: "Edit 2 files", locations: [{ path: "a" }, { path: "b" }] }), [ROOT])])).toEqual({ title: "Edited 2 files", detail: "" });
     expect(summarize([...steps, shell("pnpm test")]).title).toBe("Worked");
+  });
+
+  it("names MCP tools in words, ThingMaker's own team tools most plainly", () => {
+    expect(mcpLabel("mcp__team__phone_install")).toBe("Installed an app on the phone");
+    expect(mcpLabel("team · delegate")).toBe("Delegated a task");
+    expect(mcpLabel("mcp__playwright__browser_navigate")).toBe("browser navigate · playwright");
+    expect(mcpLabel("Read a.md")).toBeNull();
+    expect(stepText(stepOf(patch({ toolKind: "other", title: "mcp__team__phone_install" }), [ROOT]))).toBe("Installed an app on the phone");
   });
 
   it("says what is happening now", () => {

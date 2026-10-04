@@ -11,6 +11,7 @@ pub mod apk;
 pub mod devices;
 pub mod dispatch;
 mod server;
+pub mod tools;
 
 use std::collections::HashMap;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
@@ -166,7 +167,7 @@ impl RemoteState {
         self.changed(app);
     }
 
-    fn connected_devices(&self) -> Vec<String> {
+    pub(crate) fn connected_devices(&self) -> Vec<String> {
         self.connections.lock().unwrap_or_else(|poisoned| poisoned.into_inner()).iter().filter(|(_, count)| **count > 0).map(|(id, _)| id.clone()).collect()
     }
 
@@ -193,7 +194,7 @@ impl RemoteState {
         Ok(offer)
     }
 
-    fn config(&self) -> RemoteConfig {
+    pub(crate) fn config(&self) -> RemoteConfig {
         self.config.lock().unwrap_or_else(|poisoned| poisoned.into_inner()).clone()
     }
 
@@ -364,6 +365,10 @@ impl RemoteState {
 pub fn start(app: &AppHandle, data_dir: PathBuf) {
     let state = RemoteState::new(data_dir);
     app.manage(state);
+    // The agents' side: phone_status and phone_install on the team server.
+    if let Some(delegation) = app.state::<crate::state::AppState>().delegation.get() {
+        delegation.add_extension(std::sync::Arc::new(tools::PhoneTools { app: app.clone() }));
+    }
     for name in FORWARDED {
         let handle = app.clone();
         app.listen_any(name, move |event| {
