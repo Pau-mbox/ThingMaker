@@ -203,15 +203,37 @@ function MilestoneBadge({ milestone, sessionId }: { milestone: MilestoneRecord; 
     );
   }
   if (milestone.state === "skipped") return <span className="odyssey-badge">Skipped</span>;
+  // Every task done and nothing reported: the work may well be finished — an
+  // orchestrator running many milestones in one turn reports late or never —
+  // so it can be checked or verified now rather than waiting on a claim.
+  const tasksDone = milestone.steps.length > 0 && milestone.steps.every((step) => step.state === "done");
+  const verifyNow = tasksDone ? (
+    <button
+      className="button button-small"
+      disabled={busy}
+      onClick={() => void verifyManually(sessionId, milestone.id)}
+      title={milestone.checkKind === "manual" ? "All its tasks are done: confirm it yourself" : "All its tasks are done: accept it without running the check"}
+      type="button"
+    >
+      {milestone.checkKind === "manual" ? "Verify" : "Accept"}
+    </button>
+  ) : null;
   if (milestone.state === "active") {
     return (
       <>
-        <span className="odyssey-badge badge-active">Active</span>
+        <span className="odyssey-badge badge-active">{tasksDone ? "Tasks done" : "Active"}</span>
         {runButton}
+        {verifyNow}
       </>
     );
   }
-  return <span className="odyssey-badge">Planned</span>;
+  return (
+    <>
+      <span className="odyssey-badge">{tasksDone ? "Tasks done" : "Planned"}</span>
+      {tasksDone && runButton}
+      {verifyNow}
+    </>
+  );
 }
 
 function MilestoneRow({

@@ -324,6 +324,13 @@ async fn the_protocol_tools_answer_from_the_record_and_the_memory_is_shared() {
     let ok = call("bigthing_report", json!({"milestone": 1, "status": "complete", "note": "wrote it"})).await;
     assert_eq!(ok["isError"], false);
     assert!(ok["structuredContent"]["note"].as_str().unwrap().contains("verified by its check: `true` must exit 0"), "{ok}");
+    // Recorded the moment it is made, not when the turn ends, and a second
+    // milestone in the same turn does not replace the first.
+    let second = call("bigthing_report", json!({"milestone": 2, "status": "complete", "note": "both done"})).await;
+    assert_eq!(second["isError"], false);
+    let view = fixture.storage.lock().unwrap().odyssey_view(&goal_id).unwrap().unwrap();
+    assert_eq!(view.milestones.iter().map(|milestone| milestone.state).collect::<Vec<_>>(), [MilestoneState::Reported, MilestoneState::Reported]);
+    assert_eq!(view.journal.iter().filter(|entry| entry.kind == JournalKind::Report).count(), 2);
     // A plan is only for a goal that has none; a running one amends.
     let plan = call("bigthing_propose_plan", json!({"milestones": [{"title": "x"}]})).await;
     assert_eq!(plan["isError"], false, "the goal is still a draft: {plan}");

@@ -1058,7 +1058,11 @@ impl Engine {
             self.apply_amendment(&goal, amendment);
         }
         let loaded = self.load(goal_id).unwrap_or(loaded);
-        self.read_report(&loaded, &live, &turn, protocol.report.clone()).await;
+        for report in protocol.reports.clone() {
+            // Each report reads the record the one before it left.
+            let Ok(current) = self.load(goal_id) else { break };
+            self.read_report(&current, &live, &turn, Some(report)).await;
+        }
         self.read_asks(&loaded, &protocol.asks);
         self.read_tasks(&loaded, &live, &protocol.tasks);
         self.changed(goal_id);
@@ -1067,14 +1071,22 @@ impl Engine {
     async fn read_report(&self, loaded: &Loaded, live: &LiveSession, turn: &TurnRecord, report: Option<protocol::Report>) {
         let goal = &loaded.goal;
         let Some(report) = report else { return };
-        let Some(milestone) = loaded.milestones.get(report.milestone - 1) else { return };
-        if journal::already_reported(&loaded.journal, &milestone.id, &report.note) {
+        let Some(milestone) = loaded.milestones.get(report.milestone.wrapping_sub(1)) else { return };
+        // A tool report was recorded when it was made; the turn's end still
+        // reads the evidence for it, unless someone already verified it.
+        let recorded = journal::already_reported(&loaded.journal, &milestone.id, &report.note);
+        if recorded && report.status == ReportStatus::Blocked {
             return;
         }
         match report.status {
             ReportStatus::Complete => {
-                let _ = self.db(|storage| storage.milestone_record_report(&milestone.id, &report.note));
-                self.journal(&goal.id, JournalKind::Report, Some(&milestone.id), &format!("Reported milestone {} complete", report.milestone), Some(&report.note));
+                if recorded && milestone.state != MilestoneState::Reported {
+                    return;
+                }
+                if !recorded {
+                    let _ = self.db(|storage| storage.milestone_record_report(&milestone.id, &report.note));
+                    self.journal(&goal.id, JournalKind::Report, Some(&milestone.id), &format!("Reported milestone {} complete", report.milestone), Some(&report.note));
+                }
                 if !evidence::readable_from_tool_results(milestone.check_kind) {
                     return;
                 }

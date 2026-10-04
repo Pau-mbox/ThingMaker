@@ -1006,7 +1006,8 @@ pub fn retell_note(record: &AmendmentRecord) -> String {
 /// What one turn sent, by either route.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct TurnProtocol {
-    pub report: Option<Report>,
+    /// Every milestone the turn reported, in order; one per milestone.
+    pub reports: Vec<Report>,
     pub asks: Vec<Ask>,
     pub tasks: Vec<TaskLine>,
     pub amendment: Option<Amendment>,
@@ -1030,7 +1031,8 @@ impl TurnProtocol {
         }
         let mut tasks = parse_task_lines(text);
         tasks.extend(tools.tasks);
-        Self { report: tools.report.or_else(|| parse_report(text)), asks, tasks, amendment, plan: tools.plan.or_else(|| parse_plan(text)) }
+        let reports = if tools.reports.is_empty() { parse_report(text).into_iter().collect() } else { tools.reports };
+        Self { reports, asks, tasks, amendment, plan: tools.plan.or_else(|| parse_plan(text)) }
     }
 }
 
@@ -1137,11 +1139,11 @@ mod tests {
     #[test]
     fn tools_win_over_the_text_and_the_text_still_counts() {
         let text = "BIGTHING-REPORT: milestone=1 status=blocked note=from text\nBIGTHING-ASK: question=Q1?";
-        let tools = TurnProtocol { report: Some(Report { milestone: 2, status: ReportStatus::Complete, note: "tool".into() }), asks: vec![Ask { kind: "ambiguity".into(), fallback: String::new(), options: vec![], question: "Q1?".into() }], ..Default::default() };
+        let tools = TurnProtocol { reports: vec![Report { milestone: 2, status: ReportStatus::Complete, note: "tool".into() }], asks: vec![Ask { kind: "ambiguity".into(), fallback: String::new(), options: vec![], question: "Q1?".into() }], ..Default::default() };
         let turn = TurnProtocol::read(text, tools);
-        assert_eq!(turn.report.unwrap().milestone, 2);
+        assert_eq!(turn.reports[0].milestone, 2);
         assert_eq!(turn.asks.len(), 1, "the same question by both routes is one question");
-        assert_eq!(TurnProtocol::read(text, TurnProtocol::default()).report.unwrap().note, "from text");
+        assert_eq!(TurnProtocol::read(text, TurnProtocol::default()).reports[0].note, "from text");
     }
 
     #[test]
