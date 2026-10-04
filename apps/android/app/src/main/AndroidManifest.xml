@@ -6,6 +6,8 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
     <uses-permission android:name="android.permission.USE_BIOMETRIC" />
+    <!-- Installing apps the Mac sends; Android asks to confirm each one. -->
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
 
     <!--
       Cleartext HTTP is to the Mac's Tailscale address only: the tunnel is
@@ -35,6 +37,16 @@
             android:name=".PairActivity"
             android:exported="false"
             android:windowSoftInputMode="adjustResize" />
+
+        <activity
+            android:name=".InstallActivity"
+            android:exported="false"
+            android:launchMode="singleTop"
+            android:theme="@style/Theme.ThingMaker" />
+
+        <receiver
+            android:name=".InstallReceiver"
+            android:exported="false" />
 
         <service
             android:name=".BridgeService"

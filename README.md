@@ -190,6 +190,14 @@ fingerprint or screen lock when it opens, and notifies you when a Big Thing
 needs input, is blocked or is done, or a worker's job fails. Revoke a phone in
 **Settings → Phone**.
 
+**Installing apps without a cable.** **Settings → Phone → Send an app…** puts
+any `.apk` on a connected phone, and an `.apk` an agent names in a session
+gets an **Install on phone** button (on the phone: **Install on this phone**).
+The phone downloads it over Tailscale, checks its SHA-256, and Android asks
+you to confirm — once, the first time, it also asks you to let ThingMaker
+install apps. That includes updates of the ThingMaker app itself: run
+`pnpm phone` and send `ThingMaker-phone.apk`.
+
 ## Development
 
 ```bash

@@ -16,6 +16,7 @@ import { ActivityBar } from "./ActivityBar";
 import { ToolGroup } from "./ToolGroup";
 import { IS_REMOTE } from "../remote/mode";
 import { DocCard } from "./DocCard";
+import { ApkCard, apksNamedIn } from "./ApkCard";
 import { docsNamedIn, docsWrittenBy } from "../markdownDocs";
 import { ImagesPane } from "./ImagesPane";
 import { OdysseyPane } from "./OdysseyPane";
@@ -851,6 +852,10 @@ export function SessionPanel({ sessionId }: { sessionId: string }) {
                   ))}
                 </details>
               )}
+              {group.kind === "single" &&
+                group.card.kind === "message" &&
+                group.card.message.role === "agent" &&
+                apksNamedIn(messageText(group.card), workspaceRoot).map((path) => <ApkCard key={`apk|${path}`} path={path} />)}
               {docPlaces.get(index)?.map((doc) => (
                 <DocCard key={`doc|${doc.path}`} relative={doc.path} sessionId={sessionId} verb={doc.verb} version={doc.version} workspaceId={session.workspaceId} />
               ))}

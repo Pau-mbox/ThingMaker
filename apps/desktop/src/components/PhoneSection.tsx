@@ -12,6 +12,16 @@ import { REMOTE_EVENT, type RemoteStatus } from "@thingmaker/contracts";
 import { api } from "../ipc";
 import { useStore } from "../store";
 
+/** What the phone last said about an app it was sent. */
+const OFFER_STATE: Record<string, string> = {
+  sent: "sent — waiting for the phone",
+  downloading: "downloading to the phone",
+  confirm: "waiting for you to confirm on the phone",
+  installed: "installed",
+  failed: "not installed",
+  cancelled: "cancelled on the phone",
+};
+
 function when(at: number | null): string {
   if (!at) return "never";
   const minutes = Math.round((Date.now() - at) / 60_000);
@@ -52,6 +62,16 @@ export function PhoneSection() {
     }, 1000);
     return () => clearInterval(timer);
   }, [pairing, refresh]);
+
+  const sendApk = async (device?: string) => {
+    try {
+      const path = await api.remotePickApk();
+      if (path) await api.remoteSendApk(path, device);
+      refresh();
+    } catch (error) {
+      setError(error);
+    }
+  };
 
   const run = (action: () => Promise<unknown>) => {
     action()
@@ -120,9 +140,28 @@ export function PhoneSection() {
                   <span className="small muted">
                     {device.connected ? "connected" : `last seen ${when(device.lastSeen)}`} · paired {new Date(device.pairedAt).toLocaleDateString()}
                   </span>
+                  {device.connected && (
+                    <button className="link small" onClick={() => void sendApk(device.id)} title="Install an Android app on this phone: it asks you to confirm there" type="button">
+                      Send an app…
+                    </button>
+                  )}
                   <button className="link small" onClick={() => run(() => api.remoteDeviceRevoke(device.id))} type="button">
                     Revoke
                   </button>
+                </li>
+              ))}
+            </ul>
+          )}
+
+          {status.offers.length > 0 && (
+            <ul className="phone-offers">
+              {status.offers.map((offer) => (
+                <li key={offer.id}>
+                  <span className="mono">{offer.name}</span>
+                  <span className={`small ${offer.state === "failed" ? "chip-warn" : "muted"}`}>
+                    {OFFER_STATE[offer.state] ?? offer.state}
+                    {offer.message ? ` — ${offer.message}` : ""}
+                  </span>
                 </li>
               ))}
             </ul>

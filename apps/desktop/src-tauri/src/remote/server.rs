@@ -30,6 +30,7 @@ pub fn router(app: AppHandle) -> Router {
         .route("/v1/hello", get(hello))
         .route("/v1/pair", post(pair))
         .route("/v1/ws", get(socket))
+        .route("/v1/apk/{id}", get(super::apk::download))
         .route("/app", get(page_root))
         .route("/app/", get(page_root))
         .route("/app/{*path}", get(page))
@@ -121,6 +122,7 @@ async fn socket(State(app): State<AppHandle>, upgrade: WebSocketUpgrade) -> Resp
 /// The connection's own state: who it is and what it streams.
 struct Connection {
     app: AppHandle,
+    device: String,
     out: mpsc::UnboundedSender<String>,
     channels: HashMap<u64, tokio::task::JoinHandle<()>>,
 }
@@ -136,6 +138,22 @@ impl Connection {
                 let id = frame.get("id").cloned().unwrap_or(Value::Null);
                 let command = frame.get("cmd").and_then(Value::as_str).unwrap_or_default().to_string();
                 let args = frame.get("args").cloned().unwrap_or(Value::Null);
+                // From the phone itself: an app built on the Mac, to this phone.
+                if command == "remote_send_apk" {
+                    let app = self.app.clone();
+                    let out = self.out.clone();
+                    let device = self.device.clone();
+                    let path = args.get("path").and_then(Value::as_str).unwrap_or_default().to_string();
+                    tokio::spawn(async move {
+                        let remote = app.state::<RemoteState>();
+                        let frame = match remote.send_apk(&app, &path, Some(device)).await {
+                            Ok(offer) => json!({ "t": "result", "id": id, "ok": true, "value": offer }),
+                            Err(error) => json!({ "t": "result", "id": id, "ok": false, "error": error }),
+                        };
+                        let _ = out.send(frame.to_string());
+                    });
+                    return;
+                }
                 if command == "session_subscribe" {
                     let result = self.subscribe(&args);
                     self.send(match result {
@@ -161,6 +179,12 @@ impl Connection {
                 }
             }
             Some("ping") => self.send(json!({ "t": "pong", "at": now_ms() })),
+            Some("install_status") => {
+                let id = frame.get("id").and_then(Value::as_str).unwrap_or_default();
+                let state = frame.get("state").and_then(Value::as_str).unwrap_or("unknown");
+                let message = frame.get("message").and_then(Value::as_str).map(str::to_string);
+                self.app.state::<RemoteState>().set_offer_state(&self.app, id, state, message);
+            }
             _ => {}
         }
     }
@@ -219,7 +243,8 @@ async fn serve(app: AppHandle, mut socket: WebSocket) {
     let (out, mut outgoing) = mpsc::unbounded_channel::<String>();
     let mut events = remote.events.subscribe();
     let mut revoked = remote.revoked.subscribe();
-    let mut connection = Connection { app: app.clone(), out, channels: HashMap::new() };
+    let mut direct = remote.direct.subscribe();
+    let mut connection = Connection { app: app.clone(), device: device.id.clone(), out, channels: HashMap::new() };
     loop {
         tokio::select! {
             incoming = socket.recv() => match incoming {
@@ -243,6 +268,15 @@ async fn serve(app: AppHandle, mut socket: WebSocket) {
                     }
                 }
                 Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => {}
+                Err(_) => break,
+            },
+            frame = direct.recv() => match frame {
+                Ok((target, frame)) if target.as_deref().is_none_or(|target| target == device.id) => {
+                    if socket.send(Message::Text(frame.to_string().into())).await.is_err() {
+                        break;
+                    }
+                }
+                Ok(_) | Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => {}
                 Err(_) => break,
             },
             gone = revoked.recv() => {

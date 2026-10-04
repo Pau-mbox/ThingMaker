@@ -185,6 +185,8 @@ pub fn run() {
             remote::remote_pair_start,
             remote::remote_pair_cancel,
             remote::remote_device_revoke,
+            remote::remote_pick_apk,
+            remote::remote_send_apk,
             commands::session::session_open,
             commands::session::session_subscribe,
             commands::session::session_snapshot,

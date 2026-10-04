@@ -29,6 +29,20 @@ object Notifier {
         PendingIntent.FLAG_IMMUTABLE,
     )
 
+    /** "Install Game.apk from your Mac?", opening the install screen. */
+    fun install(context: Context, offer: Offer, open: Intent) {
+        channels(context)
+        val tap = PendingIntent.getActivity(context, offer.id.hashCode(), open, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
+        val notification = Notification.Builder(context, ATTENTION)
+            .setSmallIcon(android.R.drawable.stat_sys_download_done)
+            .setContentTitle("Install ${offer.name}?")
+            .setContentText("Sent by ${offer.from} · ${InstallActivity.size(offer.size)}. Tap to install.")
+            .setContentIntent(tap)
+            .setAutoCancel(true)
+            .build()
+        runCatching { context.getSystemService(NotificationManager::class.java).notify(offer.id.hashCode(), notification) }
+    }
+
     fun attention(context: Context, title: String, body: String) {
         channels(context)
         val notification = Notification.Builder(context, ATTENTION)

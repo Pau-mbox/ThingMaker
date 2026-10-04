@@ -55,6 +55,7 @@ import {
   type CommitOutcome,
   type DiffResponse,
   type EditorProfile,
+  type ApkOffer,
   type RemotePairing,
   type RemoteStatus,
   type EventEnvelope as EventEnvelopeType,
@@ -350,6 +351,9 @@ export const api = {
   remotePairStart: () => call<RemotePairing>(COMMANDS.remotePairStart),
   remotePairCancel: () => call<void>(COMMANDS.remotePairCancel),
   remoteDeviceRevoke: (id: string) => call<RemoteStatus>(COMMANDS.remoteDeviceRevoke, { id }),
+  remotePickApk: () => call<string | null>(COMMANDS.remotePickApk),
+  /** From the phone, the Mac sends it to that phone; from the Mac, to one phone or every connected one. */
+  remoteSendApk: (path: string, device?: string) => call<ApkOffer>(COMMANDS.remoteSendApk, { path, device: device ?? null }),
   settingsGet: () => call<NotificationSettings>(COMMANDS.settingsGet),
   settingsSet: (settings: NotificationSettings) => call<NotificationSettings>(COMMANDS.settingsSet, { settings }),
   appHideToTray: () => call<void>(COMMANDS.appHideToTray),

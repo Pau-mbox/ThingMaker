@@ -7,6 +7,7 @@
 //! scanning a QR code on this Mac, is the key. What a phone may do is the
 //! list in [`dispatch::ALLOWED`].
 
+pub mod apk;
 pub mod devices;
 pub mod dispatch;
 mod server;
@@ -61,6 +62,9 @@ pub struct RemoteState {
     pub events: broadcast::Sender<Arc<str>>,
     /// A revoked phone's id ("*" for all): its sockets close.
     pub revoked: broadcast::Sender<String>,
+    /// Frames for one phone (`Some(id)`) or for every phone (`None`).
+    pub direct: broadcast::Sender<(Option<String>, Arc<str>)>,
+    offers: Mutex<HashMap<String, apk::ApkOffer>>,
 }
 
 /// Is this a Tailscale address (100.64.0.0/10)?
@@ -125,12 +129,15 @@ pub struct RemoteStatus {
     listening: Vec<String>,
     devices: Vec<DeviceView>,
     pairing: Option<PairingView>,
+    /// Apps sent to phones today, newest first.
+    offers: Vec<apk::ApkOffer>,
 }
 
 impl RemoteState {
     fn new(data_dir: PathBuf) -> Self {
         let (events, _) = broadcast::channel(256);
         let (revoked, _) = broadcast::channel(16);
+        let (direct, _) = broadcast::channel(64);
         Self {
             config: Mutex::new(devices::load(&data_dir)),
             data_dir,
@@ -140,7 +147,50 @@ impl RemoteState {
             connections: Mutex::new(HashMap::new()),
             events,
             revoked,
+            direct,
+            offers: Mutex::new(HashMap::new()),
         }
+    }
+
+    pub fn offer(&self, id: &str) -> Option<apk::ApkOffer> {
+        self.offers.lock().unwrap_or_else(|poisoned| poisoned.into_inner()).get(id).cloned()
+    }
+
+    /// What a phone said about an offered app.
+    pub fn set_offer_state(&self, app: &AppHandle, id: &str, state: &str, message: Option<String>) {
+        tracing::info!(offer = id, state, message = message.as_deref().unwrap_or(""), "phone install");
+        if let Some(offer) = self.offers.lock().unwrap_or_else(|poisoned| poisoned.into_inner()).get_mut(id) {
+            offer.state = state.chars().take(20).collect();
+            offer.message = message.map(|text| text.chars().take(300).collect());
+        }
+        self.changed(app);
+    }
+
+    fn connected_devices(&self) -> Vec<String> {
+        self.connections.lock().unwrap_or_else(|poisoned| poisoned.into_inner()).iter().filter(|(_, count)| **count > 0).map(|(id, _)| id.clone()).collect()
+    }
+
+    /// Offers an APK to one phone, or to every connected one.
+    pub async fn send_apk(&self, app: &AppHandle, path: &str, device: Option<String>) -> Result<apk::ApkOffer, DesktopError> {
+        let connected = self.connected_devices();
+        let reachable = match &device {
+            Some(id) => connected.contains(id),
+            None => !connected.is_empty(),
+        };
+        if !reachable {
+            return Err(DesktopError::not_ready("No phone is connected right now. Open ThingMaker on the phone (or let its connection come back) and send again."));
+        }
+        let offer = apk::prepare(path, device.clone()).await?;
+        let frame: Arc<str> = Arc::from(apk::frame(&offer, &self.host_name));
+        {
+            let mut offers = self.offers.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+            let day_ago = now_ms() - 24 * 60 * 60_000;
+            offers.retain(|_, kept| kept.offered_at > day_ago);
+            offers.insert(offer.id.clone(), offer.clone());
+        }
+        let _ = self.direct.send((device, frame));
+        self.changed(app);
+        Ok(offer)
     }
 
     fn config(&self) -> RemoteConfig {
@@ -242,6 +292,12 @@ impl RemoteState {
                 .map(|device| DeviceView { id: device.id.clone(), name: device.name.clone(), paired_at: device.paired_at, last_seen: device.last_seen, connected: connections.get(&device.id).copied().unwrap_or(0) > 0 })
                 .collect(),
             pairing,
+            offers: {
+                let mut offers: Vec<apk::ApkOffer> = self.offers.lock().unwrap_or_else(|poisoned| poisoned.into_inner()).values().cloned().collect();
+                offers.sort_by_key(|offer| std::cmp::Reverse(offer.offered_at));
+                offers.truncate(10);
+                offers
+            },
         }
     }
 
@@ -366,6 +422,21 @@ pub fn remote_device_revoke(id: String, app: AppHandle, remote: State<'_, Remote
     let _ = remote.revoked.send(id);
     remote.changed(&app);
     Ok(remote.status())
+}
+
+/// A file picker for the app to send.
+#[tauri::command]
+pub async fn remote_pick_apk(app: AppHandle) -> CommandResult<Option<String>> {
+    use tauri_plugin_dialog::DialogExt;
+    let picked = tauri::async_runtime::spawn_blocking(move || app.dialog().file().set_title("Choose an Android app to install on the phone").add_filter("Android app", &["apk"]).blocking_pick_file())
+        .await
+        .map_err(|error| DesktopError::io(format!("file picker failed: {error}")))?;
+    Ok(picked.map(|path| path.to_string()))
+}
+
+#[tauri::command]
+pub async fn remote_send_apk(path: String, device: Option<String>, app: AppHandle, remote: State<'_, RemoteState>) -> CommandResult<apk::ApkOffer> {
+    remote.send_apk(&app, &path, device).await
 }
 
 #[cfg(test)]

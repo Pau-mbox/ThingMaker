@@ -967,6 +967,22 @@ export type RemoteStatus = {
   listening: string[];
   devices: RemoteDevice[];
   pairing: RemotePairing | null;
+  /** Apps sent to phones today, newest first. */
+  offers: ApkOffer[];
+};
+
+/** An Android app offered to a phone, and what the phone last said about it. */
+export type ApkOffer = {
+  id: string;
+  name: string;
+  size: number;
+  sha256: string;
+  device: string | null;
+  offeredAt: number;
+  expiresAt: number;
+  /** sent, downloading, confirm (Android is asking), installed, failed, cancelled. */
+  state: string;
+  message: string | null;
 };
 
 /** Where a goal is moved: an open session by handle, or a fresh one. */
@@ -1536,6 +1552,8 @@ export const COMMANDS = {
   remotePairStart: "remote_pair_start",
   remotePairCancel: "remote_pair_cancel",
   remoteDeviceRevoke: "remote_device_revoke",
+  remotePickApk: "remote_pick_apk",
+  remoteSendApk: "remote_send_apk",
 } as const;
 
 export type CommandName = (typeof COMMANDS)[keyof typeof COMMANDS];

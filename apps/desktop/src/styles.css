@@ -5012,3 +5012,21 @@ button.odyssey-task-title svg {
   grid-column: 1 / -1;
   white-space: normal;
 }
+
+/* Settings → Phone: apps sent to phones */
+.phone-offers {
+  list-style: none;
+  margin: 10px 0 0;
+  padding: 0;
+}
+
+.phone-offers li {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+  padding: 4px 0;
+}
+
+.apk-card .doc-card-head {
+  border-bottom: 0;
+}

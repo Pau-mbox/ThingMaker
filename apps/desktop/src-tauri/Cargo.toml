@@ -36,6 +36,8 @@ uuid = { workspace = true }
 axum = { version = "=0.8.9", default-features = false, features = ["http1", "json", "query", "tokio", "ws"] }
 qrcode = { version = "=0.14.1", default-features = false, features = ["svg"] }
 if-addrs = "=0.15.0"
+tokio-util = { version = "=0.7.19", features = ["io"] }
+sha2 = "=0.10.9"
 
 [target.'cfg(target_os = "macos")'.dependencies]
 security-framework = "=3.7.0"

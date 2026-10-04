@@ -3,6 +3,7 @@ package dev.thingmaker.phone
 import android.app.Notification
 import android.app.NotificationManager
 import android.app.Service
+import android.content.Context
 import android.content.Intent
 import android.content.pm.ServiceInfo
 import android.os.Handler
@@ -37,6 +38,11 @@ class BridgeService : Service() {
 
     override fun onBind(intent: Intent?): IBinder? = null
 
+    override fun onCreate() {
+        super.onCreate()
+        instance = this
+    }
+
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         Notifier.channels(this)
         pairing = Pairing.load(this) ?: run {
@@ -49,6 +55,7 @@ class BridgeService : Service() {
     }
 
     override fun onDestroy() {
+        if (instance === this) instance = null
         stopped = true
         handler.removeCallbacksAndMessages(null)
         socket?.close(1000, "stopped")
@@ -94,7 +101,17 @@ class BridgeService : Service() {
                 "welcome" -> {
                     retry = 2_000L
                     status("Connected to ${pairing.macName}")
+                    // Reports made while there was no line, an update of this
+                    // app included: it could only say so now.
+                    val prefs = getSharedPreferences("install", MODE_PRIVATE)
+                    prefs.getString("selfUpdate", null)?.let { id -> prefs.edit().putString("pending:$id", "installed").remove("selfUpdate").apply() }
+                    for ((key, state) in prefs.all) {
+                        if (!key.startsWith("pending:")) continue
+                        webSocket.send(JSONObject().put("t", "install_status").put("id", key.removePrefix("pending:")).put("state", state.toString()).toString())
+                        prefs.edit().remove(key).apply()
+                    }
                 }
+                "install" -> offered(Offer(frame.optString("id"), frame.optString("name"), frame.optLong("size"), frame.optString("sha256"), frame.optString("from", pairing.macName)))
                 "denied" -> {
                     stopped = true
                     Notifier.attention(this@BridgeService, "Pairing revoked", "${pairing.macName} no longer knows this phone. Open the app to pair again.")
@@ -113,6 +130,17 @@ class BridgeService : Service() {
             status("Waiting for ${pairing.macName}…")
             reconnect()
         }
+    }
+
+    /** An app from the Mac: straight to the install screen when the app is open, a notification when not. */
+    private fun offered(offer: Offer) {
+        if (offer.id.isEmpty()) return
+        val open = offer.into(Intent(this, InstallActivity::class.java)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+        if (App.foreground) {
+            startActivity(open)
+            return
+        }
+        Notifier.install(this, offer, open)
     }
 
     /** What reaches the phone while the app is closed. */
@@ -136,5 +164,16 @@ class BridgeService : Service() {
 
     companion object {
         private const val ONGOING = 1
+
+        @Volatile
+        private var instance: BridgeService? = null
+
+        /** Tells the Mac; kept for the next connection when there is none now. */
+        fun report(context: Context, id: String, state: String, message: String?) {
+            val service = instance
+            val socket = service?.socket
+            if (socket != null && socket.send(JSONObject().put("t", "install_status").put("id", id).put("state", state).put("message", message ?: JSONObject.NULL).toString())) return
+            context.getSharedPreferences("install", Context.MODE_PRIVATE).edit().putString("pending:$id", state).apply()
+        }
     }
 }
