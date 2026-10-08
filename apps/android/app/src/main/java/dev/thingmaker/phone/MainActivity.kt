@@ -19,6 +19,7 @@ import android.view.View
 import android.view.ViewGroup.LayoutParams.MATCH_PARENT
 import android.view.ViewGroup.LayoutParams.WRAP_CONTENT
 import android.view.WindowInsets
+import android.webkit.CookieManager
 import android.webkit.JavascriptInterface
 import android.webkit.WebResourceError
 import android.webkit.WebResourceRequest
@@ -35,7 +36,7 @@ import kotlin.concurrent.thread
 
 /**
  * The phone's ThingMaker: ThingMaker's own screens, served by the paired Mac
- * over Tailscale, in a WebView. Locked behind the phone's fingerprint or
+ * through its Cloudflare relay, in a WebView. Locked behind the phone's fingerprint or
  * screen lock, because what is inside can run agents on the Mac.
  */
 class MainActivity : Activity() {
@@ -132,25 +133,37 @@ class MainActivity : Activity() {
             })
     }
 
-    /** Finds the Mac on any of its addresses, then loads its screens. */
+    /**
+     * Reaches the Mac through its relay, then loads its screens. Cloudflare
+     * Access lets the first request through on the service token and answers
+     * with a sign-in cookie; the WebView gets that cookie, so the pages and
+     * the WebSocket it opens are let through too.
+     */
     private fun connect() {
         showCover("Reaching ${pairing.macName}…", null, null)
         thread {
-            val found = pairing.baseUrls().firstOrNull { url ->
-                runCatching { PROBE.newCall(Request.Builder().url("$url/v1/hello").build()).execute().use { it.isSuccessful } }.getOrDefault(false)
+            val problem: String? = try {
+                PROBE.newCall(pairing.authorize(Request.Builder().url("${pairing.url}/v1/hello")).build()).execute().use { response ->
+                    val cookies = CookieManager.getInstance()
+                    cookies.setAcceptCookie(true)
+                    response.headers("Set-Cookie").forEach { cookies.setCookie(pairing.url, it) }
+                    cookies.flush()
+                    when {
+                        response.isSuccessful -> null
+                        response.code == 503 -> "The relay is up, but ThingMaker on ${pairing.macName} is not connected to it. Is it running there with phone access on?"
+                        response.code in listOf(302, 401, 403) -> "Cloudflare Access turned this phone away. Pair again from the Mac's Settings → Phone to pick up the current service token."
+                        else -> "The relay answered ${response.code}."
+                    }
+                }
+            } catch (error: Exception) {
+                "Can't reach the relay: ${error.message}\n\nIs this phone online?"
             }
             runOnUiThread {
-                if (found == null) {
-                    showCover(
-                        "Can't reach ${pairing.macName}.\n\nIs Tailscale on, on this phone and on the Mac? Is ThingMaker running there with phone access on?",
-                        "Try again",
-                        { connect() },
-                        "Pair with another Mac",
-                        { forget() },
-                    )
+                if (problem != null) {
+                    showCover(problem, "Try again", { connect() }, "Pair with another Mac", { forget() })
                 } else {
-                    base = found
-                    web.loadUrl("$found/app/")
+                    base = pairing.url
+                    web.loadUrl("${pairing.url}/app/", pairing.accessHeaders())
                     startBridge()
                 }
             }

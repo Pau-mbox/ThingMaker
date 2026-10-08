@@ -1,15 +1,18 @@
-//! Remote control from a paired phone, over Tailscale.
+//! Remote control from a paired phone, through the user's Cloudflare relay.
 //!
-//! Off until the user turns it on in Settings. When on, the bridge listens
-//! on this Mac's Tailscale addresses only (and on loopback, for an emulator
-//! through `adb reverse`), never on the LAN or the internet: Tailscale's
-//! WireGuard tunnel is the transport, and a per-phone token, issued by
-//! scanning a QR code on this Mac, is the key. What a phone may do is the
-//! list in [`dispatch::ALLOWED`].
+//! Off until the user turns it on in Settings. When on, the Mac keeps one
+//! connection open to its relay — a Worker on the user's workers.dev address
+//! (`apps/relay`), behind Cloudflare Access — and answers what the phone sends
+//! there; nothing on the Mac listens to the network (a development build
+//! also listens on loopback, for an emulator through `adb reverse`). Access
+//! keeps everyone without the service token away from the relay, and a
+//! per-phone token, issued by scanning a QR code on this Mac, is the key to
+//! the bridge itself. What a phone may do is the list in [`dispatch::ALLOWED`].
 
 pub mod apk;
 pub mod devices;
 pub mod dispatch;
+mod relay;
 mod server;
 pub mod tools;
 
@@ -32,7 +35,7 @@ pub const REMOTE_EVENT: &str = "thingmaker://remote";
 const PAIRING_MS: i64 = 10 * 60_000;
 /// Wrong codes before a pairing is called off.
 const PAIRING_ATTEMPTS: u32 = 5;
-/// How often the bridge looks for a changed Tailscale address.
+/// How often the bridge checks what it should be listening on.
 const ADDRESS_CHECK: Duration = Duration::from_secs(30);
 /// The events a phone's screens listen to, as the desktop's do.
 const FORWARDED: [&str; 2] = [crate::commands::delegation::JOB_EVENT, crate::commands::bigthing::BIGTHING_EVENT];
@@ -66,26 +69,39 @@ pub struct RemoteState {
     /// Frames for one phone (`Some(id)`) or for every phone (`None`).
     pub direct: broadcast::Sender<(Option<String>, Arc<str>)>,
     offers: Mutex<HashMap<String, apk::ApkOffer>>,
+    /// The Mac's line to its relay: off, connecting, connected or error.
+    relay: Mutex<RelayView>,
+    /// Wakes the relay connection when its settings change.
+    pub relay_changed: tokio::sync::Notify,
 }
 
-/// Is this a Tailscale address (100.64.0.0/10)?
-pub fn is_tailscale(ip: &Ipv4Addr) -> bool {
-    let [a, b, ..] = ip.octets();
-    a == 100 && (64..=127).contains(&b)
+/// How the Mac's connection to its relay is doing.
+#[derive(Debug, Clone, Serialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct RelayView {
+    pub url: Option<String>,
+    /// off, connecting, connected, error.
+    pub state: String,
+    pub message: Option<String>,
+    /// Whether a Cloudflare Access service token is set.
+    pub access: bool,
 }
 
-fn tailscale_addresses() -> Vec<Ipv4Addr> {
-    let mut found: Vec<Ipv4Addr> = if_addrs::get_if_addrs()
-        .unwrap_or_default()
-        .into_iter()
-        .filter_map(|interface| match interface.ip() {
-            IpAddr::V4(ip) if is_tailscale(&ip) => Some(ip),
-            _ => None,
-        })
-        .collect();
-    found.sort();
-    found.dedup();
-    found
+/// A relay address the phone can reach: https, no path.
+pub fn normalize_relay_url(raw: &str) -> Result<String, DesktopError> {
+    let trimmed = raw.trim().trim_end_matches('/');
+    let with_scheme = if trimmed.contains("://") { trimmed.to_string() } else { format!("https://{trimmed}") };
+    // A development build may use a relay on this Mac (`wrangler dev`).
+    if cfg!(debug_assertions) && (with_scheme.starts_with("http://localhost:") || with_scheme.starts_with("http://127.0.0.1:")) {
+        return Ok(with_scheme);
+    }
+    let Some(host) = with_scheme.strip_prefix("https://") else {
+        return Err(DesktopError::unsupported("The relay address has to be https://…"));
+    };
+    if host.is_empty() || host.contains('/') || host.contains(' ') || !host.contains('.') {
+        return Err(DesktopError::unsupported("The relay address is the Worker's host, like https://thingmaker-relay.you.workers.dev"));
+    }
+    Ok(with_scheme)
 }
 
 fn computer_name() -> String {
@@ -125,8 +141,8 @@ pub struct RemoteStatus {
     enabled: bool,
     port: u16,
     name: String,
-    /// This Mac's Tailscale addresses; empty when Tailscale is not up.
-    tailscale: Vec<String>,
+    /// The Mac's line to the relay.
+    relay: RelayView,
     listening: Vec<String>,
     devices: Vec<DeviceView>,
     pairing: Option<PairingView>,
@@ -150,6 +166,8 @@ impl RemoteState {
             revoked,
             direct,
             offers: Mutex::new(HashMap::new()),
+            relay: Mutex::new(RelayView { url: None, state: "off".into(), message: None, access: false }),
+            relay_changed: tokio::sync::Notify::new(),
         }
     }
 
@@ -285,7 +303,7 @@ impl RemoteState {
             enabled: config.enabled,
             port: config.port,
             name: self.host_name.clone(),
-            tailscale: tailscale_addresses().iter().map(ToString::to_string).collect(),
+            relay: self.relay_view(),
             listening,
             devices: config
                 .devices
@@ -302,9 +320,44 @@ impl RemoteState {
         }
     }
 
+    pub(crate) fn relay_view(&self) -> RelayView {
+        self.relay.lock().unwrap_or_else(|poisoned| poisoned.into_inner()).clone()
+    }
+
+    pub(crate) fn set_relay(&self, app: &AppHandle, state: &str, message: Option<String>) {
+        let config = self.config();
+        let next = RelayView { url: config.relay_url.clone(), state: state.into(), message, access: config.access_client_id.is_some() && config.access_client_secret.is_some() };
+        let mut current = self.relay.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+        if *current != next {
+            *current = next;
+            drop(current);
+            self.changed(app);
+        }
+    }
+
+    /// The Mac's key to its relay, made the first time it is needed.
+    pub(crate) fn mac_key(&self) -> Result<String, DesktopError> {
+        if let Some(key) = self.config().mac_key.filter(|key| key.len() >= 32) {
+            return Ok(key);
+        }
+        let key = devices::new_secret();
+        let made = key.clone();
+        self.update(|config| config.mac_key = Some(made))?;
+        Ok(key)
+    }
+
     fn pairing_view(&self, config: &RemoteConfig, pairing: &Pairing) -> PairingView {
-        let hosts: Vec<String> = tailscale_addresses().iter().map(ToString::to_string).collect();
-        let payload = serde_json::json!({ "v": 1, "name": self.host_name, "hosts": hosts, "port": config.port, "code": pairing.code }).to_string();
+        // Everything the phone needs, the Access service token included: it
+        // is shown on this Mac's screen only, for the phone to scan.
+        let payload = serde_json::json!({
+            "v": 2,
+            "name": self.host_name,
+            "url": config.relay_url,
+            "code": pairing.code,
+            "accessId": config.access_client_id,
+            "accessSecret": config.access_client_secret,
+        })
+        .to_string();
         let qr_svg = qrcode::QrCode::new(format!("thingmaker-pair:{payload}").as_bytes())
             .map(|code| code.render::<qrcode::render::svg::Color>().min_dimensions(220, 220).quiet_zone(true).build())
             .unwrap_or_default();
@@ -317,9 +370,9 @@ impl RemoteState {
         if !config.enabled {
             return Vec::new();
         }
-        let mut addresses: Vec<SocketAddr> = tailscale_addresses().into_iter().map(|ip| SocketAddr::new(IpAddr::V4(ip), config.port)).collect();
-        addresses.push(SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), config.port));
-        addresses
+        // Phones come through the relay; only a development build listens
+        // here, on loopback, for an emulator through `adb reverse`.
+        if cfg!(debug_assertions) { vec![SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), config.port)] } else { Vec::new() }
     }
 
     /// Listens where it should, closing listeners that no longer should be.
@@ -378,6 +431,8 @@ pub fn start(app: &AppHandle, data_dir: PathBuf) {
             }
         });
     }
+    let relay_app = app.clone();
+    tauri::async_runtime::spawn(async move { relay::run(relay_app).await });
     let app = app.clone();
     tauri::async_runtime::spawn(async move {
         loop {
@@ -385,6 +440,27 @@ pub fn start(app: &AppHandle, data_dir: PathBuf) {
             tokio::time::sleep(ADDRESS_CHECK).await;
         }
     });
+}
+
+/// The relay's address and the Access service token in front of it.
+#[tauri::command]
+pub fn remote_set_relay(url: String, access_client_id: Option<String>, access_client_secret: Option<String>, app: AppHandle, remote: State<'_, RemoteState>) -> CommandResult<RemoteStatus> {
+    let url = normalize_relay_url(&url)?;
+    let clean = |value: Option<String>| value.map(|value| value.trim().to_string()).filter(|value| !value.is_empty());
+    let (id, secret) = (clean(access_client_id), clean(access_client_secret));
+    remote.update(|config| {
+        config.relay_url = Some(url);
+        // Left empty, the token already saved stays.
+        if id.is_some() {
+            config.access_client_id = id;
+        }
+        if secret.is_some() {
+            config.access_client_secret = secret;
+        }
+    })?;
+    remote.relay_changed.notify_waiters();
+    remote.changed(&app);
+    Ok(remote.status())
 }
 
 #[tauri::command]
@@ -395,6 +471,7 @@ pub fn remote_status(remote: State<'_, RemoteState>) -> RemoteStatus {
 #[tauri::command]
 pub fn remote_set_enabled(enabled: bool, app: AppHandle, remote: State<'_, RemoteState>) -> CommandResult<RemoteStatus> {
     remote.update(|config| config.enabled = enabled)?;
+    remote.relay_changed.notify_waiters();
     if !enabled {
         *remote.pairing.lock().unwrap_or_else(|poisoned| poisoned.into_inner()) = None;
         let _ = remote.revoked.send("*".into());
@@ -407,6 +484,9 @@ pub fn remote_set_enabled(enabled: bool, app: AppHandle, remote: State<'_, Remot
 pub fn remote_pair_start(app: AppHandle, remote: State<'_, RemoteState>) -> CommandResult<PairingView> {
     if !remote.config().enabled {
         return Err(DesktopError::not_ready("Turn on phone access first."));
+    }
+    if remote.config().relay_url.is_none() {
+        return Err(DesktopError::not_ready("Set the relay's address first."));
     }
     let pairing = Pairing { code: devices::new_pairing_code(), expires_at: now_ms() + PAIRING_MS, attempts: 0 };
     let view = remote.pairing_view(&remote.config(), &pairing);
@@ -449,11 +529,12 @@ mod tests {
     use super::*;
 
     #[test]
-    fn only_the_tailscale_range_counts() {
-        assert!(is_tailscale(&Ipv4Addr::new(100, 101, 2, 3)));
-        assert!(is_tailscale(&Ipv4Addr::new(100, 64, 0, 1)));
-        assert!(!is_tailscale(&Ipv4Addr::new(100, 128, 0, 1)));
-        assert!(!is_tailscale(&Ipv4Addr::new(192, 168, 1, 10)));
+    fn a_relay_address_is_an_https_host() {
+        assert_eq!(normalize_relay_url("thingmaker-relay.pau.workers.dev/").unwrap(), "https://thingmaker-relay.pau.workers.dev");
+        assert_eq!(normalize_relay_url(" https://thingmaker-relay.pau.workers.dev ").unwrap(), "https://thingmaker-relay.pau.workers.dev");
+        assert!(normalize_relay_url("http://thingmaker-relay.pau.workers.dev").is_err(), "the phone only talks https to it");
+        assert!(normalize_relay_url("https://x.workers.dev/app").is_err());
+        assert!(normalize_relay_url("localhost").is_err());
     }
 
     #[test]

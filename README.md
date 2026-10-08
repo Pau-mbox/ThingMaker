@@ -51,7 +51,7 @@ with your own sign-in, and never reads, stores or passes on a token.
 | 🧠 **Shared memory** | One project memory — decisions, conventions, facts — that the orchestrator, its workers and you read and write (`memory_read`, `memory_write`), plus a live task board. |
 | 🖼️ **Inline images** | Images agents generate or read show up right in the transcript, including Codex's generated images. |
 | 🔌 **MCP servers in one click** | Install Playwright, Context7, GitHub and others from a catalog, or paste any server's config or `mcp add` command. ThingMaker test-starts it, then writes it through each provider's own `mcp add`, so Claude Code, Codex and Antigravity all have it. Secrets stay in the keychain as `${NAME}` references. |
-| 📱 **On your phone** | An Android app follows and drives the Mac's sessions and Big Things over Tailscale: read transcripts live, send and steer, answer a Big Thing, pause and resume, and get notified when one needs you. Paired by QR code, locked by your fingerprint, revocable per phone — see [On your phone](#4-on-your-phone). |
+| 📱 **On your phone** | An Android app follows and drives the Mac's sessions and Big Things from anywhere, through your own relay on Cloudflare: read transcripts live, send and steer, answer a Big Thing, pause and resume, and get notified when one needs you. Paired by QR code, locked by your fingerprint, revocable per phone — see [On your phone](#4-on-your-phone). |
 | 🔍 **Review and tools** | Diffs and baselines, git staging and commits, worktrees, an integrated terminal, file browsing, artifacts and skills. |
 | 🔐 **Your accounts, your machine** | Each provider signs in through its own flow and keeps its own credentials. Switch accounts from the Providers panel. Everything runs locally. |
 
@@ -171,16 +171,34 @@ picks up the new build when you reopen it.
 ### 4. On your phone
 
 The Android app shows ThingMaker's own screens, served by your Mac, so the
-phone always matches the Mac's version.
+phone always matches the Mac's version. Phone and Mac meet at a small relay
+you deploy once to your Cloudflare account (a Worker on your free
+workers.dev address, `apps/relay`): the Mac only connects out, nothing on it
+listens to the network, and Cloudflare Access keeps everyone without your
+service token away from the relay.
 
-1. Install [Tailscale](https://tailscale.com/download) on the Mac and on the
-   phone and sign in to both with the same account. The bridge listens only on
-   the Mac's Tailscale address — never your LAN or the internet.
-2. Build the app with `pnpm phone` (Java 17 and the Android SDK; it installs
-   itself when a phone is plugged in with USB debugging on, otherwise copy
-   `ThingMaker-phone.apk` to the phone).
-3. On the Mac, **Settings → Phone**: turn on phone access and press **Pair a
-   phone**. In the app, scan the QR code.
+1. **Deploy the relay.** `pnpm relay:deploy` — Wrangler asks you to sign in to
+   Cloudflare the first time — and note the address it prints,
+   `https://thingmaker-relay.<you>.workers.dev`.
+2. **Put Cloudflare Access in front of it.** In the Cloudflare dashboard:
+   - Zero Trust → Access → Service auth → **Create service token**; copy the
+     Client ID and Client Secret.
+   - Workers & Pages → `thingmaker-relay` → **Access**: protect the
+     workers.dev address with a policy whose action is **Service Auth** and
+     which includes that service token.
+3. **Connect the Mac.** In ThingMaker, **Settings → Phone**: turn on phone
+   access, paste the relay address, the Client ID and the Client Secret, and
+   save. It shows *connected* once the Mac reaches the relay.
+4. **Install the app** with `pnpm phone` (Java 17 and the Android SDK; it
+   installs itself when a phone is plugged in with USB debugging on,
+   otherwise copy `ThingMaker-phone.apk` to the phone).
+5. **Pair.** In **Settings → Phone**, press **Pair a phone** and scan the QR
+   code with the app. The code carries the relay address and the Access
+   token, so the phone needs nothing else.
+
+Traffic is encrypted between each device and Cloudflare, and Cloudflare ends
+TLS at its edge; each phone's own token, checked on the Mac, is the key to
+the bridge itself.
 
 From the phone you can read and follow sessions, send and steer, cancel, start
 sessions, run and answer Big Things and decide their plan changes, and cancel
@@ -193,7 +211,7 @@ needs input, is blocked or is done, or a worker's job fails. Revoke a phone in
 **Installing apps without a cable.** **Settings → Phone → Send an app…** puts
 any `.apk` on a connected phone, and an `.apk` an agent names in a session
 gets an **Install on phone** button (on the phone: **Install on this phone**).
-The phone downloads it over Tailscale, checks its SHA-256, and Android asks
+The phone downloads it through the relay, checks its SHA-256, and Android asks
 you to confirm — once, the first time, it also asks you to let ThingMaker
 install apps. That includes updates of the ThingMaker app itself: run
 `pnpm phone` and send `ThingMaker-phone.apk`. Agents can do the same: every

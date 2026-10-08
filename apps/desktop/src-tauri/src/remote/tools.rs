@@ -30,14 +30,14 @@ fn schemas() -> Vec<Value> {
         json!({
             "name": "phone_status",
             "title": "Is the phone there",
-            "description": "Whether the user's Android phone is paired with ThingMaker and connected right now, so an app can be installed on it with phone_install. No cable or adb is involved: the phone reaches this Mac over Tailscale.",
+            "description": "Whether the user's Android phone is paired with ThingMaker and connected right now, so an app can be installed on it with phone_install. No cable or adb is involved: the phone reaches this Mac through its relay.",
             "inputSchema": { "type": "object", "properties": {}, "additionalProperties": false },
             "annotations": { "readOnlyHint": true, "openWorldHint": false }
         }),
         json!({
             "name": "phone_install",
             "title": "Install an app on the phone",
-            "description": "Installs an Android build (.apk) on the user's paired phone, as if they sent it themselves from ThingMaker: the phone downloads it over Tailscale, checks it, and Android asks the user to confirm on the phone. Use it whenever the user asks to put a build on their phone; no cable or adb is needed. Waits for the outcome and returns `installed`, `confirm` (Android is still asking: tell the user to tap Install), `cancelled`, `failed` with Android's reason, or `sent` (the phone has not fetched it yet).",
+            "description": "Installs an Android build (.apk) on the user's paired phone, as if they sent it themselves from ThingMaker: the phone downloads it through the relay, checks it, and Android asks the user to confirm on the phone. Use it whenever the user asks to put a build on their phone; no cable or adb is needed. Waits for the outcome and returns `installed`, `confirm` (Android is still asking: tell the user to tap Install), `cancelled`, `failed` with Android's reason, or `sent` (the phone has not fetched it yet).",
             "inputSchema": {
                 "type": "object",
                 "properties": {
@@ -100,7 +100,7 @@ fn status(app: &AppHandle) -> Value {
     } else if config.devices.is_empty() {
         "No phone is paired. The user pairs one in ThingMaker → Settings → Phone."
     } else if connected.is_empty() {
-        "A phone is paired but not connected: ask the user to open ThingMaker on the phone, with Tailscale on."
+        "A phone is paired but not connected: ask the user to open ThingMaker on the phone."
     } else {
         "Ready: phone_install puts an .apk on it."
     };

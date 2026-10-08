@@ -105,10 +105,10 @@ class InstallActivity : Activity() {
         val pairing = Pairing.load(this) ?: return fail("This phone is not paired.")
         val target = File(cacheDir, "apks").apply { mkdirs() }.resolve("${offer.id}.apk")
         val digest = MessageDigest.getInstance("SHA-256")
-        var lastError = "No address of ${pairing.macName} answered."
-        for (base in pairing.baseUrls()) {
+        var lastError = "Could not reach the relay."
+        for (base in listOf(pairing.url)) {
             try {
-                val request = Request.Builder().url("$base/v1/apk/${offer.id}").header("Authorization", "Bearer ${pairing.token}").build()
+                val request = pairing.authorize(Request.Builder().url("$base/v1/apk/${offer.id}").header("Authorization", "Bearer ${pairing.token}")).build()
                 HTTP.newCall(request).execute().use { response ->
                     if (!response.isSuccessful) {
                         lastError = response.body?.string()?.take(200) ?: "The Mac refused (${response.code})."

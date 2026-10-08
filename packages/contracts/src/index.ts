@@ -951,6 +951,15 @@ export const BIGTHING_EVENT = "thingmaker://bigthing";
 /** Phone access changed: a phone paired, connected or left; the bridge started or stopped. */
 export const REMOTE_EVENT = "thingmaker://remote";
 
+/** How the Mac's connection to its Cloudflare relay is doing. */
+export type RelayView = {
+  url: string | null;
+  state: "off" | "connecting" | "connected" | "error";
+  message: string | null;
+  /** Whether a Cloudflare Access service token is set. */
+  access: boolean;
+};
+
 /** A phone paired with this Mac. */
 export type RemoteDevice = { id: string; name: string; pairedAt: number; lastSeen: number | null; connected: boolean };
 
@@ -962,8 +971,8 @@ export type RemoteStatus = {
   port: number;
   /** This Mac's name, as the phone shows it. */
   name: string;
-  /** This Mac's Tailscale addresses; empty when Tailscale is not running. */
-  tailscale: string[];
+  /** The Mac's line to its Cloudflare relay. */
+  relay: RelayView;
   listening: string[];
   devices: RemoteDevice[];
   pairing: RemotePairing | null;
@@ -1552,6 +1561,7 @@ export const COMMANDS = {
   remotePairStart: "remote_pair_start",
   remotePairCancel: "remote_pair_cancel",
   remoteDeviceRevoke: "remote_device_revoke",
+  remoteSetRelay: "remote_set_relay",
   remotePickApk: "remote_pick_apk",
   remoteSendApk: "remote_send_apk",
 } as const;

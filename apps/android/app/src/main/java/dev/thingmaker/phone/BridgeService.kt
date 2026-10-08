@@ -21,14 +21,13 @@ import java.util.concurrent.TimeUnit
  * Keeps a line open to the Mac while the app is closed, so the phone hears
  * when a Big Thing asks something, is blocked or is done, and when a
  * worker's job fails. No push service in between: the Mac speaks to this
- * phone over Tailscale directly.
+ * phone through its relay.
  */
 class BridgeService : Service() {
     private val client = OkHttpClient.Builder().pingInterval(30, TimeUnit.SECONDS).connectTimeout(5, TimeUnit.SECONDS).readTimeout(0, TimeUnit.SECONDS).build()
     private val handler = Handler(Looper.getMainLooper())
     private var socket: WebSocket? = null
     private var pairing: Pairing? = null
-    private var hostIndex = 0
     private var retry = 2_000L
     private var stopped = false
     /** What the ongoing notification says now; a second start keeps it. */
@@ -77,15 +76,13 @@ class BridgeService : Service() {
 
     private fun open() {
         val pairing = pairing ?: return
-        val host = pairing.hosts[hostIndex % pairing.hosts.size]
-        val request = Request.Builder().url("ws://$host:${pairing.port}/v1/ws").build()
+        val request = pairing.authorize(Request.Builder().url(pairing.socketUrl("/v1/ws"))).build()
         socket = client.newWebSocket(request, Listener(pairing))
     }
 
     private fun reconnect() {
         socket = null
         if (stopped) return
-        hostIndex++
         handler.postDelayed({ open() }, retry)
         retry = (retry * 2).coerceAtMost(60_000L)
     }

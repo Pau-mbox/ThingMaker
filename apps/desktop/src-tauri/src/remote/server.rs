@@ -25,7 +25,7 @@ use tokio::sync::mpsc;
 use super::{RemoteState, dispatch, now_ms};
 use crate::state::AppState;
 
-pub fn router(app: AppHandle) -> Router {
+pub(super) fn router(app: AppHandle) -> Router {
     Router::new()
         .route("/v1/hello", get(hello))
         .route("/v1/pair", post(pair))
@@ -220,50 +220,75 @@ impl Drop for Connection {
     }
 }
 
-async fn serve(app: AppHandle, mut socket: WebSocket) {
+/// A phone's WebSocket on the local listener: its frames, through the same
+/// conversation as a relayed one.
+async fn serve(app: AppHandle, socket: WebSocket) {
+    use futures_util::{SinkExt, StreamExt};
+    let (mut sink, mut stream) = socket.split();
+    let (incoming_tx, incoming) = mpsc::unbounded_channel::<String>();
+    let (outgoing, mut outgoing_rx) = mpsc::unbounded_channel::<String>();
+    tokio::spawn(async move {
+        while let Some(Ok(message)) = stream.next().await {
+            match message {
+                Message::Text(text) => {
+                    if incoming_tx.send(text.to_string()).is_err() {
+                        break;
+                    }
+                }
+                Message::Close(_) => break,
+                _ => {}
+            }
+        }
+    });
+    tokio::spawn(async move {
+        while let Some(frame) = outgoing_rx.recv().await {
+            if sink.send(Message::Text(frame.into())).await.is_err() {
+                break;
+            }
+        }
+        let _ = sink.close().await;
+    });
+    converse(app, incoming, outgoing).await;
+}
+
+/// One phone's conversation with the bridge, whatever carries it — the
+/// local listener or the relay. It ends when either side goes; dropping
+/// `outgoing` closes the phone's side.
+pub(super) async fn converse(app: AppHandle, mut incoming: mpsc::UnboundedReceiver<String>, outgoing: mpsc::UnboundedSender<String>) {
     // The first frame names the phone; nothing else is read before it.
-    let device = match tokio::time::timeout(Duration::from_secs(10), socket.recv()).await {
-        Ok(Some(Ok(Message::Text(text)))) => {
-            let frame: Value = serde_json::from_str(text.as_str()).unwrap_or(Value::Null);
+    let device = match tokio::time::timeout(Duration::from_secs(10), incoming.recv()).await {
+        Ok(Some(text)) => {
+            let frame: Value = serde_json::from_str(&text).unwrap_or(Value::Null);
             let token = frame.get("token").and_then(Value::as_str).unwrap_or_default();
             if frame.get("t").and_then(Value::as_str) == Some("hello") { app.state::<RemoteState>().authenticate(token) } else { None }
         }
         _ => None,
     };
     let Some(device) = device else {
-        let _ = socket.send(Message::Text(json!({ "t": "denied", "message": "This phone is not paired with this Mac, or its pairing was revoked." }).to_string().into())).await;
+        let _ = outgoing.send(json!({ "t": "denied", "message": "This phone is not paired with this Mac, or its pairing was revoked." }).to_string());
         return;
     };
     let remote = app.state::<RemoteState>();
     remote.connected(&app, &device.id, true);
-    let _ = socket
-        .send(Message::Text(json!({ "t": "welcome", "device": device.id, "name": remote.host_name.clone(), "version": env!("CARGO_PKG_VERSION") }).to_string().into()))
-        .await;
+    let _ = outgoing.send(json!({ "t": "welcome", "device": device.id, "name": remote.host_name.clone(), "version": env!("CARGO_PKG_VERSION") }).to_string());
 
-    let (out, mut outgoing) = mpsc::unbounded_channel::<String>();
     let mut events = remote.events.subscribe();
     let mut revoked = remote.revoked.subscribe();
     let mut direct = remote.direct.subscribe();
-    let mut connection = Connection { app: app.clone(), device: device.id.clone(), out, channels: HashMap::new() };
+    let mut connection = Connection { app: app.clone(), device: device.id.clone(), out: outgoing.clone(), channels: HashMap::new() };
     loop {
         tokio::select! {
-            incoming = socket.recv() => match incoming {
-                Some(Ok(Message::Text(text))) => {
-                    if let Ok(frame) = serde_json::from_str::<Value>(text.as_str()) {
+            frame = incoming.recv() => match frame {
+                Some(text) => {
+                    if let Ok(frame) = serde_json::from_str::<Value>(&text) {
                         connection.handle(frame);
                     }
                 }
-                Some(Ok(Message::Close(_))) | None | Some(Err(_)) => break,
-                Some(Ok(_)) => {}
+                None => break,
             },
-            Some(frame) = outgoing.recv() => {
-                if socket.send(Message::Text(frame.into())).await.is_err() {
-                    break;
-                }
-            }
             event = events.recv() => match event {
                 Ok(frame) => {
-                    if socket.send(Message::Text(frame.to_string().into())).await.is_err() {
+                    if outgoing.send(frame.to_string()).is_err() {
                         break;
                     }
                 }
@@ -272,7 +297,7 @@ async fn serve(app: AppHandle, mut socket: WebSocket) {
             },
             frame = direct.recv() => match frame {
                 Ok((target, frame)) if target.as_deref().is_none_or(|target| target == device.id) => {
-                    if socket.send(Message::Text(frame.to_string().into())).await.is_err() {
+                    if outgoing.send(frame.to_string()).is_err() {
                         break;
                     }
                 }
@@ -281,10 +306,11 @@ async fn serve(app: AppHandle, mut socket: WebSocket) {
             },
             gone = revoked.recv() => {
                 if matches!(gone.as_deref(), Ok(id) if id == device.id || id == "*") {
-                    let _ = socket.send(Message::Text(json!({ "t": "denied", "message": "This phone's pairing was revoked on the Mac." }).to_string().into())).await;
+                    let _ = outgoing.send(json!({ "t": "denied", "message": "This phone's pairing was revoked on the Mac." }).to_string());
                     break;
                 }
             }
+            () = outgoing.closed() => break,
         }
     }
     drop(connection);

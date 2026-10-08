@@ -2038,16 +2038,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "if-addrs"
-version = "0.15.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c0a05c691e1fae256cf7013d99dad472dc52d5543322761f83ec8d47eab40d2b"
-dependencies = [
- "libc",
- "windows-sys 0.61.2",
-]
-
-[[package]]
 name = "ignore"
 version = "0.4.33"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3618,6 +3608,7 @@ checksum = "6725596c3f2c3a0aef021139e145d4eafe314a6623e4680ca83852b2c67ab2ba"
 dependencies = [
  "aws-lc-rs",
  "once_cell",
+ "ring",
  "rustls-pki-types",
  "rustls-webpki",
  "subtle",
@@ -4753,9 +4744,11 @@ name = "thingmaker-desktop"
 version = "0.0.0"
 dependencies = [
  "axum",
+ "base64 0.22.1",
  "blake3",
- "if-addrs",
+ "futures-util",
  "qrcode",
+ "rustls",
  "security-framework",
  "serde",
  "serde_json",
@@ -4768,8 +4761,10 @@ dependencies = [
  "tempfile",
  "thingmaker-supervisor",
  "tokio",
+ "tokio-tungstenite",
  "tokio-util",
  "toml 1.1.5+spec-1.1.0",
+ "tower",
  "tracing",
  "tracing-appender",
  "tracing-subscriber",
@@ -4949,7 +4944,11 @@ checksum = "8f72a05e828585856dacd553fba484c242c46e391fb0e58917c942ee9202915c"
 dependencies = [
  "futures-util",
  "log",
+ "rustls",
+ "rustls-native-certs",
+ "rustls-pki-types",
  "tokio",
+ "tokio-rustls",
  "tungstenite",
 ]
 
@@ -5232,6 +5231,8 @@ dependencies = [
  "httparse",
  "log",
  "rand 0.9.5",
+ "rustls",
+ "rustls-pki-types",
  "sha1",
  "thiserror 2.0.20",
 ]

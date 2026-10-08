@@ -5030,3 +5030,11 @@ button.odyssey-task-title svg {
 .apk-card .doc-card-head {
   border-bottom: 0;
 }
+
+.phone-relay-form {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-width: 520px;
+  margin: 8px 0;
+}

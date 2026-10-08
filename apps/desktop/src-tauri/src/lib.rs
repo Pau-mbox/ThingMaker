@@ -122,7 +122,7 @@ pub fn run() {
             }
             // Big Thing runs in the host, whether or not a window is open.
             commands::bigthing::start(app.handle());
-            // Phone access over Tailscale; off until turned on in Settings.
+            // Phone access through the Cloudflare relay; off until turned on in Settings.
             remote::start(app.handle(), data_dir.clone());
 
             let show = MenuItem::with_id(app, "show", "Show ThingMaker", true, None::<&str>)?;
@@ -187,6 +187,7 @@ pub fn run() {
             remote::remote_device_revoke,
             remote::remote_pick_apk,
             remote::remote_send_apk,
+            remote::remote_set_relay,
             commands::session::session_open,
             commands::session::session_subscribe,
             commands::session::session_snapshot,

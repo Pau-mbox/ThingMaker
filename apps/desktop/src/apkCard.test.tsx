@@ -7,7 +7,7 @@ let connected = 1;
 vi.mock("@tauri-apps/api/core", () => ({
   invoke: vi.fn(async (command: string, args: Record<string, unknown>) => {
     calls.push({ command, args });
-    if (command === "remote_status") return { enabled: true, port: 1, name: "Mac", tailscale: [], listening: [], pairing: null, offers: [], devices: [{ id: "d1", name: "Pixel", pairedAt: 0, lastSeen: null, connected: connected > 0 }] };
+    if (command === "remote_status") return { enabled: true, port: 1, name: "Mac", relay: { url: "https://r.example.workers.dev", state: "connected", message: null, access: true }, listening: [], pairing: null, offers: [], devices: [{ id: "d1", name: "Pixel", pairedAt: 0, lastSeen: null, connected: connected > 0 }] };
     if (command === "remote_send_apk") return { id: "o1", name: "game.apk", size: 1, sha256: "x", device: null, offeredAt: 0, expiresAt: 0, state: "sent", message: null };
     return null;
   }),

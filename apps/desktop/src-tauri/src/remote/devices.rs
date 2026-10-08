@@ -23,11 +23,23 @@ pub struct RemoteConfig {
     pub port: u16,
     #[serde(default)]
     pub devices: Vec<Device>,
+    /// The relay the Mac and the phones meet at:
+    /// `https://thingmaker-relay.<account>.workers.dev`.
+    #[serde(default)]
+    pub relay_url: Option<String>,
+    /// The Cloudflare Access service token in front of the relay.
+    #[serde(default)]
+    pub access_client_id: Option<String>,
+    #[serde(default)]
+    pub access_client_secret: Option<String>,
+    /// This Mac's key to its relay: the first Mac to connect claims it.
+    #[serde(default)]
+    pub mac_key: Option<String>,
 }
 
 impl Default for RemoteConfig {
     fn default() -> Self {
-        Self { enabled: false, port: DEFAULT_PORT, devices: Vec::new() }
+        Self { enabled: false, port: DEFAULT_PORT, devices: Vec::new(), relay_url: None, access_client_id: None, access_client_secret: None, mac_key: None }
     }
 }
 

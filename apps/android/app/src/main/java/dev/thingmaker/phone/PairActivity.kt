@@ -27,13 +27,15 @@ import kotlin.concurrent.thread
 
 /**
  * Pairing with a Mac: scan the QR code its Settings → Phone shows, or type
- * its Tailscale address and the code. The Mac answers with this phone's own
+ * the relay's address, the code and the Access token. The Mac answers with this phone's own
  * token, which is all the app keeps.
  */
 class PairActivity : Activity() {
     private lateinit var status: TextView
     private lateinit var address: EditText
     private lateinit var code: EditText
+    private lateinit var accessId: EditText
+    private lateinit var accessSecret: EditText
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -46,16 +48,20 @@ class PairActivity : Activity() {
         column.addView(
             text(
                 "On the Mac, open ThingMaker → Settings → Phone, turn on phone access and press Pair a phone. " +
-                    "This phone and the Mac must both be signed in to Tailscale with the same account.",
+                    "The phone reaches the Mac through your relay on Cloudflare, from any network.",
                 15f, MUTED,
             ),
         )
         column.addView(button("Scan the QR code") { scan() })
         column.addView(text("Or type them in", 13f, MUTED).apply { setPadding(0, dp(28), 0, dp(6)) })
-        address = field("Mac's Tailscale address, e.g. 100.101.12.34", InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_URI)
+        address = field("Relay address, e.g. https://thingmaker-relay.you.workers.dev", InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_URI)
         code = field("Code shown on the Mac", InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_CAP_CHARACTERS)
+        accessId = field("Cloudflare Access client ID (if Access is on)", InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_VISIBLE_PASSWORD)
+        accessSecret = field("Cloudflare Access client secret", InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD)
         column.addView(address)
         column.addView(code)
+        column.addView(accessId)
+        column.addView(accessSecret)
         column.addView(button("Pair") { typed() })
         status = text("", 14f, MUTED).apply { setPadding(0, dp(16), 0, 0) }
         column.addView(status)
@@ -73,41 +79,42 @@ class PairActivity : Activity() {
     }
 
     private fun typed() {
-        val host = address.text.toString().trim().removePrefix("http://").substringBefore('/')
-        val (ip, port) = if (':' in host) host.substringBefore(':') to (host.substringAfter(':').toIntOrNull() ?: 47321) else host to 47321
+        var url = address.text.toString().trim().trimEnd('/')
+        if (url.isNotEmpty() && "://" !in url) url = "https://$url"
         val value = code.text.toString().replace(" ", "").trim()
-        if (ip.isEmpty() || value.isEmpty()) return say("Type the Mac's address and the code it shows.")
-        pair(PairingOffer("Mac", listOf(ip), port, value))
+        if (url.isEmpty() || value.isEmpty()) return say("Type the relay's address and the code the Mac shows.")
+        pair(PairingOffer("Mac", url, value, accessId.text.toString().trim().ifEmpty { null }, accessSecret.text.toString().trim().ifEmpty { null }))
     }
 
     private fun pair(offer: PairingOffer) {
         say("Reaching ${offer.name}…")
         thread {
             val body = JSONObject().put("code", offer.code).put("deviceName", "${Build.MANUFACTURER} ${Build.MODEL}").toString()
-            var last = "No address answered. Is Tailscale on, on both devices?"
-            for (host in offer.hosts) {
-                try {
-                    val request = Request.Builder().url("http://$host:${offer.port}/v1/pair").post(body.toRequestBody(JSON)).build()
-                    HTTP.newCall(request).execute().use { response ->
-                        val json = JSONObject(response.body?.string() ?: "{}")
-                        if (!response.isSuccessful) {
-                            last = json.optString("error", "The Mac refused the code.")
-                            return@use
+            val draft = Pairing(offer.url, "", offer.name, "", offer.accessId, offer.accessSecret)
+            val message = try {
+                val request = draft.authorize(Request.Builder().url("${offer.url}/v1/pair").post(body.toRequestBody(JSON))).build()
+                HTTP.newCall(request).execute().use { response ->
+                    val text = response.body?.string() ?: ""
+                    val json = runCatching { JSONObject(text) }.getOrNull()
+                    when {
+                        response.isSuccessful && json != null -> {
+                            Pairing.save(this, draft.copy(token = json.getString("token"), macName = json.optString("name", offer.name), deviceId = json.optString("deviceId")))
+                            runOnUiThread {
+                                startActivity(Intent(this, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP))
+                                finish()
+                            }
+                            return@thread
                         }
-                        val pairing = Pairing(offer.hosts, offer.port, json.getString("token"), json.optString("name", offer.name), json.optString("deviceId"))
-                        // The host that answered goes first next time.
-                        Pairing.save(this, pairing.copy(hosts = listOf(host) + offer.hosts.filter { it != host }))
-                        runOnUiThread {
-                            startActivity(Intent(this, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP))
-                            finish()
-                        }
-                        return@thread
+                        json?.has("error") == true -> json.getString("error")
+                        response.code == 503 -> "The relay is up but ThingMaker on the Mac is not connected to it."
+                        response.code in listOf(302, 401, 403) -> "Cloudflare Access turned the phone away: check the Access client ID and secret."
+                        else -> "The relay answered ${response.code}."
                     }
-                } catch (error: Exception) {
-                    last = "Could not reach $host: ${error.message}"
                 }
+            } catch (error: Exception) {
+                "Could not reach the relay: ${error.message}"
             }
-            runOnUiThread { say(last) }
+            runOnUiThread { say(message) }
         }
     }
 

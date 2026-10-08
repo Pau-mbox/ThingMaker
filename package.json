@@ -17,6 +17,8 @@
     "rust:test": "cargo test --workspace --exclude thingmaker-desktop",
     "rust:clippy": "cargo clippy --workspace --all-targets -- -D warnings",
     "app": "bash scripts/install-app.sh",
-    "phone": "bash scripts/phone.sh"
+    "phone": "bash scripts/phone.sh",
+    "relay:deploy": "pnpm --filter @thingmaker/relay run deploy",
+    "relay:dev": "pnpm --filter @thingmaker/relay run dev"
   }
 }
