@@ -20,7 +20,8 @@ const PROTOCOL_VERSIONS: [&str; 4] = ["2025-11-25", "2025-06-18", "2025-03-26", 
 /// and Codex both put these instructions in front of the model.
 pub const INSTRUCTIONS: &str = "ThingMaker runs a team for this session: workers on other providers and models, chosen by the user. \
 Use `list_workers` to see the team (it can change during the session), `delegate` to hand a worker a self-contained task (it answers with a job id at once), \
-and `await_jobs` to wait for reports. Delegate independent tasks together, then await them. Workers share the workspace but not your conversation. \
+and `await_jobs` to wait for reports. Delegate independent tasks together, and keep every worker busy: `await_jobs` returns as soon as any one job finishes, so give that worker its next task at once rather than waiting for the whole batch — one slow task should never hold up the rest. \
+Workers share the workspace but not your conversation. Keep a short project brief at docs/big-thing/BRIEF.md — what the project is, its layout and key files, conventions, how to build and how to run one targeted test, under 80 lines: ThingMaker attaches it to every task a worker gets, so workers start without re-reading the codebase. \
 Check a worker's result before you rely on it.";
 
 /// What a worker's reduced server says about itself.
@@ -57,7 +58,7 @@ fn tools() -> Value {
         {
             "name": "await_jobs",
             "title": "Wait for jobs",
-            "description": "Waits until the given jobs finish (or any one of them, with mode `any`), up to timeout_seconds, and returns each job's status and, for finished ones, the worker's report. With no job_ids, waits for every unfinished job. If the timeout passes first, the jobs are still running: call again. A job with status `waiting` hit a temporary limit (an image generation limit, an account window) and retries by itself at `retries_at`.",
+            "description": "Waits until any one of the given jobs finishes (mode `all` waits for every one of them), up to timeout_seconds, and returns each job's status and, for finished ones, the worker's report. With no job_ids, it watches every unfinished job. Use the default: as soon as a job finishes, give its worker the next ready task, then await again. If the timeout passes first, the jobs are still running: call again. A job with status `waiting` hit a temporary limit (an image generation limit, an account window) and retries by itself at `retries_at`.",
             "inputSchema": {
                 "type": "object",
                 "properties": {
@@ -197,7 +198,9 @@ async fn call_tool(delegation: &Delegation, session: &str, name: &str, arguments
                 .map(|ids| ids.iter().filter_map(Value::as_str).map(str::to_string).collect())
                 .unwrap_or_default();
             let timeout = arguments.get("timeout_seconds").and_then(Value::as_u64).map(Duration::from_secs).unwrap_or(DEFAULT_AWAIT);
-            let any = string("mode").as_deref() == Some("any");
+            // Any one job by default: the orchestrator refills a slot the
+            // moment it frees, rather than idling behind the slowest job.
+            let any = string("mode").as_deref() != Some("all");
             match delegation.await_jobs(session, &ids, timeout, any).await {
                 Ok(jobs) => {
                     let pending = jobs.iter().filter(|job| !job.status.is_finished()).count();

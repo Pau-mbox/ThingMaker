@@ -25,7 +25,7 @@ milestone: <title>
 detail: <one line, optional>
 section: <the heading or line range of the document this milestone comes from, optional>
 check: <manual | command <cmd> | tests_pass <cmd> | files_exist <paths>>
-step: <task title, repeatable — three to eight per milestone, in order>
+step: <task title, repeatable — each about 10–30 minutes of AI-agent work, in order>
 depends: <numbers of earlier tasks in this milestone the one above waits for, optional>
 capability: <what the task needs from a worker, e.g. image or review, optional>
 END-BIGTHING-PLAN";

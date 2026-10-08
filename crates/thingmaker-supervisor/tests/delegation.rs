@@ -198,7 +198,12 @@ async fn an_orchestrator_delegates_over_mcp_and_awaits_the_report() {
     let second = client.call("delegate", json!({"task": "Review the diff", "worker": "sonnet"}));
     let review = second["structuredContent"]["job_id"].as_str().unwrap().to_string();
 
-    let done = client.call("await_jobs", json!({"job_ids": [job, review], "timeout_seconds": 30}));
+    // By default it returns once any job finishes, so a free worker can be
+    // given its next task while the other still runs.
+    let first = client.call("await_jobs", json!({"job_ids": [job, review], "timeout_seconds": 30}));
+    let firsts = first["structuredContent"]["jobs"].as_array().unwrap().clone();
+    assert!(firsts.iter().any(|job| job["status"] == "succeeded"), "{first}");
+    let done = client.call("await_jobs", json!({"job_ids": [job, review], "timeout_seconds": 30, "mode": "all"}));
     let jobs = done["structuredContent"]["jobs"].as_array().unwrap().clone();
     assert_eq!(jobs.len(), 2);
     assert!(jobs.iter().all(|job| job["status"] == "succeeded"), "{done}");

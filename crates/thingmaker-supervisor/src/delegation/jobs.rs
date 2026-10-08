@@ -50,6 +50,18 @@ pub const MAX_WORKER_REUSE: usize = 4;
 /// How long a worker with nothing to do stays open for the next job.
 pub const WORKER_IDLE: Duration = Duration::from_secs(5 * 60);
 const TASK_CHARS: usize = 40_000;
+/// The project brief an orchestrator keeps for its workers; attached to
+/// every first task a worker gets, so it starts knowing the project.
+pub const BRIEF_PATH: &str = "docs/big-thing/BRIEF.md";
+/// How much of the brief rides along with a task.
+const BRIEF_CHARS: usize = 8_000;
+
+/// The project's brief, when the orchestrator has written one.
+pub fn read_brief(root: &std::path::Path) -> Option<String> {
+    let text = std::fs::read_to_string(root.join(BRIEF_PATH)).ok()?;
+    let text = text.trim();
+    (!text.is_empty()).then(|| cap(text, BRIEF_CHARS))
+}
 
 /// What a job does when its worker hits a temporary limit — Codex's image
 /// limit, an account window, an overloaded server: wait, then try again in
@@ -604,7 +616,9 @@ impl Delegation {
         };
         (self.inner.on_change)(&view);
         self.bump();
-        let mut prompt = worker_prompt(task, &args.files, orchestrator_provider, view.continues.is_some());
+        // A worker that already did a task here has read the brief.
+        let brief = if view.continues.is_some() || view.warm { None } else { read_brief(&root) };
+        let mut prompt = worker_prompt(task, &args.files, orchestrator_provider, view.continues.is_some(), brief.as_deref());
         if view.warm {
             prompt = format!("Your previous task is finished. This is a new one: treat it on its own, using what you learned only where it applies.\n\n{prompt}");
         }
@@ -1251,7 +1265,7 @@ fn warm_worker(state: &State, session: &str, slot: &WorkerSlot) -> Option<Sessio
     None
 }
 
-pub fn worker_prompt(task: &str, files: &[String], orchestrator: Provider, follow_up: bool) -> String {
+pub fn worker_prompt(task: &str, files: &[String], orchestrator: Provider, follow_up: bool, brief: Option<&str>) -> String {
     let mut prompt = String::new();
     if follow_up {
         prompt.push_str("Follow-up from the orchestrator on the task you just did:\n\n");
@@ -1259,9 +1273,14 @@ pub fn worker_prompt(task: &str, files: &[String], orchestrator: Provider, follo
         prompt.push_str(&format!(
             "You are a worker on a team in ThingMaker, the user's desktop for several AI providers. The orchestrator ({}) delegated this task to you. You share its workspace and files but not its conversation. \
 Do the task completely without asking questions: where something is ambiguous, make a reasonable choice and say so. \
-End with a short report as your final message, a few lines at most: what you did, the files you created or changed (paths), and anything the orchestrator should check. It can read the files itself, so do not paste their contents.\n\nTask:\n",
+Check your work with the narrowest command that proves it — the one test file, type check or script for what you changed. Do not run the full build, the whole test suite, end-to-end or smoke tests, or take screenshots unless the task asks for them: the milestone's own check runs those once for everyone, and other workers are changing the same files right now, so a full run would fail on their unfinished work. Do not wait in sleep loops; if something has to happen first, say so in your report. \
+End with a short report as your final message, a few lines at most: what you did, the files you created or changed (paths), and anything the orchestrator should check. It can read the files itself, so do not paste their contents.\n\n",
             orchestrator.label()
         ));
+        if let Some(brief) = brief {
+            prompt.push_str(&format!("Project brief ({BRIEF_PATH}, kept by the orchestrator) — start from this instead of exploring the codebase; open only the files the task needs:\n\n{brief}\n\n"));
+        }
+        prompt.push_str("Task:\n");
     }
     prompt.push_str(&cap(task, TASK_CHARS));
     let files: Vec<&str> = files.iter().map(|file| file.trim()).filter(|file| !file.is_empty()).take(50).collect();
@@ -1282,11 +1301,14 @@ mod tests {
 
     #[test]
     fn a_worker_is_told_the_task_stands_alone_and_its_last_message_is_the_report() {
-        let prompt = worker_prompt("Draw the app icon", &["assets/".into(), " ".into()], Provider::Claude, false);
+        let prompt = worker_prompt("Draw the app icon", &["assets/".into(), " ".into()], Provider::Claude, false, Some("# Brief\nRust + React."));
+        assert!(prompt.contains("narrowest command that proves it"), "a worker checks its own change, not the whole project");
+        assert!(prompt.contains("Project brief (docs/big-thing/BRIEF.md") && prompt.contains("Rust + React.") && prompt.find("Rust + React.") < prompt.find("Draw the app icon"));
         assert!(prompt.contains("orchestrator (Claude Code)"));
         assert!(prompt.contains("final message"));
         assert!(prompt.ends_with("Files to start from:\n- assets/\n"));
-        let follow = worker_prompt("Make it blue", &[], Provider::Codex, true);
+        let follow = worker_prompt("Make it blue", &[], Provider::Codex, true, Some("ignored"));
+        assert!(!follow.contains("ignored"), "a follow-up has the brief already");
         assert!(follow.starts_with("Follow-up"));
         assert!(!follow.contains("worker on a team in ThingMaker"));
     }

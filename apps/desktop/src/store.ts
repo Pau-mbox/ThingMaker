@@ -1175,7 +1175,7 @@ export const useStore = create<State>((set, get) => ({
     if (!view || !milestone) return;
     await get().odysseyAddAmendment(sessionId, {
       odysseyId: view.goal.id,
-      note: `Break milestone ${milestoneIndex + 1} ("${milestone.title}") into three to eight tasks, each one thing a subagent or worker can be given on its own, cut so that independent tasks can run in parallel; put depends: under a task only when it truly cannot start until an earlier one has finished. Send them in a BIGTHING-AMEND block as revise: ${milestoneIndex + 1} with step: lines. Change nothing else about the milestone.`,
+      note: `Break milestone ${milestoneIndex + 1} ("${milestone.title}") into tasks, each one thing a subagent or worker can be given on its own and sized in AI-agent time — about 10–30 minutes of agent work each, not human-effort estimates — cut so that independent tasks can run in parallel; put depends: under a task only when it truly cannot start until an earlier one has finished. Send them in a BIGTHING-AMEND block as revise: ${milestoneIndex + 1} with step: lines. Change nothing else about the milestone.`,
       refs: [],
     });
   },

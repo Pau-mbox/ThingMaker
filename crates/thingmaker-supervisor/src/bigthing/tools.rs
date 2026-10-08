@@ -122,7 +122,7 @@ fn run_tools() -> Vec<Value> {
         json!({
             "name": "bigthing_propose_plan",
             "title": "Propose a plan",
-            "description": "Sends the milestones for a goal that has none yet, when Big Thing asked you to plan from a document. Each milestone carries the document's substance in `detail`, a check Big Thing can run when there is one, and three to eight tasks cut so that independent ones can run in parallel. The user reviews the plan before the run starts.",
+            "description": "Sends the milestones for a goal that has none yet, when Big Thing asked you to plan from a document. Each milestone carries the document's substance in `detail`, a check Big Thing can run when there is one, and tasks sized in AI-agent time (about 10–30 minutes of agent work each, never human-effort estimates), cut so that independent ones can run in parallel. The user reviews the plan before the run starts.",
             "inputSchema": object(json!({
                 "milestones": {
                     "type": "array",
@@ -144,7 +144,7 @@ fn run_tools() -> Vec<Value> {
         json!({
             "name": "bigthing_amend",
             "title": "Change the plan",
-            "description": "Changes the plan when it no longer fits what you found. `ops` is a list of operations, each with `op`: `add` (title, after: a milestone number or \"end\", detail, section, checkKind, checkSpec, steps), `revise` (target, title, detail, section, checkKind, checkSpec, steps to add), `drop` (target, reason), `drop_task` (ref {milestone, task}, reason), `revise_task` (ref, title, detail, depends), `split_task` (ref, steps, reason) and `move_task` (ref, after: a task number or \"start\"). Numbers are as the plan shows them now. Verified milestones and done tasks are not rewritten.",
+            "description": "Changes the plan when it no longer fits what you found. `ops` is a list of operations, each with `op`: `add` (title, after: a milestone number or \"end\", detail, section, checkKind, checkSpec, steps), `revise` (target, title, detail, section, checkKind, checkSpec, steps to add), `drop` (target, reason), `drop_task` (ref {milestone, task}, reason), `revise_task` (ref, title, detail, depends), `split_task` (ref, steps, reason) and `move_task` (ref, after: a task number or \"start\"). Numbers are as the plan shows them now. Verified milestones and done tasks are not rewritten. Size new tasks in AI-agent time: about 10–30 minutes of agent work each, never human-effort estimates; split anything bigger.",
             "inputSchema": object(json!({
                 "ops": { "type": "array", "items": { "type": "object", "properties": { "op": { "type": "string", "enum": ["add", "revise", "drop", "drop_task", "revise_task", "split_task", "move_task"] } }, "required": ["op"] } },
                 "reason": { "type": "string" }

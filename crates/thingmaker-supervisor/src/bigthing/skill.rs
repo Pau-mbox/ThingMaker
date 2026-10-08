@@ -74,7 +74,7 @@ mod tests {
             .replace("<title>", "Phase one")
             .replace("<one line, optional>", "Do the thing.")
             .replace("<manual | command <cmd> | tests_pass <cmd> | files_exist <paths>>", "tests_pass cargo test")
-            .replace("<task title, repeatable — three to eight per milestone, in order>", "first step")
+            .replace("<task title, repeatable — each about 10–30 minutes of AI-agent work, in order>", "first step")
             .replace("<numbers of earlier tasks in this milestone the one above waits for, optional>", "")
             .replace("<what the task needs from a worker, e.g. image or review, optional>", "review");
         let plan = parse_plan(&plan).expect("a plan");
