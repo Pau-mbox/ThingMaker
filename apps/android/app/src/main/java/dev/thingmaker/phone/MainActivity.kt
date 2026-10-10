@@ -19,10 +19,10 @@ import android.view.View
 import android.view.ViewGroup.LayoutParams.MATCH_PARENT
 import android.view.ViewGroup.LayoutParams.WRAP_CONTENT
 import android.view.WindowInsets
-import android.webkit.CookieManager
 import android.webkit.JavascriptInterface
 import android.webkit.WebResourceError
 import android.webkit.WebResourceRequest
+import android.webkit.WebResourceResponse
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import android.widget.Button
@@ -31,6 +31,12 @@ import android.widget.LinearLayout
 import android.widget.TextView
 import okhttp3.OkHttpClient
 import okhttp3.Request
+import okhttp3.Response
+import okhttp3.WebSocket
+import okhttp3.WebSocketListener
+import org.json.JSONObject
+import java.util.UUID
+import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.TimeUnit
 import kotlin.concurrent.thread
 
@@ -135,19 +141,16 @@ class MainActivity : Activity() {
 
     /**
      * Reaches the Mac through its relay, then loads its screens. Cloudflare
-     * Access lets the first request through on the service token and answers
-     * with a sign-in cookie; the WebView gets that cookie, so the pages and
-     * the WebSocket it opens are let through too.
+     * Access only lets requests through with the service token's headers, and
+     * sets no cookie for it, so the app fetches every page file itself
+     * ([Client.shouldInterceptRequest]) and opens the screens' WebSocket
+     * ([NativeBridge.socketOpen]).
      */
     private fun connect() {
         showCover("Reaching ${pairing.macName}…", null, null)
         thread {
             val problem: String? = try {
                 PROBE.newCall(pairing.authorize(Request.Builder().url("${pairing.url}/v1/hello")).build()).execute().use { response ->
-                    val cookies = CookieManager.getInstance()
-                    cookies.setAcceptCookie(true)
-                    response.headers("Set-Cookie").forEach { cookies.setCookie(pairing.url, it) }
-                    cookies.flush()
                     when {
                         response.isSuccessful -> null
                         response.code == 503 -> "The relay is up, but ThingMaker on ${pairing.macName} is not connected to it. Is it running there with phone access on?"
@@ -234,6 +237,27 @@ class MainActivity : Activity() {
             return true
         }
 
+        /** The screens' own files, fetched with the Access headers the WebView cannot add. */
+        override fun shouldInterceptRequest(view: WebView, request: WebResourceRequest): WebResourceResponse? {
+            val origin = base ?: return null
+            val url = request.url.toString()
+            if (request.method != "GET" || !url.startsWith(origin)) return null
+            return runCatching {
+                val builder = Request.Builder().url(url)
+                request.requestHeaders.forEach { (name, value) ->
+                    // OkHttp unzips only what it asked to be zipped.
+                    if (!name.equals("Accept-Encoding", true) && !name.equals("Cookie", true)) builder.header(name, value)
+                }
+                val response = FETCH.newCall(pairing.authorize(builder).build()).execute()
+                val type = response.header("Content-Type") ?: "application/octet-stream"
+                val charset = Regex("charset=([^;]+)", RegexOption.IGNORE_CASE).find(type)?.groupValues?.get(1)?.trim()
+                val headers = response.headers.toMultimap()
+                    .filterKeys { it.lowercase() !in setOf("content-type", "content-encoding", "content-length", "transfer-encoding") }
+                    .mapValues { it.value.joinToString(", ") }
+                WebResourceResponse(type.substringBefore(';').trim(), charset, response.code, response.message.ifBlank { "OK" }, headers, response.body!!.byteStream())
+            }.getOrNull()
+        }
+
         override fun onReceivedError(view: WebView, request: WebResourceRequest, error: WebResourceError) {
             if (request.isForMainFrame) {
                 base = null
@@ -243,7 +267,51 @@ class MainActivity : Activity() {
     }
 
     /** What the screens may ask of the phone. */
+    /** The screens' WebSockets, opened by the app with the Access headers. */
+    private val sockets = ConcurrentHashMap<String, WebSocket>()
+
+    private fun toPage(id: String, kind: String, data: String) = runOnUiThread {
+        if (::web.isInitialized) web.evaluateJavascript("window.__thingmakerSocket && window.__thingmakerSocket(${JSONObject.quote(id)}, '$kind', ${JSONObject.quote(data)})", null)
+    }
+
+    override fun onDestroy() {
+        sockets.values.forEach { it.close(1001, "closing") }
+        sockets.clear()
+        super.onDestroy()
+    }
+
     private inner class NativeBridge {
+        @JavascriptInterface
+        fun socketOpen(path: String): String {
+            val id = UUID.randomUUID().toString()
+            val request = pairing.authorize(Request.Builder().url(pairing.socketUrl(path))).build()
+            sockets[id] = SOCKETS.newWebSocket(request, object : WebSocketListener() {
+                override fun onOpen(webSocket: WebSocket, response: Response) = toPage(id, "open", "")
+                override fun onMessage(webSocket: WebSocket, text: String) = toPage(id, "message", text)
+                override fun onClosing(webSocket: WebSocket, code: Int, reason: String) {
+                    webSocket.close(1000, null)
+                }
+                override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
+                    if (sockets.remove(id) != null) toPage(id, "close", "")
+                }
+                override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
+                    if (sockets.remove(id) != null) toPage(id, "close", "")
+                }
+            })
+            return id
+        }
+
+        @JavascriptInterface
+        fun socketSend(id: String, data: String) {
+            sockets[id]?.send(data)
+        }
+
+        @JavascriptInterface
+        fun socketClose(id: String) {
+            // The page hears the close when OkHttp reports it.
+            sockets[id]?.close(1000, null)
+        }
+
         @JavascriptInterface
         fun token(): String = pairing.token
 
@@ -276,7 +344,9 @@ class MainActivity : Activity() {
     companion object {
         /** Away longer than this and the app asks for the fingerprint again. */
         private const val RELOCK_MS = 5 * 60_000L
-        private val PROBE = OkHttpClient.Builder().connectTimeout(3, TimeUnit.SECONDS).readTimeout(3, TimeUnit.SECONDS).build()
+        private val PROBE = OkHttpClient.Builder().connectTimeout(10, TimeUnit.SECONDS).readTimeout(10, TimeUnit.SECONDS).build()
+        private val FETCH = OkHttpClient.Builder().connectTimeout(10, TimeUnit.SECONDS).readTimeout(30, TimeUnit.SECONDS).build()
+        private val SOCKETS = OkHttpClient.Builder().connectTimeout(10, TimeUnit.SECONDS).readTimeout(0, TimeUnit.SECONDS).pingInterval(25, TimeUnit.SECONDS).build()
     }
 }
 

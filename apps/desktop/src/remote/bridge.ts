@@ -20,8 +20,62 @@ declare global {
       notify?(title: string, body: string): void;
       connectionChanged?(state: string): void;
       unpair?(): void;
+      /**
+       * A WebSocket the app opens itself, with the Cloudflare Access headers
+       * a page's own socket cannot carry. Its events come back through
+       * `window.__thingmakerSocket`.
+       */
+      socketOpen?(path: string): string;
+      socketSend?(id: string, data: string): void;
+      socketClose?(id: string): void;
     };
+    __thingmakerSocket?: (id: string, kind: "open" | "message" | "close", data: string) => void;
   }
+}
+
+/** What the bridge needs of a socket: the browser's, or the app's. */
+type Socket = {
+  send(data: string): void;
+  close(): void;
+  onopen: (() => void) | null;
+  onmessage: ((message: { data: unknown }) => void) | null;
+  onclose: (() => void) | null;
+};
+
+const nativeSockets = new Map<string, Socket>();
+
+/** The app's socket, when there is an app; the page's own otherwise. */
+function openSocket(path: string): Socket {
+  const native = window.ThingMakerNative;
+  if (!native?.socketOpen || !native.socketSend || !native.socketClose) {
+    const scheme = window.location.protocol === "https:" ? "wss" : "ws";
+    const browser = new WebSocket(`${scheme}://${window.location.host}${path}`);
+    const socket: Socket = { send: (data) => browser.send(data), close: () => browser.close(), onopen: null, onmessage: null, onclose: null };
+    browser.onopen = () => socket.onopen?.();
+    browser.onmessage = (message) => socket.onmessage?.(message);
+    browser.onclose = () => socket.onclose?.();
+    return socket;
+  }
+  window.__thingmakerSocket ??= (id, kind, data) => {
+    const socket = nativeSockets.get(id);
+    if (!socket) return;
+    if (kind === "open") socket.onopen?.();
+    else if (kind === "message") socket.onmessage?.({ data });
+    else {
+      nativeSockets.delete(id);
+      socket.onclose?.();
+    }
+  };
+  const id = native.socketOpen(path);
+  const socket: Socket = {
+    send: (data) => native.socketSend?.(id, data),
+    close: () => native.socketClose?.(id),
+    onopen: null,
+    onmessage: null,
+    onclose: null,
+  };
+  nativeSockets.set(id, socket);
+  return socket;
 }
 
 const TOKEN_KEY = "thingmaker.remote.token";
@@ -49,7 +103,7 @@ function token(): string {
 export type ConnectionState = "connecting" | "open" | "denied" | "closed";
 
 class Bridge {
-  private socket: WebSocket | null = null;
+  private socket: Socket | null = null;
   private next = 1;
   private pending = new Map<number, Pending>();
   private channels = new Map<number, ChannelSink>();
@@ -65,8 +119,7 @@ class Bridge {
   }
 
   private open() {
-    const scheme = window.location.protocol === "https:" ? "wss" : "ws";
-    const socket = new WebSocket(`${scheme}://${window.location.host}/v1/ws`);
+    const socket = openSocket("/v1/ws");
     this.socket = socket;
     this.setState("connecting");
     socket.onopen = () => socket.send(JSON.stringify({ t: "hello", token: token(), client: "thingmaker-phone" }));
