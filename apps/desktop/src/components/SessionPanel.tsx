@@ -472,10 +472,57 @@ export function SessionPanel({ sessionId }: { sessionId: string }) {
   const [dropping, setDropping] = useState(false);
   const [mention, setMention] = useState<{ token: string; matches: string[]; index: number; truncated: boolean; copy: boolean } | null>(null);
 
+  // The transcript follows new output only while it is scrolled to the
+  // bottom: scrolling up to read stops it, scrolling back down resumes it.
+  // It opens at the bottom and stays there while images and cards that load
+  // after the first paint grow it.
+  const followRef = useRef(true);
+  const hasSession = !!session;
   useEffect(() => {
     const element = transcriptRef.current;
-    if (element && !query) element.scrollTop = element.scrollHeight;
-  }, [session?.projection.eventCount, query, tab]);
+    if (!element || tab !== "transcript") return;
+    followRef.current = !query;
+    const pin = () => {
+      if (followRef.current) element.scrollTop = element.scrollHeight;
+    };
+    // Only a move up is the reader leaving the bottom: output arriving after
+    // the view's own jump down makes it look far from the bottom without
+    // anyone having scrolled.
+    let lastTop = element.scrollTop;
+    const onScroll = () => {
+      const top = element.scrollTop;
+      if (top < lastTop - 2) followRef.current = false;
+      if (!query && element.scrollHeight - top - element.clientHeight < 48) followRef.current = true;
+      lastTop = top;
+    };
+    const resize = new ResizeObserver(pin);
+    const watch = () => {
+      resize.disconnect();
+      resize.observe(element);
+      for (const child of element.children) resize.observe(child);
+    };
+    const added = new MutationObserver(() => {
+      watch();
+      pin();
+    });
+    element.addEventListener("scroll", onScroll, { passive: true });
+    added.observe(element, { childList: true });
+    watch();
+    pin();
+    return () => {
+      element.removeEventListener("scroll", onScroll);
+      added.disconnect();
+      resize.disconnect();
+    };
+  }, [hasSession, query, tab]);
+
+  /** Sending a prompt goes back to the bottom to follow the reply. */
+  const sendAndFollow = () => {
+    followRef.current = true;
+    const element = transcriptRef.current;
+    if (element) element.scrollTop = element.scrollHeight;
+    void send(sessionId);
+  };
 
   // Images appearing under output/imagegen while a turn runs show up inline as
   // observed files (the agent or a background subagent may have produced them).
@@ -691,7 +738,7 @@ export function SessionPanel({ sessionId }: { sessionId: string }) {
       if (!sends) return;
       event.preventDefault();
       if (canSteer) void steer(sessionId);
-      else if (canSend && hasInput) void send(sessionId);
+      else if (canSend && hasInput) sendAndFollow();
     }
   };
 
@@ -834,14 +881,22 @@ export function SessionPanel({ sessionId }: { sessionId: string }) {
               {group.kind === "single" ? (
                 <CardView card={group.card} images={cardImages.get(group.card.key)} key={group.card.key} sessionId={sessionId} />
               ) : group.kind === "work" ? (
-                <ToolGroup
-                  cards={group.cards}
-                  key={group.key}
-                  live={active && index === groups.length - 1}
-                  renderCard={(card) => <CardView card={card} images={cardImages.get(card.key)} key={card.key} sessionId={sessionId} />}
-                  renderDetail={(patch) => <ToolDetail patch={patch} provider={session.snapshot.provider} />}
-                  sessionId={sessionId}
-                />
+                <>
+                  <ToolGroup
+                    cards={group.cards}
+                    key={group.key}
+                    live={active && index === groups.length - 1}
+                    renderCard={(card) => <CardView card={card} key={card.key} sessionId={sessionId} />}
+                    renderDetail={(patch) => <ToolDetail patch={patch} provider={session.snapshot.provider} />}
+                    sessionId={sessionId}
+                  />
+                  {/* Images the folded tools made or looked at stay in view
+                      under the run, not hidden inside it. */}
+                  {(() => {
+                    const images = group.cards.flatMap((card) => cardImages.get(card.key) ?? []);
+                    return images.length > 0 ? <CardImages images={images} workspaceId={session.workspaceId} /> : null;
+                  })()}
+                </>
               ) : (
                 <details className="runtime-group" key={group.key}>
                   <summary className="small muted">
@@ -1022,7 +1077,7 @@ export function SessionPanel({ sessionId }: { sessionId: string }) {
               Steer <IconArrowUp size={14} />
             </button>
           ) : (
-            <button aria-label="Send" className="send-button send-round" disabled={!canSend || !hasInput} onClick={() => void send(sessionId)} title="Send" type="button">
+            <button aria-label="Send" className="send-button send-round" disabled={!canSend || !hasInput} onClick={sendAndFollow} title="Send" type="button">
               <IconArrowUp size={16} />
             </button>
           )}

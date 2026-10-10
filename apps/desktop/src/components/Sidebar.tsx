@@ -18,7 +18,6 @@ import {
   IconPinFilled,
   IconPlus,
   IconRefresh,
-  IconShield,
   IconSidebar,
   IconX,
 } from "./icons";
@@ -602,13 +601,6 @@ export function Sidebar() {
       )}
 
       <div className="sidebar-footer">
-        <div className="status-line" title={(providers ?? []).map((info) => `${info.label}: ${info.resolved ? info.resolved.program : info.problem ?? "not found"}`).join("\n")}>
-          <IconShield size={13} />
-          <span className="small">Trusted local · host access</span>
-          <span className="small muted">
-            {providers ? `${providers.filter((info) => info.resolved && info.auth?.loggedIn).length}/${providers.length} signed in` : "checking…"}
-          </span>
-        </div>
         {PROVIDERS.map((provider) => {
           const snapshot = usage[provider];
           if (!snapshot?.primary) return null;

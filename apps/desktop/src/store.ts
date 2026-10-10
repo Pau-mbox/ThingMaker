@@ -890,12 +890,12 @@ export const useStore = create<State>((set, get) => ({
     const quotas = { ...get().quotas, [quota.provider]: quota };
     const snapshot = usageFromQuota(quota);
     const usage = { ...get().usage };
-    // A provider that reports no percentages (Claude before it is spent) says
-    // only "allowed": that is no snapshot at all, which reads as room, and it
-    // clears a refusal recorded earlier — a turn that got an answer is the
-    // positive evidence the refusal was waiting for.
+    // A report with no percentages (what a Claude session says on every turn)
+    // says only "allowed": it clears a refusal recorded earlier — a turn that
+    // got an answer is the positive evidence the refusal was waiting for —
+    // but leaves a measured reading in place, so the sidebar keeps it.
     if (snapshot) usage[quota.provider] = snapshot;
-    else if (quota.status !== "rejected") usage[quota.provider] = null;
+    else if (quota.status !== "rejected" && usage[quota.provider]?.limitReached) usage[quota.provider] = null;
     set({ quotas, usage });
   },
 
@@ -961,7 +961,8 @@ export const useStore = create<State>((set, get) => ({
    */
   async refreshClaudeUsage() {
     const held = get().usage.claude;
-    if (!held) return null;
+    // Only a refusal's reading is a clock to wait out; a measured one stands.
+    if (!held?.limitReached) return held ?? null;
     const resetAt = held.primary?.resetAtUnix;
     const windowOver = resetAt !== undefined && Date.now() >= resetAt * 1000;
     // Retry well before the reset the refusal named, because that time is
