@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { lazy, Suspense, useEffect } from "react";
 import { IS_REMOTE } from "./remote/mode";
 import { ConnectionBanner } from "./remote/ConnectionBanner";
 import { useStore } from "./store";
@@ -15,6 +15,8 @@ import { IntegrationsPanel } from "./components/IntegrationsPanel";
 import { TeamsView } from "./components/TeamsView";
 import { CommandPalette } from "./components/CommandPalette";
 import { IconFolder, IconKey } from "./components/icons";
+
+const ChillView = lazy(() => import("./chill/ChillView"));
 
 function Welcome() {
   const addWorkspaceByPicker = useStore((s) => s.addWorkspaceByPicker);
@@ -70,6 +72,8 @@ export function App() {
   const announcement = useStore((s) => s.announcement);
   const reducedMotion = useStore((s) => s.uiPrefs.reducedMotion);
   const sidebarCollapsed = useStore((s) => s.sidebarCollapsed);
+  const chillMode = useStore((s) => s.chillMode);
+  const setChillMode = useStore((s) => s.setChillMode);
 
   useEffect(() => {
     void bootstrap();
@@ -81,6 +85,7 @@ export function App() {
   useEffect(() => {
     if (!IS_REMOTE) return;
     const back = () => {
+      if (useStore.getState().chillMode) { useStore.getState().setChillMode(false); return true; }
       const current = useStore.getState().view;
       if (current.kind === "welcome" || current.kind === "workspace") return false;
       const workspaceId = current.kind === "session" ? useStore.getState().sessions[current.sessionId]?.workspaceId : undefined;
@@ -98,8 +103,9 @@ export function App() {
       <CommandPalette />
       <CloseRequestDialog />
       <LockedResumeDialog />
-      {IS_REMOTE && <ConnectionBanner />}
-      <div className="shell">
+      {IS_REMOTE && !chillMode && <ConnectionBanner />}
+      {chillMode && <ErrorBoundary label="Chill" onReset={() => setChillMode(false)} fallback={<div className="chill" role="alert" aria-label="Chill rendering unavailable"><button aria-label="Back to work" onClick={() => setChillMode(false)}><svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor"><path d="M9 5H5v14h4M13 8l4 4-4 4M9 12h11" /></svg></button></div>}><Suspense fallback={<div className="chill" aria-label="Opening Chill" />}><ChillView onExit={() => setChillMode(false)} /></Suspense></ErrorBoundary>}
+      <div className="shell" style={chillMode ? { display: "none" } : undefined}>
         {(!sidebarCollapsed || IS_REMOTE) && (
           <ErrorBoundary label="sidebar">
             <Sidebar />

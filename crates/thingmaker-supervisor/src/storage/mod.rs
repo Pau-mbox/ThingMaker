@@ -6,6 +6,7 @@
 //! short transactions are enforced; migrations back up first and refuse to
 //! open a newer schema for writing (F05).
 
+pub mod activity;
 pub mod artifacts;
 pub mod attachments;
 pub mod drafts;

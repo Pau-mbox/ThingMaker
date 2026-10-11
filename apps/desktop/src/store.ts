@@ -231,6 +231,8 @@ type State = {
   announcement: string;
   uiPrefs: UiPrefs;
   sidebarCollapsed: boolean;
+  chillMode: boolean;
+  setChillMode: (enabled: boolean) => void;
   /** Model/effort remembered from the last picker change (new sessions). */
   sessionDefaults: SessionDefaults;
   /** Images seen appearing under output/imagegen per session (observed files). */
@@ -693,6 +695,8 @@ export const useStore = create<State>((set, get) => ({
   uiPrefs: DEFAULT_UI_PREFS,
   bigThingDoc: {},
   sidebarCollapsed: false,
+  chillMode: false,
+  setChillMode: (enabled) => set({ chillMode: enabled }),
   sessionDefaults: {},
   observedImages: {},
   seenImageFiles: {},

@@ -16,11 +16,14 @@ export function useKeyboardShortcuts(): void {
       if (!mod) return;
       const state = useStore.getState();
       const key = event.key.toLowerCase();
+      if (key === "c" && event.shiftKey) { event.preventDefault(); state.setChillMode(!state.chillMode); return; }
       if (key === "k") {
         event.preventDefault();
+        if (state.chillMode) state.setChillMode(false);
         state.setPaletteOpen(!state.paletteOpen);
         return;
       }
+      if(state.chillMode && ["b","i","f","o","n","l",",",";","1","2","3","4","5","6","7","8","9"].includes(key)) state.setChillMode(false);
       if (key === "b") {
         event.preventDefault();
         state.toggleSidebar();

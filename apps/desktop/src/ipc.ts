@@ -8,6 +8,7 @@
 import { Channel, invoke } from "@tauri-apps/api/core";
 import {
   COMMANDS,
+  type ActivitySnapshot,
   isDesktopError,
   type Combo,
   type JobView,
@@ -147,6 +148,8 @@ export type OpenRequest = {
 };
 
 export const api = {
+  activitySnapshot: () => call<ActivitySnapshot>(COMMANDS.activitySnapshot),
+  activityClear: () => call<void>(COMMANDS.activityClear),
   executionProfiles: () => call<ProfileInfo[]>(COMMANDS.executionProfiles),
   workspaceInspect: (path: string) => call<WorkspaceInspection>(COMMANDS.workspaceInspect, { path }),
   workspaceTrust: (workspaceId: string, state: TrustState, trustDigest: string) =>

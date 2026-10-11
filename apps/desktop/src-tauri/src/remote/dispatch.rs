@@ -15,12 +15,13 @@ use serde_json::Value;
 use tauri::{AppHandle, Manager};
 use thingmaker_supervisor::DesktopError;
 
-use crate::commands::{app as app_commands, artifacts, bigthing, delegation, git, odyssey, providers, review, session, workspace};
+use crate::commands::{activity, app as app_commands, artifacts, bigthing, delegation, git, odyssey, providers, review, session, workspace};
 use crate::state::AppState;
 
 /// The commands a phone may call. `session_subscribe` is the connection's
 /// own (it streams), handled beside these.
 pub const ALLOWED: &[&str] = &[
+    "activity_snapshot",
     "execution_profiles",
     "workspace_list",
     "workspace_inspect",
@@ -178,6 +179,7 @@ fn known_workspace(app: &AppHandle, args: &Value) -> Result<(), DesktopError> {
 /// Calls one allowed command. Anything else is refused.
 pub async fn dispatch(app: &AppHandle, command: &str, args: Value) -> Result<Value, Value> {
     match command {
+        "activity_snapshot" => sync_call!(app, args, activity::activity_snapshot),
         "execution_profiles" => Reply::reply(workspace::execution_profiles()),
         "workspace_list" => sync_call!(app, args, workspace::workspace_list),
         "workspace_inspect" => match known_workspace(app, &args) {

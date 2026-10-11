@@ -180,6 +180,8 @@ pub fn run() {
             commands::workspace::workspace_remove,
             commands::workspace::workspace_pick,
             commands::workspace::reveal_in_finder,
+            commands::activity::activity_snapshot,
+            commands::activity::activity_clear,
             remote::remote_status,
             remote::remote_set_enabled,
             remote::remote_pair_start,

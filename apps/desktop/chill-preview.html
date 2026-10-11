@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1.0" />
+    <title>Chill · Design preview</title>
+    <style>
+      html,
+      body {
+        overflow: auto;
+      }
+      #root {
+        min-width: 1280px;
+        min-height: 900px;
+      }
+      #root > .chill {
+        width: 1280px;
+        height: 820px;
+        min-height: 820px;
+      }
+      #root .chill-world {
+        inset: 0;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/chill/preview.tsx"></script>
+  </body>
+</html>
