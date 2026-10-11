@@ -105,16 +105,17 @@ export function TopBar() {
           </button>
         )}
       </div>
-      <div className="topbar-actions remote-hidden">
+      <div className="topbar-actions">
+        <button className="button small" title="Enter Chill mode (⌘⇧C)" onClick={() => useStore.getState().setChillMode(true)} type="button">☾ Chill</button>
         <button
-          className={`icon-button ${view.kind === "integrations" ? "on" : ""}`}
+          className={`icon-button remote-hidden ${view.kind === "integrations" ? "on" : ""}`}
           onClick={() => setView({ kind: "integrations" })}
           title="MCP, plugins, skills and harnesses (⌘I)"
           type="button"
         >
           <IconPlug />
         </button>
-        <button className="icon-button" onClick={() => setPaletteOpen(true)} title="Command palette (⌘K)" type="button">
+        <button className="icon-button remote-hidden" onClick={() => setPaletteOpen(true)} title="Command palette (⌘K)" type="button">
           <IconCommand />
         </button>
       </div>

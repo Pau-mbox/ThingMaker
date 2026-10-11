@@ -12,6 +12,8 @@ holds the tests that protect the decision.
 | [ADR-009](ADR-009-providers-through-official-programs.md) | Providers run through their own official programs, on subscriptions | Accepted |
 | [ADR-010](ADR-010-big-thing-engine.md) | Big Thing runs in the supervisor, and speaks through tools | Accepted |
 
+| [ADR-011](ADR-011-chill-activity-and-skins.md) | Chill uses neutral activity and replaceable visual skins | Accepted |
+
 The missing numbers belong to records from the runtime ThingMaker started on,
 retired when it moved to Claude Code, Codex and Gemini.
 

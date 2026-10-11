@@ -32,6 +32,7 @@
 //!   file mentions.
 //! - [`artifacts`]: versioned references to produced content with provenance.
 
+pub mod activity;
 pub mod artifacts;
 pub mod attachments;
 pub mod c2pa;

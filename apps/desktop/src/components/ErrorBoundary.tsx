@@ -1,6 +1,6 @@
 import { Component, type ErrorInfo, type ReactNode } from "react";
 
-type Props = { children: ReactNode; label: string; onReset?: () => void };
+type Props = { children: ReactNode; label: string; onReset?: () => void; fallback?: ReactNode };
 type State = { error: Error | null; info: string | null };
 
 /**
@@ -22,6 +22,7 @@ export class ErrorBoundary extends Component<Props, State> {
 
   override render(): ReactNode {
     if (!this.state.error) return this.props.children;
+    if (this.props.fallback !== undefined) return this.props.fallback;
     return (
       <div className="panel" role="alert">
         <h2>This view failed to render</h2>

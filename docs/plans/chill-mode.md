@@ -1,6 +1,10 @@
 # Chill mode implementation plan
 
-Status: proposed implementation; no application code changed. Prepared 11 October 2026 against the current ThingMaker checkout.
+Status: implemented in `codex/chill-mode`, 12 October 2026. The original plan below remains the design reference. See [implementation and verification notes](../chill.md) and [ADR-011](../adr/ADR-011-chill-activity-and-skins.md).
+
+Implementation refinements: a neutral native activity service and shared React interactions feed a small typed skin registry; Terrarium is the only production skin. Bounded snapshot polling reuses the existing authenticated bridge. Original retained vector artwork replaces the proposed pixel atlas after image generation reached the account limit. Stable file sockets and aggregation replace directory-tree reconstruction. Automated provider fixtures, renderer tests and Mac packaging are covered; physical Android testing and the long-run performance gates below remain release validation.
+
+User refinement, 12 October: Chill is now observational with **project names as the only visible text, shown only when several projects are in sight; no title**. Focusing one project hides its name. Botanical palettes include richer greens, coral, gold, lilac and teal. Quiet icons replace the dashboard, scene labels and text inspection panels. Source navigation returns to normal screens for detailed work; preferences/history controls live in normal Settings. Project focus uses bounds-based camera framing so the whole plant remains inside the dome. This takes precedence over the text UI described in the original plan below.
 
 **1. The experience we are building**
 
