@@ -82,7 +82,7 @@ for (let p = 0; p < workspaces.length; p++) {
           : i === 2
             ? "Review the changes"
             : "Polish the scene and its animation",
-      operation: i === 2 ? "read" : "edit",
+      operation: ["edit", "build", "read", "thinking"][i]!,
       fileId: i === 0 ? `p${p}:src/scene.ts` : null,
       lastSeen: now,
       native: i === 2,

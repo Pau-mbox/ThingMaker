@@ -5,7 +5,7 @@ import { Application, Container, Graphics, Text } from "pixi.js";
 import { hash, type Selection } from "../../model";
 import { focusCamera } from "./camera";
 import { plantPalette } from "./palette";
-import { helperHome, workDestination, type Home } from "./motion";
+import { activityOf, helperHome, planLeg, speedFor, type Activity, type Home, type Point, type Spot } from "./motion";
 import {
   leafScale,
   visibleFiles,
@@ -50,6 +50,7 @@ function leaf(
   c: number,
 ): Container {
   const box = new Container();
+  box.label = "leaf";
   box.position.set(x, y);
   box.rotation = angle;
   box.scale.set(size);
@@ -301,14 +302,21 @@ type BugVisual = {
   art: ReturnType<typeof bugArt>;
   x: number;
   y: number;
-  tx: number;
-  ty: number;
   phase: number;
   marker: Graphics;
   settledAt: number;
   home: Home;
   anchored: boolean;
-  workBeganAt: number;
+  /** The plant it lives on, the file leaf it works at (scene coordinates). */
+  plant: PlantVisual;
+  file: Point | null;
+  activity: Activity;
+  /** Its current leg: the points still to walk, then how long it stays. */
+  route: Point[];
+  dwell: number;
+  spot: Spot;
+  step: number;
+  plan: string;
 };
 type PlantVisual = {
   box: Container;
@@ -325,6 +333,10 @@ type PlantVisual = {
   versions: Map<string, string>;
   decorationKey: string;
   pulses: Map<string, { ring: Graphics; at: number }>;
+  /** Where helpers can sit: every leaf of the plant, relative to its box. */
+  perches: Point[];
+  /** The plant's own leaves and their resting angles, for the flutter. */
+  flutter: { item: Container; base: number; phase: number }[];
 };
 export class Terrarium {
   private app: Application;
@@ -509,6 +521,8 @@ export class Terrarium {
   }
   private plant(project: Project, slot: number, total: number): PlantVisual {
     const box = new Container();
+    // The project's id keys the plant's sway, shared with its helpers.
+    box.label = project.id;
     this.garden.addChildAt(box, this.garden.children.length - 1);
     // Stable allocation in a two-row garden. Project identity chooses its foliage.
     const arrangement = [
@@ -668,6 +682,10 @@ export class Terrarium {
       if (i % 5 === kind)
         flower(foliage, xx + side * 5, yy - 20, seed + i, 0.7);
     }
+    const flutter = foliage.children
+      .filter((child) => child.label === "leaf")
+      .map((item, i) => ({ item, base: item.rotation, phase: (hash(project.id) % 7) + i * 0.83 }));
+    const perches = flutter.map(({ item }) => ({ x: item.x, y: item.y }));
     const flowerLayer = new Container();
     box.addChild(flowerLayer);
     const lantern = new Container();
@@ -736,6 +754,8 @@ export class Terrarium {
       versions: new Map(),
       decorationKey: "",
       pulses: new Map(),
+      perches,
+      flutter,
     };
   }
   update(
@@ -938,13 +958,14 @@ export class Terrarium {
         }
         const home = helperHome(homeSlot, plant.box);
         const anchor = bug.fileId ? plant.anchors.get(bug.fileId) : undefined;
-        const target =
+        const file =
           anchor && bug.status === "working"
             ? {
                 x: plant.box.x + anchor.x + ((hash(bug.id) % 3) - 1) * 18,
                 y: plant.box.y + anchor.y - 8 + (hash(bug.id) % 3) * 8,
               }
-            : home;
+            : null;
+        const activity = activityOf(bug.status, bug.operation);
         if (!v) {
           const art = bugArt(bug);
           const box = new Container();
@@ -968,35 +989,39 @@ export class Terrarium {
             art,
             x: home.x,
             y: home.y,
-            tx: target.x,
-            ty: target.y,
             phase: hash(bug.id) % 100,
             marker,
             settledAt: 0,
             home,
             anchored: !!anchor,
-            workBeganAt: this.clock,
+            plant,
+            file,
+            activity,
+            route: [],
+            dwell: 0,
+            spot: "ground",
+            step: 0,
+            plan: "",
           };
           this.bugs.set(bug.id, v);
         }
         if (v.bug.status === "working" && bug.status === "idle")
           v.settledAt = performance.now();
-        if (
-          !["working", "starting"].includes(v.bug.status) &&
-          ["working", "starting"].includes(bug.status)
-        )
-          v.workBeganAt = this.clock;
         v.bug = bug;
         v.home = home;
         v.anchored = !!anchor;
-        v.art.lens.visible =
-          bug.status === "working" &&
-          ["read", "search"].includes(bug.operation);
-        v.art.tool.visible =
-          bug.status === "working" && bug.operation === "edit";
-        v.art.bench.visible = bug.status === "working" && !anchor;
-        v.tx = target.x;
-        v.ty = target.y;
+        v.plant = plant;
+        v.file = file;
+        v.activity = activity;
+        // New work, or a new file: the current leg ends where it is and the
+        // next one is planned for it.
+        const plan = `${activity}|${file ? bug.fileId : ""}`;
+        if (v.plan !== plan) {
+          v.plan = plan;
+          v.route = [];
+          v.dwell = 0;
+          v.step = 0;
+        }
         v.box.alpha = focus && focus !== project.id ? 0 : 1;
         if (
           (bug.native || bug.parentId) &&
@@ -1024,9 +1049,16 @@ export class Terrarium {
             .stroke({ color: 0xc8d8bf, width: 1, alpha: 0.5 });
         }
         if (reduced || prefs.freeze) {
-          v.x = v.tx;
-          v.y = v.ty;
+          // Still scenery: the helper sits where its work is.
+          const still = file ?? home;
+          v.x = still.x;
+          v.y = still.y;
+          v.route = [];
           v.box.position.set(v.x, v.y);
+          v.art.lens.visible = activity === "reading";
+          v.art.tool.visible = activity === "editing" && !!file;
+          v.art.bench.visible = activity === "running";
+          v.art.thought.visible = activity === "thinking";
         }
       }
       const verified = project.goals.reduce((n, g) => n + g.verified, 0);
@@ -1098,33 +1130,59 @@ export class Terrarium {
     this.cameraY += (this.toCameraY - this.cameraY) * Math.min(1, dt * 4);
     this.garden.scale.set(this.zoom);
     this.garden.position.set(this.cameraX, this.cameraY);
+    const sway = (id: string) => Math.sin(this.clock * 0.6 + (hash(id) % 10)) * 0.024 + Math.sin(this.clock * 1.3 + (hash(id) % 7)) * 0.008;
     for (const v of this.bugs.values()) {
       const work = v.bug.status === "working" || v.bug.status === "starting";
-      const destination =
-        work && !v.anchored
-          ? workDestination(v.home, this.clock - v.workBeganAt, v.phase)
-          : null;
-      if (destination) {
-        v.tx = destination.x;
-        v.ty = destination.y;
+      const box = v.plant.box;
+      if (v.route.length === 0 && v.dwell <= 0) {
+        const tree = {
+          trunkX: box.x,
+          baseY: box.y - 12,
+          perches: v.plant.perches.map((p) => ({ x: box.x + p.x, y: box.y + p.y - 8 })),
+        };
+        const leg = planLeg(v.activity, { x: v.x, y: v.y }, v.home, tree, v.file, hash(v.bug.id), v.step);
+        v.route = leg.path;
+        v.dwell = leg.dwell;
+        v.spot = leg.spot;
+        v.step += 1;
       }
-      const walking = Math.hypot(v.tx - v.x, v.ty - v.y) > 2;
-      const speed = Math.min(1, dt * 2.2);
-      v.x += (v.tx - v.x) * speed;
-      v.y += (v.ty - v.y) * speed;
+      let walking = false;
+      let climbing = false;
+      if (v.route.length > 0) {
+        const next = v.route[0]!;
+        const distance = Math.hypot(next.x - v.x, next.y - v.y);
+        const stride = speedFor({ x: v.x, y: v.y }, next) * dt;
+        climbing = Math.abs(next.y - v.y) > Math.abs(next.x - v.x);
+        if (distance <= stride) {
+          v.x = next.x;
+          v.y = next.y;
+          v.route.shift();
+        } else {
+          v.x += ((next.x - v.x) / distance) * stride;
+          v.y += ((next.y - v.y) / distance) * stride;
+        }
+        walking = true;
+      } else v.dwell -= dt;
       const t = this.clock + v.phase;
-      v.art.bench.visible = work && !!destination?.atDesk && !walking;
-      v.art.thought.visible = work && !v.anchored && !v.art.bench.visible;
+      const settled = !walking;
+      v.art.lens.visible = v.activity === "reading";
+      v.art.tool.visible = v.activity === "editing" && settled && v.spot === "file";
+      v.art.bench.visible = v.activity === "running" && settled && v.spot === "desk";
+      v.art.thought.visible = v.activity === "thinking" || (v.activity === "running" && !v.art.bench.visible && settled);
       v.art.thought.children.forEach((dot, i) => {
         dot.alpha = 0.35 + (Math.sin(t * 3 - i) + 1) * 0.325;
       });
+      // Up in the plant, a helper sways with it.
+      const lean = v.y < box.y - 18 ? -(v.y - box.y) * sway(box.label) : 0;
       const bob = walking
         ? Math.sin(t * 12) * 1.4
         : work
           ? Math.sin(t * 4) * 2.2
           : Math.sin(t * 1.2) * 0.5;
-      v.box.position.set(v.x, v.y + bob);
-      v.art.body.rotation = walking
+      v.box.position.set(v.x + lean, v.y + bob);
+      v.art.body.rotation = climbing
+        ? Math.sin(t * 10) * 0.14
+        : walking
         ? Math.sin(t * 8) * 0.06
         : work
           ? Math.sin(t * 3) * 0.07
@@ -1167,8 +1225,15 @@ export class Terrarium {
           pulse.ring.alpha = 1 - age;
         }
       }
-      p.foliage.rotation =
-        Math.sin(this.clock * 0.45 + (hash(id) % 10)) * 0.008;
+      p.foliage.rotation = sway(id);
+      if (!this.prefs.economy) {
+        // Each leaf flutters on its own beat; file leaves too.
+        for (const leaf of p.flutter)
+          leaf.item.rotation = leaf.base + Math.sin(this.clock * 1.7 + leaf.phase) * 0.07 + Math.sin(this.clock * 3.1 + leaf.phase * 2) * 0.02;
+        let i = 0;
+        for (const item of p.leaves.values())
+          item.rotation = Math.sin(this.clock * 1.5 + (hash(id) % 5) + i++ * 0.9) * 0.06;
+      }
     }
     if (!this.prefs.economy)
       for (const m of this.motes) {

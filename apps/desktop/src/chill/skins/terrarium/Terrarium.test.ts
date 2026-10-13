@@ -238,6 +238,26 @@ describe("terrarium live work", () => {
         ).toBeGreaterThan(50);
     scene.destroy();
   });
+  it("keeps a helper that runs commands moving, up into the plant and back to its desk", async () => {
+    const clock = { value: 1000 };
+    vi.spyOn(performance, "now").mockImplementation(() => clock.value);
+    const { scene, app } = await renderer();
+    scene.update([toTerrarium(project([{ ...actor, operation: "build" }]), now)], DEFAULT_PREFS, false, null, null, now);
+    const bug = bugs(scene)[0]!;
+    let highest = bug.y;
+    let desk = false;
+    const seen = new Set<string>();
+    for (let second = 0; second < 30; second++) {
+      advance(app, 60, clock);
+      highest = Math.min(highest, bug.y);
+      desk ||= bug.art.bench.visible;
+      seen.add(`${Math.round(bug.x / 10)},${Math.round(bug.y / 10)}`);
+    }
+    expect(desk).toBe(true);
+    expect(highest).toBeLessThan(bug.home.y - 100);
+    expect(seen.size).toBeGreaterThan(6);
+    scene.destroy();
+  });
   it("moves to a real file perch and stops roaming when awaiting input or using reduced motion", async () => {
     const clock = { value: 1000 };
     vi.spyOn(performance, "now").mockImplementation(() => clock.value);
