@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { DEFAULT_PREFS } from "../../preferences";
 import { toTerrarium } from "./model";
 import type { ActivityActorView, ActivityProject } from "../../model";
+import { CHATTER } from "./chatter";
 
 // Retain the scene graph and ticker callbacks while replacing GPU/Canvas IO.
 // These tests exercise the real renderer's update, animation and cleanup paths.
@@ -70,6 +71,7 @@ vi.mock("pixi.js", () => {
   class Text extends Container {
     text: string;
     height = 16;
+    width = 80;
     anchor = { set: vi.fn() };
     constructor({ text }: { text: string }) {
       super();
@@ -256,6 +258,32 @@ describe("terrarium live work", () => {
     expect(desk).toBe(true);
     expect(highest).toBeLessThan(bug.home.y - 100);
     expect(seen.size).toBeGreaterThan(6);
+    scene.destroy();
+  });
+  it("lets helpers speak now and then, briefly, and never more than two at once", async () => {
+    const clock = { value: 1000 };
+    vi.spyOn(performance, "now").mockImplementation(() => clock.value);
+    const { scene, app } = await renderer();
+    const team = Array.from({ length: 5 }, (_, i) => ({ ...actor, id: `helper-${i}`, operation: ["edit", "read", "build", "thinking", "edit"][i]! }));
+    scene.update([toTerrarium(project(team), now)], DEFAULT_PREFS, false, null, null, now);
+    const shown = bugs(scene);
+    const lines = new Set(Object.values(CHATTER).flat());
+    const heard = new Set<string>();
+    let talkingFrames = 0;
+    let frames = 0;
+    for (let i = 0; i < 90 * 6; i++) {
+      advance(app, 10, clock);
+      const talking = shown.filter((bug: any) => bug.bubble.visible);
+      expect(talking.length).toBeLessThanOrEqual(2);
+      for (const bug of talking) {
+        expect(lines.has(bug.bubbleText.text)).toBe(true);
+        heard.add(bug.bubbleText.text);
+      }
+      talkingFrames += talking.length;
+      frames += shown.length;
+    }
+    expect(heard.size).toBeGreaterThan(2);
+    expect(talkingFrames / frames).toBeLessThan(0.3);
     scene.destroy();
   });
   it("moves to a real file perch and stops roaming when awaiting input or using reduced motion", async () => {

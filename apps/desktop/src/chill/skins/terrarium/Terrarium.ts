@@ -6,6 +6,7 @@ import { hash, type Selection } from "../../model";
 import { focusCamera } from "./camera";
 import { plantPalette } from "./palette";
 import { activityOf, helperHome, planLeg, speedFor, type Activity, type Home, type Point, type Spot } from "./motion";
+import { CHATTER_AT_ONCE, CHATTER_SECONDS, chatterGap, chatterLine } from "./chatter";
 import {
   leafScale,
   visibleFiles,
@@ -296,6 +297,23 @@ function bugArt(bug: Bug): {
     thought,
   };
 }
+/** A helper's speech bubble, hidden until it has something to say. */
+function speechBubble(parent: Container): { bubble: Container; bubbleBack: Graphics; bubbleText: Text } {
+  const bubble = new Container();
+  bubble.position.set(0, -60);
+  bubble.visible = false;
+  bubble.eventMode = "none";
+  parent.addChild(bubble);
+  const bubbleBack = g(bubble);
+  const bubbleText = new Text({
+    text: "",
+    style: { fontFamily: "system-ui, sans-serif", fontSize: 11, fontWeight: "500", fill: 0x2c3b36 },
+  });
+  bubbleText.anchor.set(0.5, 1);
+  bubbleText.position.set(0, -3);
+  bubble.addChild(bubbleText);
+  return { bubble, bubbleBack, bubbleText };
+}
 type BugVisual = {
   bug: Bug;
   box: Container;
@@ -317,6 +335,13 @@ type BugVisual = {
   spot: Spot;
   step: number;
   plan: string;
+  /** A small speech bubble, now and then: when it next speaks, until when. */
+  bubble: Container;
+  bubbleBack: Graphics;
+  bubbleText: Text;
+  speakAt: number;
+  speakUntil: number;
+  spoken: number;
 };
 type PlantVisual = {
   box: Container;
@@ -1002,6 +1027,10 @@ export class Terrarium {
             spot: "ground",
             step: 0,
             plan: "",
+            ...speechBubble(box),
+            speakAt: this.clock + chatterGap(hash(bug.id), 0),
+            speakUntil: 0,
+            spoken: 0,
           };
           this.bugs.set(bug.id, v);
         }
@@ -1131,6 +1160,7 @@ export class Terrarium {
     this.garden.scale.set(this.zoom);
     this.garden.position.set(this.cameraX, this.cameraY);
     const sway = (id: string) => Math.sin(this.clock * 0.6 + (hash(id) % 10)) * 0.024 + Math.sin(this.clock * 1.3 + (hash(id) % 7)) * 0.008;
+    let talking = [...this.bugs.values()].filter((v) => this.clock < v.speakUntil).length;
     for (const v of this.bugs.values()) {
       const work = v.bug.status === "working" || v.bug.status === "starting";
       const box = v.plant.box;
@@ -1172,6 +1202,7 @@ export class Terrarium {
       v.art.thought.children.forEach((dot, i) => {
         dot.alpha = 0.35 + (Math.sin(t * 3 - i) + 1) * 0.325;
       });
+      this.speak(v, talking < CHATTER_AT_ONCE) && talking++;
       // Up in the plant, a helper sways with it.
       const lean = v.y < box.y - 18 ? -(v.y - box.y) * sway(box.label) : 0;
       const bob = walking
@@ -1244,6 +1275,41 @@ export class Terrarium {
         m.box.alpha = 0.35 + Math.sin(this.clock + m.phase) * 0.25;
       }
   };
+  /**
+   * Starts a line when it is the helper's turn and room allows (returns
+   * whether it did), and fades the bubble in and out.
+   */
+  private speak(v: BugVisual, room: boolean): boolean {
+    let started = false;
+    if (this.clock >= v.speakUntil && this.clock >= v.speakAt && v.box.alpha > 0) {
+      const seed = hash(v.bug.id);
+      if (room) {
+        v.bubbleText.text = chatterLine(v.activity, seed, v.spoken);
+        const w = v.bubbleText.width + 14,
+          h = v.bubbleText.height + 6;
+        v.bubbleBack
+          .clear()
+          .roundRect(-w / 2, -h, w, h, 8)
+          .fill({ color: 0xf6efd6, alpha: 0.95 })
+          .poly([-4, -0.5, 0, 6, 4, -0.5])
+          .fill({ color: 0xf6efd6, alpha: 0.95 });
+        v.speakUntil = this.clock + CHATTER_SECONDS;
+        v.spoken += 1;
+        // A talking helper comes to the front, so no one covers its bubble.
+        v.box.parent?.setChildIndex(v.box, v.box.parent.children.length - 1);
+        v.speakAt = v.speakUntil + chatterGap(seed, v.spoken);
+        started = true;
+      } else v.speakAt = this.clock + 2 + (seed % 5);
+    }
+    const left = v.speakUntil - this.clock;
+    const alpha = left <= 0 ? 0 : Math.min(1, (CHATTER_SECONDS - left) / 0.25, left / 0.4);
+    v.bubble.alpha = alpha;
+    v.bubble.visible = alpha > 0;
+    // Just over the head; higher when a status marker or thought sits there.
+    const above = ["waiting", "failed", "attention", "unknown"].includes(v.bug.status) ? -64 : v.art.thought.visible ? -54 : -38;
+    v.bubble.y = above + (1 - Math.min(1, (CHATTER_SECONDS - left) / 0.25)) * 4;
+    return started;
+  }
   destroy() {
     if (this.destroyed) return;
     this.destroyed = true;
