@@ -267,6 +267,24 @@ function RowMenu({ row, at, onClose, onRename }: { row: Row; at: { x: number; y:
   );
 }
 
+/** A sidebar layout choice remembered on this machine; a convenience, so failures are ignored. */
+function remembered<T>(key: string, fallback: T): T {
+  try {
+    const stored = localStorage.getItem(key);
+    return stored === null ? fallback : (JSON.parse(stored) as T);
+  } catch {
+    return fallback;
+  }
+}
+
+function remember(key: string, value: unknown) {
+  try {
+    localStorage.setItem(key, JSON.stringify(value));
+  } catch {
+    // Remembering is a convenience.
+  }
+}
+
 export function Sidebar() {
   const workspaces = useStore((s) => s.workspaces);
   const inspections = useStore((s) => s.inspections);
@@ -286,8 +304,9 @@ export function Sidebar() {
   const loadSettings = useStore((s) => s.loadSettings);
   const providers = useStore((s) => s.providers);
   const usage = useStore((s) => s.usage);
-  const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
-  const [pinnedCollapsed, setPinnedCollapsed] = useState(false);
+  // Folded workspaces, and the Pinned group, stay folded across restarts.
+  const [collapsed, setCollapsed] = useState<Record<string, boolean>>(() => remembered("thingmaker.sidebar.collapsed", {}));
+  const [pinnedCollapsed, setPinnedCollapsed] = useState(() => remembered("thingmaker.sidebar.pinnedCollapsed", false));
   const [menu, setMenu] = useState<{ row: Row; at: { x: number; y: number } } | null>(null);
   /** Agent session id of the row being renamed inline. */
   const [renaming, setRenaming] = useState<string | null>(null);
@@ -296,21 +315,11 @@ export function Sidebar() {
   // this machine.
   // Finished workers inside an open team, folded unless asked for.
   const [openFinished, setOpenFinished] = useState<Record<string, boolean>>({});
-  const [openTeams, setOpenTeams] = useState<Record<string, boolean>>(() => {
-    try {
-      return JSON.parse(localStorage.getItem("thingmaker.sidebar.openTeams") ?? "{}") as Record<string, boolean>;
-    } catch {
-      return {};
-    }
-  });
+  const [openTeams, setOpenTeams] = useState<Record<string, boolean>>(() => remembered("thingmaker.sidebar.openTeams", {}));
   const toggleTeam = (id: string) => {
     const next = { ...openTeams, [id]: !openTeams[id] };
     setOpenTeams(next);
-    try {
-      localStorage.setItem("thingmaker.sidebar.openTeams", JSON.stringify(next));
-    } catch {
-      // Remembering is a convenience.
-    }
+    remember("thingmaker.sidebar.openTeams", next);
   };
   const renameSession = useStore((s) => s.renameSession);
   const removeWorkspace = useStore((s) => s.removeWorkspace);
@@ -421,7 +430,10 @@ export function Sidebar() {
         {allPinned.length > 0 && (
           <section className="ws-group pinned-group">
             <div className="group-header">
-              <button aria-label={pinnedCollapsed ? "Expand" : "Collapse"} className="icon-button icon-button-xs" onClick={() => setPinnedCollapsed(!pinnedCollapsed)} type="button">
+              <button aria-label={pinnedCollapsed ? "Expand" : "Collapse"} className="icon-button icon-button-xs" onClick={() => {
+                  setPinnedCollapsed(!pinnedCollapsed);
+                  remember("thingmaker.sidebar.pinnedCollapsed", !pinnedCollapsed);
+                }} type="button">
                 <IconChevron open={!pinnedCollapsed} size={14} />
               </button>
               <span className="group-label">
@@ -455,7 +467,11 @@ export function Sidebar() {
           return (
             <section className="ws-group" key={workspace.id}>
               <div className={`ws-header ${selected ? "selected" : ""}`}>
-                <button aria-label={isCollapsed ? "Expand" : "Collapse"} className="icon-button icon-button-xs" onClick={() => setCollapsed({ ...collapsed, [workspace.id]: !isCollapsed })} type="button">
+                <button aria-label={isCollapsed ? "Expand" : "Collapse"} className="icon-button icon-button-xs" onClick={() => {
+                    const next = { ...collapsed, [workspace.id]: !isCollapsed };
+                    setCollapsed(next);
+                    remember("thingmaker.sidebar.collapsed", next);
+                  }} type="button">
                   <IconChevron open={!isCollapsed} size={14} />
                 </button>
                 <button aria-current={selected ? "page" : undefined} className="ws-name" onClick={() => void selectWorkspace(workspace.id)} title={workspace.displayPath} type="button">

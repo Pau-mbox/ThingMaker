@@ -8,7 +8,7 @@
  * "move to…" and no way back: the desktop had created a state it could not
  * show, which is worse than any single bug in it.
  */
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("@tauri-apps/api/core", () => ({
@@ -104,5 +104,22 @@ describe("workers under their orchestrator", () => {
     fireEvent.click(screen.getByRole("button", { name: "show 2 finished" }));
     expect(screen.getByText("luna · first job")).toBeTruthy();
     expect(screen.getByText("luna · second job")).toBeTruthy();
+  });
+});
+
+describe("the sidebar's layout outlives a restart", () => {
+  it("keeps a folded workspace folded when the sidebar comes back", () => {
+    localStorage.clear();
+    seed([record({ agentSessionId: "5f1e2d3c-0000-4000-8000-000000000001", provider: "claude" })]);
+    const first = render(<Sidebar />);
+    expect(screen.getByText(/Session 5f1e2d3c/i)).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Collapse" }));
+    expect(screen.queryByText(/Session 5f1e2d3c/i)).toBeNull();
+    first.unmount();
+    render(<Sidebar />);
+    expect(screen.queryByText(/Session 5f1e2d3c/i)).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Expand" }));
+    expect(screen.getByText(/Session 5f1e2d3c/i)).toBeTruthy();
+    localStorage.clear();
   });
 });
