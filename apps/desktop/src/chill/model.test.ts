@@ -147,6 +147,66 @@ describe("terrarium interpretation", () => {
     expect(toTerrarium(p).bugs[0]!.role).toBe("bee");
     expect("role" in p.actors[0]!).toBe(false);
   });
+  it("keeps replayed helpers in activity history without crowding the current work", () => {
+    const p = projectsOf(
+      snapshot({
+        actors: [
+          actor,
+          ...Array.from({ length: 22 }, (_, i) => ({
+            ...actor,
+            id: `old-${i}`,
+            native: true,
+            parentId: "s",
+            status: "idle",
+            lastSeen: now,
+            lastActiveAt: null,
+          })),
+        ],
+      }),
+      [workspace],
+      now,
+    )[0]!;
+    expect(p.actors).toHaveLength(23);
+    expect(toTerrarium(p, now).bugs.map((b) => b.id)).toEqual(["s"]);
+    expect(
+      toTerrarium(p, now, { kind: "actor", id: "old-4" }).bugs.map((b) => b.id),
+    ).toEqual(["s", "old-4"]);
+  });
+  it("keeps real working children and gives live completions a short farewell", () => {
+    const p = projectsOf(
+      snapshot({
+        actors: [
+          actor,
+          {
+            ...actor,
+            id: "child",
+            native: true,
+            parentId: "s",
+            lastActiveAt: now - 1000,
+          },
+          {
+            ...actor,
+            id: "done",
+            native: true,
+            parentId: "s",
+            status: "idle",
+            lastActiveAt: now - 1000,
+          },
+        ],
+      }),
+      [workspace],
+      now,
+    )[0]!;
+    expect(toTerrarium(p, now).bugs.map((b) => b.id)).toEqual([
+      "s",
+      "child",
+      "done",
+    ]);
+    expect(toTerrarium(p, now + 13_000).bugs.map((b) => b.id)).toEqual([
+      "s",
+      "child",
+    ]);
+  });
   it("shrinks old foliage continuously but retains active and pinned leaves", () => {
     expect(leafScale(file, now)).toBe(1);
     expect(leafScale({ ...file, touchedAt: now - 30 * 60_000 }, now)).toBe(0.8);

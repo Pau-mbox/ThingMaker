@@ -44,6 +44,8 @@ pub struct ActivityActor {
     pub operation: String,
     pub file_id: Option<String>,
     pub last_seen: i64,
+    /// Evidence of live work, never refreshed by transcript/history replay.
+    pub last_active_at: Option<i64>,
     pub waiting_reason: Option<String>,
     pub retry_at_unix_ms: Option<i64>,
     pub native: bool,
@@ -199,6 +201,10 @@ impl ActivityService {
                         operation: "idle".into(),
                         file_id: None,
                         last_seen: now_unix_ms(),
+                        last_active_at: (snapshot.foreground
+                            == crate::supervisor::TurnPhase::Running
+                            || !snapshot.autonomous_turns.is_empty())
+                        .then(now_unix_ms),
                         waiting_reason: None,
                         retry_at_unix_ms: None,
                         native: false,
@@ -369,6 +375,9 @@ impl ActivityService {
                         match effect {
                             TurnEffect::Started { .. } => {
                                 a.status = "working".into();
+                                if !historical {
+                                    a.last_active_at = Some(now_unix_ms());
+                                }
                                 a.operation = "thinking".into();
                                 a.waiting_reason = None;
                                 a.retry_at_unix_ms = None;
@@ -601,6 +610,14 @@ fn apply_runtime(s: &mut State, session: &str, event: &RuntimeEvent, historical:
                 s.actors.remove(&key);
                 forget_targets(s, session, &HashSet::from([key.clone()]));
             } else {
+                let last_active_at = if !historical && matches!(state, "working" | "starting") {
+                    Some(now_unix_ms())
+                } else {
+                    s.actors
+                        .get(&key)
+                        .filter(|a| a.generation.0 == *generation)
+                        .and_then(|a| a.last_active_at)
+                };
                 s.actors.insert(
                     key.clone(),
                     ActivityActor {
@@ -625,6 +642,7 @@ fn apply_runtime(s: &mut State, session: &str, event: &RuntimeEvent, historical:
                         } else {
                             now_unix_ms()
                         },
+                        last_active_at,
                         waiting_reason: None,
                         retry_at_unix_ms: None,
                         native: true,
@@ -777,6 +795,143 @@ fn prune(s: &mut State) {
     }
 }
 
+
+
+fn forget_targets(s: &mut State, session: &str, removed: &HashSet<String>) {
+    for f in s.files.values_mut() {
+        f.active_actors.retain(|a| !removed.contains(a));
+    }
+    s.tools.retain(|key, t| {
+        !key.starts_with(&format!("{session}|"))
+            || !t
+                .meta
+                .as_ref()
+                .and_then(|m| m.get("agentId"))
+                .and_then(serde_json::Value::as_str)
+                .is_some_and(|id| removed.contains(&format!("{session}/child/{id}")))
+    });
+}
+
+// Retain structured evidence needed by future partial patches, never tool file
+// contents, shell scripts, image data, or arbitrary MCP request/output bodies.
+fn compact_tool(mut tool: ToolPatch) -> ToolPatch {
+    use serde_json::{Value, json};
+    fn headers(value: &str) -> String {
+        value
+            .lines()
+            .filter(|line| {
+                [
+                    "*** Update File: ",
+                    "*** Add File: ",
+                    "*** Delete File: ",
+                    "*** Move to: ",
+                ]
+                .iter()
+                .any(|p| line.starts_with(p))
+            })
+            .take(128)
+            .collect::<Vec<_>>()
+            .join("\n")
+    }
+    tool.raw_output = None;
+    tool.content = None;
+    tool.title = tool.title.map(|v| v.chars().take(400).collect());
+    tool.meta = tool.meta.and_then(|m| {
+        m.get("agentId")
+            .and_then(Value::as_str)
+            .map(|id| json!({"agentId":id}))
+    });
+    tool.locations = tool.locations.and_then(|v| {
+        v.as_array().map(|a| {
+            Value::Array(
+                a.iter()
+                    .take(64)
+                    .filter_map(|item| {
+                        item.get("path")
+                            .and_then(Value::as_str)
+                            .map(|p| json!({"path":p}))
+                    })
+                    .collect(),
+            )
+        })
+    });
+    tool.raw_input = tool.raw_input.map(|value| match value {
+        Value::String(text) => Value::String(headers(&text)),
+        Value::Object(object) => {
+            let mut safe = serde_json::Map::new();
+            for key in [
+                "cwd",
+                "file_path",
+                "filePath",
+                "path",
+                "absolute_path",
+                "TargetFile",
+                "AbsolutePath",
+            ] {
+                if let Some(value) = object
+                    .get(key)
+                    .and_then(Value::as_str)
+                    .filter(|v| v.len() <= 4096)
+                {
+                    safe.insert(key.into(), json!(value));
+                }
+            }
+            if let Some(patch) = object.get("patch").and_then(Value::as_str) {
+                safe.insert("patch".into(), json!(headers(patch)));
+            }
+            for key in ["changes", "actions"] {
+                if let Some(items) = object.get(key).and_then(Value::as_array) {
+                    safe.insert(
+                        key.into(),
+                        Value::Array(
+                            items
+                                .iter()
+                                .take(64)
+                                .map(|item| {
+                                    let mut fields = serde_json::Map::new();
+                                    for field in ["path", "kind", "type"] {
+                                        if let Some(value) = item.get(field)
+                                            && (value.is_string()
+                                                && value.as_str().is_some_and(|v| v.len() <= 4096)
+                                                || field == "kind")
+                                        {
+                                            fields.insert(
+                                                field.into(),
+                                                match value {
+                                                    Value::Object(k) => {
+                                                        let mut kind = serde_json::Map::new();
+                                                        if let Some(t) =
+                                                            k.get("type").and_then(Value::as_str)
+                                                        {
+                                                            kind.insert("type".into(), json!(t));
+                                                        }
+                                                        if k.contains_key("delete") {
+                                                            kind.insert(
+                                                                "delete".into(),
+                                                                json!(true),
+                                                            );
+                                                        }
+                                                        Value::Object(kind)
+                                                    }
+                                                    _ => value.clone(),
+                                                },
+                                            );
+                                        }
+                                    }
+                                    Value::Object(fields)
+                                })
+                                .collect(),
+                        ),
+                    );
+                }
+            }
+            Value::Object(safe)
+        }
+        _ => Value::Null,
+    });
+    tool
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -816,6 +971,7 @@ mod tests {
                     operation: "thinking".into(),
                     file_id: None,
                     last_seen: now_unix_ms(),
+                    last_active_at: Some(now_unix_ms()),
                     waiting_reason: None,
                     retry_at_unix_ms: None,
                     native: false,
@@ -989,6 +1145,88 @@ mod tests {
         assert_eq!(service.snapshot().actors.len(), 1);
     }
     #[test]
+    fn replayed_helpers_do_not_get_live_completion_recency() {
+        let (service, _) = setup();
+        service.ingest(
+            &event(
+                1,
+                SessionEvent::RuntimeEvent(child(
+                    "old",
+                    None,
+                    "claude-code",
+                    SubagentStatus::Working,
+                )),
+            ),
+            true,
+        );
+        service.ingest(
+            &event(
+                2,
+                SessionEvent::RuntimeEvent(child("old", None, "claude-code", SubagentStatus::Idle)),
+            ),
+            true,
+        );
+        assert!(
+            service
+                .snapshot()
+                .actors
+                .iter()
+                .find(|a| a.native)
+                .unwrap()
+                .last_active_at
+                .is_none()
+        );
+        service.ingest(
+            &event(
+                3,
+                SessionEvent::RuntimeEvent(child(
+                    "live",
+                    None,
+                    "claude-code",
+                    SubagentStatus::Working,
+                )),
+            ),
+            false,
+        );
+        service.ingest(
+            &event(
+                4,
+                SessionEvent::RuntimeEvent(child(
+                    "live",
+                    None,
+                    "claude-code",
+                    SubagentStatus::Idle,
+                )),
+            ),
+            false,
+        );
+        let snapshot = service.snapshot();
+        assert!(
+            snapshot
+                .actors
+                .iter()
+                .find(|a| a.id.ends_with("/live"))
+                .unwrap()
+                .last_active_at
+                .is_some()
+        );
+        // Lag recovery replays runtime nodes but must retain known live evidence.
+        service.runtime_replay(&event(
+            4,
+            SessionEvent::RuntimeEvent(child("live", None, "claude-code", SubagentStatus::Idle)),
+        ));
+        assert!(
+            service
+                .snapshot()
+                .actors
+                .iter()
+                .find(|a| a.id.ends_with("/live"))
+                .unwrap()
+                .last_active_at
+                .is_some()
+        );
+    }
+    #[test]
     fn restart_restores_only_successful_file_summaries() {
         let (service, workspace) = setup();
         service.ingest(&tool(1,json!({"toolCallId":"a","name":"Edit","status":"completed","rawInput":{"file_path":"a.ts"}})),false);
@@ -1067,139 +1305,4 @@ mod tests {
         service.ingest(&stale, false);
         assert!(service.snapshot().files.is_empty());
     }
-}
-
-fn forget_targets(s: &mut State, session: &str, removed: &HashSet<String>) {
-    for f in s.files.values_mut() {
-        f.active_actors.retain(|a| !removed.contains(a));
-    }
-    s.tools.retain(|key, t| {
-        !key.starts_with(&format!("{session}|"))
-            || !t
-                .meta
-                .as_ref()
-                .and_then(|m| m.get("agentId"))
-                .and_then(serde_json::Value::as_str)
-                .is_some_and(|id| removed.contains(&format!("{session}/child/{id}")))
-    });
-}
-
-// Retain structured evidence needed by future partial patches, never tool file
-// contents, shell scripts, image data, or arbitrary MCP request/output bodies.
-fn compact_tool(mut tool: ToolPatch) -> ToolPatch {
-    use serde_json::{Value, json};
-    fn headers(value: &str) -> String {
-        value
-            .lines()
-            .filter(|line| {
-                [
-                    "*** Update File: ",
-                    "*** Add File: ",
-                    "*** Delete File: ",
-                    "*** Move to: ",
-                ]
-                .iter()
-                .any(|p| line.starts_with(p))
-            })
-            .take(128)
-            .collect::<Vec<_>>()
-            .join("\n")
-    }
-    tool.raw_output = None;
-    tool.content = None;
-    tool.title = tool.title.map(|v| v.chars().take(400).collect());
-    tool.meta = tool.meta.and_then(|m| {
-        m.get("agentId")
-            .and_then(Value::as_str)
-            .map(|id| json!({"agentId":id}))
-    });
-    tool.locations = tool.locations.and_then(|v| {
-        v.as_array().map(|a| {
-            Value::Array(
-                a.iter()
-                    .take(64)
-                    .filter_map(|item| {
-                        item.get("path")
-                            .and_then(Value::as_str)
-                            .map(|p| json!({"path":p}))
-                    })
-                    .collect(),
-            )
-        })
-    });
-    tool.raw_input = tool.raw_input.map(|value| match value {
-        Value::String(text) => Value::String(headers(&text)),
-        Value::Object(object) => {
-            let mut safe = serde_json::Map::new();
-            for key in [
-                "cwd",
-                "file_path",
-                "filePath",
-                "path",
-                "absolute_path",
-                "TargetFile",
-                "AbsolutePath",
-            ] {
-                if let Some(value) = object
-                    .get(key)
-                    .and_then(Value::as_str)
-                    .filter(|v| v.len() <= 4096)
-                {
-                    safe.insert(key.into(), json!(value));
-                }
-            }
-            if let Some(patch) = object.get("patch").and_then(Value::as_str) {
-                safe.insert("patch".into(), json!(headers(patch)));
-            }
-            for key in ["changes", "actions"] {
-                if let Some(items) = object.get(key).and_then(Value::as_array) {
-                    safe.insert(
-                        key.into(),
-                        Value::Array(
-                            items
-                                .iter()
-                                .take(64)
-                                .map(|item| {
-                                    let mut fields = serde_json::Map::new();
-                                    for field in ["path", "kind", "type"] {
-                                        if let Some(value) = item.get(field)
-                                            && (value.is_string()
-                                                && value.as_str().is_some_and(|v| v.len() <= 4096)
-                                                || field == "kind")
-                                        {
-                                            fields.insert(
-                                                field.into(),
-                                                match value {
-                                                    Value::Object(k) => {
-                                                        let mut kind = serde_json::Map::new();
-                                                        if let Some(t) =
-                                                            k.get("type").and_then(Value::as_str)
-                                                        {
-                                                            kind.insert("type".into(), json!(t));
-                                                        }
-                                                        if k.contains_key("delete") {
-                                                            kind.insert(
-                                                                "delete".into(),
-                                                                json!(true),
-                                                            );
-                                                        }
-                                                        Value::Object(kind)
-                                                    }
-                                                    _ => value.clone(),
-                                                },
-                                            );
-                                        }
-                                    }
-                                    Value::Object(fields)
-                                })
-                                .collect(),
-                        ),
-                    );
-                }
-            }
-            Value::Object(safe)
-        }
-        _ => Value::Null,
-    });
-    tool
 }

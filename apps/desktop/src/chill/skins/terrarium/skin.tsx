@@ -43,7 +43,9 @@ export const terrariumSkin: ChillSkin = {
     return {
       update(projects, state) {
         scene.update(
-          projects.map(toTerrarium),
+          projects.map((project) =>
+            toTerrarium(project, state.now, state.selection),
+          ),
           state.prefs,
           state.reduced,
           state.selection,

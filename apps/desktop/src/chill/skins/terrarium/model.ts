@@ -11,13 +11,35 @@ export type TerrariumActor = ActivityActorView & {
 export type TerrariumProject = Omit<ActivityProject, "actors"> & {
   bugs: TerrariumActor[];
 };
-export function toTerrarium(project: ActivityProject): TerrariumProject {
+export function toTerrarium(
+  project: ActivityProject,
+  now = Date.now(),
+  selection: Selection = null,
+): TerrariumProject {
   return {
     ...project,
-    bugs: project.actors.map((actor) => ({
-      ...actor,
-      role: roleFor(actor.task, actor.native || !!actor.parentId),
-    })),
+    bugs: project.actors
+      .filter((actor) => {
+        // Attached root sessions remain residents. Old helpers stay in activity
+        // history, not on the lawn. Only a live completion gets a short farewell.
+        if (!actor.native && !actor.parentId) return true;
+        if (selection?.kind === "actor" && selection.id === actor.id)
+          return true;
+        if (
+          ["working", "starting", "waiting", "attention", "failed"].includes(
+            actor.status,
+          )
+        )
+          return true;
+        return (
+          actor.jobId !== null ||
+          (!!actor.lastActiveAt && now - actor.lastSeen < 12_000)
+        );
+      })
+      .map((actor) => ({
+        ...actor,
+        role: roleFor(actor.task, actor.native || !!actor.parentId),
+      })),
   };
 }
 export function roleFor(task: string, child: boolean): TerrariumActor["role"] {

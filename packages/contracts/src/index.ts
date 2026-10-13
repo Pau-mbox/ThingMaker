@@ -1575,6 +1575,8 @@ export type ActivityActor = {
   id: string; sessionId: string; workspaceId: string; parentId: string | null;
   name: string; provider: Provider; model: string | null; status: string;
   task: string; operation: string; fileId: string | null; lastSeen: number;
+  /** Live-work evidence; replay and historical completion do not refresh this. */
+  lastActiveAt?: number | null;
   native: boolean; generation: DecimalId; waitingReason?: string | null; retryAtUnixMs?: number | null;
 };
 export type FileActivity = {

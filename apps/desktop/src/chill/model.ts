@@ -95,6 +95,7 @@ export function projectsOf(
       operation: "thinking",
       fileId: null,
       lastSeen: job.finishedAtUnixMs ?? job.startedAtUnixMs,
+      lastActiveAt: null as number | null,
       native: false,
       generation: "1",
     };
@@ -119,6 +120,9 @@ export function projectsOf(
       reason: job.waitingReason ?? job.error ?? null,
       retryAt: job.retryAtUnixMs ?? null,
       jobId: active ? job.id : null,
+      lastActiveAt: active
+        ? (actor.lastActiveAt ?? job.startedAtUnixMs)
+        : (actor.lastActiveAt ?? null),
       orchestrator: job.orchestrator,
     });
   }

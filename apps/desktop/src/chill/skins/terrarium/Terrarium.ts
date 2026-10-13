@@ -5,6 +5,7 @@ import { Application, Container, Graphics, Text } from "pixi.js";
 import { hash, type Selection } from "../../model";
 import { focusCamera } from "./camera";
 import { plantPalette } from "./palette";
+import { helperHome, workDestination, type Home } from "./motion";
 import {
   leafScale,
   visibleFiles,
@@ -123,6 +124,7 @@ function bugArt(bug: Bug): {
   lens: Container;
   tool: Container;
   bench: Container;
+  thought: Container;
 } {
   const body = new Container();
   ellipse(body, 0, 13, 17, 5, 0x162f2a, 0.2);
@@ -274,7 +276,24 @@ function bugArt(bug: Bug): {
     .lineTo(-1, -15)
     .lineTo(-4, -13)
     .stroke({ color: 0xd9e7b5, width: 1 });
-  return { body, wings, legs, antennae, halo, lens, tool, bench, eyes };
+  const thought = new Container();
+  thought.position.set(0, -43);
+  body.addChild(thought);
+  for (let i = 0; i < 3; i++)
+    ellipse(thought, (i - 1) * 7, -Math.sin(i) * 3, 2.2, 2.2, 0xc7e8bc);
+  thought.visible = false;
+  return {
+    body,
+    wings,
+    legs,
+    antennae,
+    halo,
+    lens,
+    tool,
+    bench,
+    eyes,
+    thought,
+  };
 }
 type BugVisual = {
   bug: Bug;
@@ -287,6 +306,9 @@ type BugVisual = {
   phase: number;
   marker: Graphics;
   settledAt: number;
+  home: Home;
+  anchored: boolean;
+  workBeganAt: number;
 };
 type PlantVisual = {
   box: Container;
@@ -298,6 +320,7 @@ type PlantVisual = {
   lantern: Container;
   selectionRing: Graphics;
   name: Text;
+  bugSlots: Map<string, number>;
   hero: boolean;
   versions: Map<string, string>;
   decorationKey: string;
@@ -708,6 +731,7 @@ export class Terrarium {
       lantern,
       selectionRing,
       name,
+      bugSlots: new Map(),
       hero,
       versions: new Map(),
       decorationKey: "",
@@ -893,9 +917,11 @@ export class Terrarium {
               Number(["failed", "attention"].includes(a.status)) ||
             Number(b.status === "working") - Number(a.status === "working"),
         )
-        .slice(0, remainingBugs);
+        .slice(0, Math.min(12, remainingBugs));
       remainingBugs -= shown.length;
       shown.forEach((b) => shownBugIds.add(b.id));
+      for (const id of plant.bugSlots.keys())
+        if (!shown.some((bug) => bug.id === id)) plant.bugSlots.delete(id);
       for (const bug of shown) {
         let v = this.bugs.get(bug.id);
         if (v && v.bug.role !== bug.role) {
@@ -903,12 +929,14 @@ export class Terrarium {
           this.bugs.delete(bug.id);
           v = undefined;
         }
-        const home = {
-          x:
-            plant.box.x +
-            (hash(bug.id) % 2 ? -1 : 1) * (72 + ((hash(bug.id) >>> 5) % 38)),
-          y: plant.box.y + 6 + ((hash(bug.id) >>> 8) % 12),
-        };
+        let homeSlot = plant.bugSlots.get(bug.id);
+        if (homeSlot === undefined) {
+          const occupied = new Set(plant.bugSlots.values());
+          homeSlot = 0;
+          while (occupied.has(homeSlot)) homeSlot++;
+          plant.bugSlots.set(bug.id, homeSlot);
+        }
+        const home = helperHome(homeSlot, plant.box);
         const anchor = bug.fileId ? plant.anchors.get(bug.fileId) : undefined;
         const target =
           anchor && bug.status === "working"
@@ -945,12 +973,22 @@ export class Terrarium {
             phase: hash(bug.id) % 100,
             marker,
             settledAt: 0,
+            home,
+            anchored: !!anchor,
+            workBeganAt: this.clock,
           };
           this.bugs.set(bug.id, v);
         }
         if (v.bug.status === "working" && bug.status === "idle")
           v.settledAt = performance.now();
+        if (
+          !["working", "starting"].includes(v.bug.status) &&
+          ["working", "starting"].includes(bug.status)
+        )
+          v.workBeganAt = this.clock;
         v.bug = bug;
+        v.home = home;
+        v.anchored = !!anchor;
         v.art.lens.visible =
           bug.status === "working" &&
           ["read", "search"].includes(bug.operation);
@@ -960,6 +998,15 @@ export class Terrarium {
         v.tx = target.x;
         v.ty = target.y;
         v.box.alpha = focus && focus !== project.id ? 0 : 1;
+        if (
+          (bug.native || bug.parentId) &&
+          bug.status === "idle" &&
+          bug.lastActiveAt
+        )
+          v.box.alpha *= Math.max(
+            0,
+            Math.min(1, (12_000 - (now - bug.lastSeen)) / 2500),
+          );
         v.marker.clear();
         if (bug.status === "waiting") {
           v.marker.circle(0, 0, 7).stroke({ color: 0xc8d8bf, width: 1.5 });
@@ -1052,22 +1099,35 @@ export class Terrarium {
     this.garden.scale.set(this.zoom);
     this.garden.position.set(this.cameraX, this.cameraY);
     for (const v of this.bugs.values()) {
+      const work = v.bug.status === "working" || v.bug.status === "starting";
+      const destination =
+        work && !v.anchored
+          ? workDestination(v.home, this.clock - v.workBeganAt, v.phase)
+          : null;
+      if (destination) {
+        v.tx = destination.x;
+        v.ty = destination.y;
+      }
       const walking = Math.hypot(v.tx - v.x, v.ty - v.y) > 2;
       const speed = Math.min(1, dt * 2.2);
       v.x += (v.tx - v.x) * speed;
       v.y += (v.ty - v.y) * speed;
       const t = this.clock + v.phase;
-      const work = v.bug.status === "working" || v.bug.status === "starting";
+      v.art.bench.visible = work && !!destination?.atDesk && !walking;
+      v.art.thought.visible = work && !v.anchored && !v.art.bench.visible;
+      v.art.thought.children.forEach((dot, i) => {
+        dot.alpha = 0.35 + (Math.sin(t * 3 - i) + 1) * 0.325;
+      });
       const bob = walking
         ? Math.sin(t * 12) * 1.4
         : work
-          ? Math.sin(t * 3) * 1.2
+          ? Math.sin(t * 4) * 2.2
           : Math.sin(t * 1.2) * 0.5;
       v.box.position.set(v.x, v.y + bob);
       v.art.body.rotation = walking
         ? Math.sin(t * 8) * 0.06
         : work
-          ? Math.sin(t * 2) * 0.04
+          ? Math.sin(t * 3) * 0.07
           : Math.sin(t) * 0.015;
       v.art.body.rotation +=
         now - v.settledAt < 1500
@@ -1075,8 +1135,8 @@ export class Terrarium {
           : 0;
       v.art.eyes.scale.y =
         v.bug.status === "idle" ? 0.12 : Math.sin(t * 0.7) > 0.995 ? 0.12 : 1;
-      v.art.lens.rotation = Math.sin(t * 2) * 0.08;
-      v.art.tool.rotation = Math.sin(t * 5) * 0.18;
+      v.art.lens.rotation = Math.sin(t * 2) * 0.18;
+      v.art.tool.rotation = Math.sin(t * 5) * 0.3;
       v.art.body.scale.y = 1 + Math.sin(t * 2) * 0.025;
       v.art.antennae.rotation = Math.sin(t * 1.5) * 0.035;
       v.art.halo.alpha =
@@ -1092,7 +1152,7 @@ export class Terrarium {
         leg.rotation = walking
           ? Math.sin(t * 12 + i) * 0.14
           : work
-            ? Math.sin(t * 3 + i) * 0.035
+            ? Math.sin(t * 4 + i) * 0.1
             : 0;
       });
     }
