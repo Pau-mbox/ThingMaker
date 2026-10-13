@@ -483,6 +483,12 @@ impl Delegation {
         self.state().quotas.is_spent(provider, now_unix_ms())
     }
 
+    /// Jobs not finished, across every orchestrator: running, starting, or
+    /// waiting for a limit to reset. What keeps the Mac awake.
+    pub fn open_job_count(&self) -> usize {
+        self.state().jobs.values().filter(|record| !record.view.status.is_finished()).count()
+    }
+
     /// The session's jobs, oldest first.
     pub fn jobs(&self, session: &str) -> Vec<JobView> {
         let state = self.state();

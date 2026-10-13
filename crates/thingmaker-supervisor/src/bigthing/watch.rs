@@ -66,6 +66,9 @@ pub struct WatchState {
     pub agents: HashMap<String, SeenAgent>,
     /// Tokens the stream reported over the session's life.
     pub stream_tokens: i64,
+    /// The session's own queue is about to start a turn: the person's
+    /// prompts go first, and the runner waits for them.
+    pub queue_busy: bool,
 }
 
 enum Applied {
@@ -111,6 +114,7 @@ impl Watch {
             turn: TurnRecord::default(),
             agents: HashMap::new(),
             stream_tokens: 0,
+            queue_busy: snapshot.as_ref().is_some_and(|snapshot| snapshot.queue.holds_next_turn()),
         };
         let watch = Arc::new(Self { handle: handle.clone(), provider, actor: actor.clone(), state: Mutex::new(state) });
         let weak = Arc::downgrade(&watch);
@@ -146,7 +150,7 @@ impl Watch {
     /// Whether nothing is in flight: the runner may prompt.
     pub fn idle(&self) -> bool {
         let state = self.state();
-        !state.foreground.is_active()
+        !state.foreground.is_active() && !state.queue_busy
     }
 
     pub fn attached(&self) -> bool {
@@ -161,6 +165,7 @@ impl Watch {
         let was_active = state.foreground.is_active();
         state.foreground = snapshot.foreground;
         state.attached = snapshot.attachment == AttachmentState::Attached;
+        state.queue_busy = snapshot.queue.holds_next_turn();
         // Lagged past a settle: the actor knows it ended.
         if was_active && snapshot.foreground.is_settled() {
             let turn = std::mem::take(&mut state.turn);
@@ -223,6 +228,7 @@ impl Watch {
                 }
             }
             SessionEvent::Attachment { state: attachment, .. } => state.attached = *attachment == AttachmentState::Attached,
+            SessionEvent::Queue(queue) => state.queue_busy = queue.holds_next_turn(),
             SessionEvent::Process { state: process, .. } => {
                 if *process == ProcessState::Exited {
                     state.exited = true;

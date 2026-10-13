@@ -4746,6 +4746,7 @@ dependencies = [
  "axum",
  "base64 0.22.1",
  "blake3",
+ "core-foundation 0.10.1",
  "futures-util",
  "qrcode",
  "rustls",

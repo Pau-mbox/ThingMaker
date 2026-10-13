@@ -20,6 +20,8 @@ pub mod events;
 pub mod gemini;
 pub mod login;
 pub mod usage;
+pub mod titles;
+pub mod versions;
 
 use std::path::Path;
 

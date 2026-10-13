@@ -3,7 +3,7 @@
 //! Each entry is one of the desktop's own commands, called with the same
 //! arguments the renderer sends, so the phone's screens are the desktop's.
 //! The list is deliberate: reading sessions, Big Thing and the team, and
-//! controlling them — sending, steering, cancelling, starting and pausing a
+//! controlling them — sending, steering, queueing, cancelling, starting and pausing a
 //! goal, answering it, deciding its plan changes. Not on it: sign-ins and
 //! provider settings, workspace trust, the terminal, git writes, file
 //! writes, MCP installs, the runtime environment, deleting, and anything
@@ -33,6 +33,8 @@ pub const ALLOWED: &[&str] = &[
     "session_token_usage",
     "session_submit",
     "session_steer",
+    "session_enqueue",
+    "session_queue",
     "session_cancel",
     "session_set_config_option",
     "session_open",
@@ -188,12 +190,14 @@ pub async fn dispatch(app: &AppHandle, command: &str, args: Value) -> Result<Val
         },
         "worktree_list" => sync_call!(app, args, git::worktree_list, "workspaceId"),
         "session_list_open" => sync_call!(app, args, session::session_list_open),
-        "session_records" => sync_call!(app, args, session::session_records, "workspaceId"),
+        "session_records" => async_call!(app, args, session::session_records, "workspaceId"),
         "session_snapshot" => async_call!(app, args, session::session_snapshot, "handle"),
         "session_history" => async_call!(app, args, session::session_history, "request"),
         "session_token_usage" => sync_call!(app, args, session::session_token_usage, "request"),
         "session_submit" => async_call!(app, args, session::session_submit, "request"),
         "session_steer" => async_call!(app, args, session::session_steer, "request"),
+        "session_enqueue" => async_call!(app, args, session::session_enqueue, "request"),
+        "session_queue" => async_call!(app, args, session::session_queue, "request"),
         "session_cancel" => async_call!(app, args, session::session_cancel, "handle"),
         "session_set_config_option" => async_call!(app, args, session::session_set_config_option, "request"),
         "session_open" => async_call!(app, args, session::session_open, "request"),

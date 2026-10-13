@@ -5,6 +5,7 @@ import {
   CLAUDE_ORCHESTRATOR_MODEL,
   type CleanupCandidate,
   type ClaudeModelChoice,
+  type KeepAwakeStatus,
   type NotificationSettings,
   type StorageReport,
 } from "@thingmaker/contracts";
@@ -252,6 +253,23 @@ export function SettingsPanel() {
           <input checked={uiPrefs.enterSends} onChange={(e) => void setUiPrefs({ enterSends: e.target.checked })} type="checkbox" /> Enter sends, Shift+Enter inserts a newline
           (unchecked inverts both)
         </label>
+        <div className="field">
+          <span>While the agent is working, the send key</span>
+          <div className="row wrap">
+            <label className="check">
+              <input checked={(uiPrefs.followUp ?? "queue") === "queue"} name="follow-up" onChange={() => void setUiPrefs({ followUp: "queue" })} type="radio" /> queues the
+              prompt for when the turn is over
+            </label>
+            <label className="check">
+              <input checked={uiPrefs.followUp === "steer"} name="follow-up" onChange={() => void setUiPrefs({ followUp: "steer" })} type="radio" /> steers it into the
+              running turn
+            </label>
+          </div>
+          <span className="small muted">
+            ⌘ with the send key does the other. Steering needs an agent that supports it (Claude Code and Codex do); otherwise the prompt is queued. A queue
+            sends by itself after a turn that finished, and pauses after one that was cancelled or failed.
+          </span>
+        </div>
         <label className="check">
           Transcript page size{" "}
           <input
@@ -432,6 +450,8 @@ export function SettingsPanel() {
         ))}
       </section>
 
+      <KeepAwakeSection onChange={update} settings={settings} />
+
       <section>
         <h3>Closing the window</h3>
         <p className="small muted">
@@ -451,5 +471,50 @@ export function SettingsPanel() {
       <SupportBundleSection />
       <StorageSection />
     </div>
+  );
+}
+
+/**
+ * Holding off idle sleep while agents work (keep_awake.rs). The status line
+ * is the host's own last decision, so it says what is actually happening.
+ */
+function KeepAwakeSection({ settings, onChange }: { settings: NotificationSettings; onChange: (patch: Partial<NotificationSettings>) => void }) {
+  const [status, setStatus] = useState<KeepAwakeStatus | null>(null);
+  useEffect(() => {
+    let live = true;
+    const read = () =>
+      api
+        .keepAwakeRefresh()
+        .then((next) => live && setStatus(next))
+        .catch(() => undefined);
+    void read();
+    const timer = setInterval(read, 5000);
+    return () => {
+      live = false;
+      clearInterval(timer);
+    };
+  }, [settings.keepAwake, settings.keepAwakeOnBattery]);
+  return (
+    <section>
+      <h3>While agents work</h3>
+      <label className="check">
+        <input checked={settings.keepAwake} onChange={(e) => onChange({ keepAwake: e.target.checked })} type="checkbox" /> Keep the Mac awake while sessions, Big Things or
+        team jobs are working
+      </label>
+      <label className="check">
+        <input checked={settings.keepAwakeOnBattery} disabled={!settings.keepAwake} onChange={(e) => onChange({ keepAwakeOnBattery: e.target.checked })} type="checkbox" /> On
+        battery too
+      </label>
+      <p className="small muted">
+        Only idle sleep is held off: the display still sleeps, and closing the lid still sleeps the Mac. A Big Thing parked until a limit resets counts as working, so
+        it is awake to carry on.
+      </p>
+      {status && (
+        <p className="small" role="status">
+          {status.reason}
+          {status.onBattery !== null && <span className="muted"> ({status.onBattery ? "on battery" : "plugged in"})</span>}
+        </p>
+      )}
+    </section>
   );
 }

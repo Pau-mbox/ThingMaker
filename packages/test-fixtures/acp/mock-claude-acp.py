@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""A mock of `claude-agent-acp` 0.84.0 (first captured from 0.76.0), to the shape the real adapter answers.
+"""A mock of `claude-agent-acp` 0.89.1 (first captured from 0.76.0, then 0.84.0), to the shape the real adapter answers.
 
 Written from a capture of the real one rather than from its README. What
 the desktop depends on:
@@ -27,6 +27,13 @@ Flags:
   --hang-in-tool   a prompt starts a tool call and then waits in it, the way
                    an orchestrator waits in `await_jobs`; `session/cancel`
                    ends it
+  --slow=<s>       a prompt waits this many seconds before its turn runs, so a
+                   test can act while it is running
+  --refuse-first   the first prompt's turn ends in a refusal
+  --echo           each turn starts by saying `got: <prompt text>`
+  --no-steer       steering is not advertised
+  --legacy-ids     answers as 0.84.0 did, listing Fable as `claude-fable-5-1`
+                   (0.89 calls it `fable`)
   --follow-plan    plays a Big Thing orchestrator: answers a planning prompt
                    with a plan block, a briefing with an acknowledgement, and a
                    continuation by writing a file, running the milestone's
@@ -35,6 +42,7 @@ Flags:
 import json
 import sys
 import threading
+import time
 
 write_lock = threading.Lock()
 LIMIT = "--limit" in sys.argv
@@ -43,6 +51,12 @@ HANG_IN_TOOL = "--hang-in-tool" in sys.argv
 hanging = {}
 ASK = "--ask" in sys.argv
 FOLLOW = "--follow-plan" in sys.argv
+REFUSE_FIRST = "--refuse-first" in sys.argv
+ECHO = "--echo" in sys.argv
+NO_STEER = "--no-steer" in sys.argv
+LEGACY = "--legacy-ids" in sys.argv
+FABLE = "claude-fable-5-1" if LEGACY else "fable"
+prompts = {"count": 0}
 cwds = {}
 turns = {"count": 0}
 
@@ -55,6 +69,7 @@ def option(name, default):
 SESSION = option("--session", "d847b2a3-c7b5-4459-8b0f-02fdd03031a4")
 # A model this account cannot select, the way an exhausted Fable behaves.
 REFUSE_MODEL = option("--refuse-model", None)
+SLOW = float(option("--slow", "0"))
 mode = "default"
 model = "opus"
 effort = "default"
@@ -105,7 +120,7 @@ def config_options():
             "options": [
                 {"value": "default", "name": "Default (recommended)", "description": "Opus 5.5"},
                 {"value": "opus", "name": "Opus 5.5", "description": "Best for everyday, complex tasks"},
-                {"value": "claude-fable-5-1", "name": "Fable 5.1", "description": "Most capable for your hardest and longest-running tasks"},
+                {"value": FABLE, "name": "Fable 5.1", "description": "Most capable for your hardest and longest-running tasks"},
                 {"value": "sonnet", "name": "Sonnet 5.5", "description": "Efficient for routine tasks"},
                 {"value": "haiku", "name": "Haiku 4.5", "description": "Fastest for quick answers"},
                 {"value": "claude-sonnet-5", "name": "Sonnet 5", "description": "Efficient for routine tasks"},
@@ -123,9 +138,9 @@ def initialize():
             "loadSession": True,
             "sessionCapabilities": {"close": {}, "delete": {}, "fork": {}, "list": {}, "resume": {}, "subagents": {}},
         },
-        "agentInfo": {"name": "@agentclientprotocol/claude-agent-acp", "title": "Claude Agent", "version": "0.84.0"},
+        "agentInfo": {"name": "@agentclientprotocol/claude-agent-acp", "title": "Claude Agent", "version": "0.84.0" if LEGACY else "0.89.1"},
         "authMethods": [],
-        "_meta": {"steering": {"supported": True}},
+        "_meta": {"steering": {"supported": not NO_STEER}},
     }
 
 
@@ -290,8 +305,14 @@ for line in sys.stdin:
             follow_turn(params.get("sessionId"), prompt_text(params))
             send({"jsonrpc": "2.0", "id": request, "result": {"stopReason": "end_turn"}})
         else:
+            prompts["count"] += 1
+            if SLOW:
+                time.sleep(SLOW)
+            if ECHO:
+                say(params.get("sessionId"), "got: " + prompt_text(params))
             run_turn(params.get("sessionId"))
-            send({"jsonrpc": "2.0", "id": request, "result": {"stopReason": "end_turn"}})
+            stop = "refusal" if REFUSE_FIRST and prompts["count"] == 1 else "end_turn"
+            send({"jsonrpc": "2.0", "id": request, "result": {"stopReason": stop}})
     elif method == "_session/steering":
         prompt = params.get("prompt") or []
         if not prompt:

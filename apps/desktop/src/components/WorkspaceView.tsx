@@ -140,7 +140,7 @@ export function WorkspaceView({ workspaceId }: { workspaceId: string }) {
           <ul className="sessions">
             {listed.map((record) => (
               <li className="row wrap" key={record.id}>
-                <span className="sidebar-title">{sessionLabel(record.agentSessionId, record.titleOverlay)}</span>
+                <span className="sidebar-title">{sessionLabel(record.agentSessionId, record.titleOverlay || record.autoTitle || undefined)}</span>
                 <span className="chip small">{PROVIDER_LABELS[record.provider]}</span>
                 {record.lastSeen && <span className="small muted">{new Date(record.lastSeen).toLocaleString()}</span>}
                 <span className="mono small muted" title={record.agentSessionId}>

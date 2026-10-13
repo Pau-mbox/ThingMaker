@@ -13,7 +13,8 @@ pub mod state;
 pub use crate::agents::{AgentLaunch, Provider};
 pub use events::{EventEnvelope, EventSubscription, SessionEvent};
 pub use session_actor::{
-    SessionActor, SessionActorConfig, Snapshot, SteerOutcome, SubmissionOutcome, Timeouts,
+    EnqueueOutcome, QueueOp, QueueReply, QueueView, QueuedPrompt, QueuedPromptView, SessionActor, SessionActorConfig,
+    Snapshot, SteerOutcome, SubmissionOutcome, Timeouts,
 };
 pub use state::{
     ApprovalState, AttachmentState, DetachedCallState, ProcessState, SessionReducer, SubmissionState,

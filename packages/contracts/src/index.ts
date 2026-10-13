@@ -212,6 +212,8 @@ export type SessionEvent =
   | ({ type: "turn" } & TurnEffect)
   | { type: "submission"; requestId: string; state: SubmissionState; message?: string }
   | { type: "steer"; messageId: string; state: SteerState }
+  /** The prompts waiting for the running turn, whole, after any change. */
+  | ({ type: "queue" } & QueueView)
   | { type: "detached_call"; callId: string; state: DetachedCallState }
   /** What the workspace's trust state answered
    *  (docs/plans/odyssey-second-orchestrator.md §2.2). */
@@ -246,6 +248,7 @@ export type Snapshot = {
   configOptions: unknown;
   availableCommands: { name: string; description?: string }[];
   pendingSteers: string[];
+  queue: QueueView;
   lastSequence: DecimalId;
   exit: ExitInfo | null;
 };
@@ -311,6 +314,26 @@ export type SteerOutcome =
   | { outcome: "rejected"; error: DesktopError }
   | { outcome: "outcome_unknown"; error: DesktopError };
 
+/** A prompt waiting for the running turn. `restore` is the composer state
+ *  the client queued it with, handed back when it is taken out to edit. */
+export type QueuedPromptView = { id: string; text: string; extras: number; restore?: QueueRestore };
+export type QueueRestore = { attachments?: AttachmentSnapshot[]; mentions?: Mention[] };
+export type QueueView = {
+  items: QueuedPromptView[];
+  /** Why the queue stopped sending by itself; null while it flows. */
+  paused: string | null;
+  /** The queued prompt on its way to the agent now. */
+  sending: string | null;
+};
+export type QueueOp =
+  | { op: "remove"; id: string }
+  | { op: "move"; id: string; index: number }
+  | { op: "send_now"; id: string }
+  | { op: "resume" }
+  | { op: "clear" };
+export type QueueReply = { removed?: QueuedPromptView; queue: QueueView };
+export type EnqueueOutcome = { outcome: "queued"; position: number } | { outcome: "sent" };
+
 // ---------------------------------------------------------------------------
 // Workspace, trust and runtime
 // ---------------------------------------------------------------------------
@@ -360,6 +383,10 @@ export type SessionRecord = {
   /** The agent's own id for the session. */
   agentSessionId: string;
   titleOverlay?: string;
+  /** The title the session had, kept after it closes: the provider's own
+   *  (Claude Code's ai-title, Codex's thread name) or its first prompt. ""
+   *  means it was looked for and there is none. A rename wins over it. */
+  autoTitle?: string;
   origin: "desktop" | "cli" | "unknown";
   archiveState: "active" | "archived" | "unavailable";
   pinned: boolean;
@@ -459,6 +486,10 @@ export type JobView = {
 };
 
 /** Emitted by the host on every job change. */
+/** A session's kept title changed (titles.rs). */
+export const SESSION_TITLE_EVENT = "thingmaker://session-title";
+export type SessionTitleChange = { agentSessionId: string; title: string };
+
 export const JOB_EVENT = "thingmaker://job";
 
 // ---------------------------------------------------------------------------
@@ -1315,7 +1346,15 @@ export type TranscriptUsage = { path: string; bytes: number; lines: number; pars
 export type SessionDefaults = { provider?: Provider; model?: string; reasoningEffort?: string };
 
 /** Local UI preferences (non-secret). */
-export type UiPrefs = { enterSends: boolean; reducedMotion: "system" | "reduce"; transcriptPage: number };
+export type UiPrefs = {
+  enterSends: boolean;
+  reducedMotion: "system" | "reduce";
+  transcriptPage: number;
+  /** What the send key does while a turn runs: hold the prompt for the next
+   *  turn, or steer it into this one (when the agent can be steered). The
+   *  other is one modifier away. */
+  followUp: "queue" | "steer";
+};
 
 export type DiffResponse = { report: DiffReport; baseline?: BaselineRecord; isGitRepository: boolean };
 
@@ -1343,6 +1382,35 @@ export type NotificationSettings = {
    *  id, and the effort it runs at. Absent means the built-in preference. */
   claudeOrchestratorModel?: string;
   claudeOrchestratorEffort?: string;
+  /** Hold off idle sleep while sessions, Big Things or team jobs work. */
+  keepAwake: boolean;
+  /** ...on battery too (off by default). */
+  keepAwakeOnBattery: boolean;
+};
+
+/** A provider program's version and how it is kept current. */
+export type ProviderVersion = {
+  provider: Provider;
+  installed?: string;
+  /** The newest release, where it can be asked without updating. */
+  latest?: string;
+  updateAvailable: boolean;
+  /** The release ThingMaker was last checked against, where it keeps one. */
+  tested?: string;
+  /** ThingMaker can run the update itself (with the provider's own tooling). */
+  canUpdate: boolean;
+  /** How it updates, in words. */
+  how: string;
+  problem?: string;
+};
+export type ProviderUpdateResult = { output: string; version: ProviderVersion };
+
+/** What the keep-awake poller last decided. */
+export type KeepAwakeStatus = {
+  holding: boolean;
+  work: { sessions: number; goals: number; jobs: number };
+  onBattery: boolean | null;
+  reason: string;
 };
 
 /** One model the Claude adapter offers, as the picker lists it. */
@@ -1352,11 +1420,12 @@ export type ClaudeModelChoice = { value: string; name: string; description?: str
  * What a Claude session runs on when nothing overrides it
  * (docs/plans/odyssey-second-orchestrator.md §12.9).
  *
- * `claude-fable-5-1` is Fable's selection id as claude-agent-acp 0.84 lists
- * it. Where it cannot be selected the session lands on the fallback, the
- * adapter's current Opus.
+ * `fable` is Fable's selection id as claude-agent-acp 0.89 lists it (0.84
+ * called it `claude-fable-5-1`; the session actor selects whichever the
+ * installed adapter offers). Where it cannot be selected the session lands on
+ * the fallback, the adapter's current Opus.
  */
-export const CLAUDE_ORCHESTRATOR_MODEL = "claude-fable-5-1";
+export const CLAUDE_ORCHESTRATOR_MODEL = "fable";
 /** Where an orchestrator lands when the preferred model cannot be selected. */
 export const CLAUDE_ORCHESTRATOR_FALLBACK = "opus";
 export const CLAUDE_ORCHESTRATOR_EFFORT = "high";
@@ -1389,6 +1458,12 @@ export const COMMANDS = {
   sessionSnapshot: "session_snapshot",
   sessionSubmit: "session_submit",
   sessionSteer: "session_steer",
+  sessionEnqueue: "session_enqueue",
+  sessionQueue: "session_queue",
+  keepAwakeStatus: "keep_awake_status",
+  providerVersions: "provider_versions",
+  providerUpdate: "provider_update",
+  keepAwakeRefresh: "keep_awake_refresh",
   sessionCancel: "session_cancel",
   sessionSetConfigOption: "session_set_config_option",
   sessionStop: "session_stop",

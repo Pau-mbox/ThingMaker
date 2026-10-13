@@ -68,6 +68,7 @@ function seedSession(): LiveSession {
     configOptions: attach.configOptions,
     availableCommands: attach.availableCommands,
     pendingSteers: [],
+    queue: { items: [], paused: null, sending: null },
     lastSequence: "8",
     exit: null,
   };

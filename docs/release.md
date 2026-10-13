@@ -67,12 +67,32 @@ it through the native dialog. Nothing is uploaded.
 
 ## Upstream upgrades (REL-07) - process
 
+ThingMaker runs whatever provider programs are installed, so falling behind
+is visible in the app: **Providers** shows each program's installed version,
+the newest one where it can be asked without updating (npm, for the Claude
+adapter), and an **Update** button that runs the provider's own tooling
+(`npm install -g` into the prefix the adapter already lives in, or the
+program's own `update`). A Codex inside the ChatGPT app updates with that
+app. The check runs shortly after start and twice a day, and puts a dot on
+the Providers button when an update is out. `versions::tested_with` records
+the release each program was last checked against; the panel says so when an
+update goes past it.
+
 For each provider upgrade (claude-agent-acp, or Codex's app-server):
 
 1. Compare the advertised capabilities, config options and model catalog, the
    update and notification shapes, and the approval requests.
 2. Run `cargo test --workspace` with the gated live tests (`THINGMAKER_REAL_CLAUDE=1`,
    `THINGMAKER_REAL_CODEX=1`, `THINGMAKER_REAL_DELEGATION=1`).
-3. Update the mocks in `packages/test-fixtures/acp/` to the new shape.
+3. Update the mocks in `packages/test-fixtures/acp/` to the new shape, and
+   `versions::tested_with`.
+
+A probe that needs no prompt (and so spends nothing): `initialize`, then
+`session/new`, then compare `agentCapabilities`, `_meta` and every
+`configOptions` value list between the two versions. claude-agent-acp
+0.84.0 -> 0.89.1 (13 Oct 2026) renamed Fable's model id from
+`claude-fable-5-1` to `fable` and added an `agent` option; the session
+actor now selects a renamed model under whichever id the installed adapter
+offers (`claude::launch::offered_model`).
 
 Unsupported changes must surface as compatibility errors.

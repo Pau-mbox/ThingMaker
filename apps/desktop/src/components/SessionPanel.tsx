@@ -26,6 +26,8 @@ import type { Card } from "../projection";
 import { assignImages, keyOf, type ImageRef } from "../transcriptImages";
 import { detectTestRun, editedFilesIn, shellResultsOf } from "../toolSummary";
 import { CodeChangesCard, EditedFilesList, TestsCard } from "./ChangeCards";
+import { PlanBar, PlanCard, planText } from "./PlanChecklist";
+import { QueueStrip } from "./QueueStrip";
 import { IconAgents, IconArrowUp, IconAt, IconBox, IconBranch, IconCheck, IconChevron, IconDots, IconFolder, IconImage, IconPaperclip, IconSquare, IconTerminal } from "./icons";
 
 const EMPTY_LIST: never[] = [];
@@ -220,7 +222,7 @@ function CardBody({ card, sessionId }: { card: Card; sessionId: string }) {
         </div>
       );
     case "plan":
-      return <div className="card card-plan">Plan: {card.summary}</div>;
+      return <PlanCard plan={card.plan} />;
     case "permission":
       // Answered by the workspace's trust: an allowed request is routine
       // and not worth a line; a refused one is shown, since it changed what
@@ -264,7 +266,7 @@ function cardText(card: Card, tools: Map<string, ToolPatch>): string {
     case "notice":
       return `${card.title} ${card.description ?? ""}`;
     case "plan":
-      return card.summary;
+      return planText(card.plan);
     case "unknown":
       return card.label;
     case "permission":
@@ -446,6 +448,7 @@ export function SessionPanel({ sessionId }: { sessionId: string }) {
   const setDraft = useStore((s) => s.setDraft);
   const send = useStore((s) => s.send);
   const steer = useStore((s) => s.steer);
+  const enqueue = useStore((s) => s.enqueue);
   const cancel = useStore((s) => s.cancel);
   const stop = useStore((s) => s.stop);
   const refreshSnapshot = useStore((s) => s.refreshSnapshot);
@@ -701,6 +704,9 @@ export function SessionPanel({ sessionId }: { sessionId: string }) {
   const busy = useStore.getState().busy;
   const active = projection.foreground === "running" || projection.foreground === "awaiting_user" || projection.foreground === "cancelling";
   const canSteer = active && !!projection.capabilities?.supportsSteering;
+  const followUp = uiPrefs.followUp ?? "queue";
+  const steerFirst = followUp === "steer" && canSteer;
+  const sendKey = uiPrefs.enterSends ? "Enter" : "Shift+Enter";
   const hasInput = !!draft.trim() || attachments.length > 0 || mentions.length > 0;
   const canSend = !inFlightRequestId && projection.attachment === "attached" && projection.process !== "exited";
   const lastSubmission = [...projection.submissions.entries()].at(-1);
@@ -737,8 +743,16 @@ export function SessionPanel({ sessionId }: { sessionId: string }) {
       const sends = uiPrefs.enterSends ? !event.shiftKey : event.shiftKey;
       if (!sends) return;
       event.preventDefault();
-      if (canSteer) void steer(sessionId);
-      else if (canSend && hasInput) sendAndFollow();
+      if (!active) {
+        if (canSend && hasInput) sendAndFollow();
+        return;
+      }
+      // While a turn runs the send key does the preferred follow-up, and
+      // with ⌘ (Ctrl) held, the other one.
+      const alternate = event.metaKey || event.ctrlKey;
+      const wantsSteer = (followUp === "steer") !== alternate;
+      if (wantsSteer && canSteer) void steer(sessionId);
+      else if (canSend && hasInput) void enqueue(sessionId);
     }
   };
 
@@ -957,11 +971,13 @@ export function SessionPanel({ sessionId }: { sessionId: string }) {
         {/* Between the transcript and the prompt, so anything still running
             stays visible however far the transcript has scrolled. */}
         <ActivityBar onOpenAgents={() => setTab("agents")} sessionId={sessionId} />
+        {projection.plan && <PlanBar active={active} key={projection.plan.content.id} plan={projection.plan.content} />}
         {/* The Big Thing view has no use for a prompt box: the run submits its
             own turns. The activity strip above stays, because background work
             outliving a turn is exactly what it is for. */}
         {tab !== "odyssey" && (
         <>
+        <QueueStrip active={active} canSteer={canSteer} queue={projection.queue} sessionId={sessionId} />
         <div className="composer-card">
         {(attachments.length > 0 || mentions.length > 0) && (
           <div className="attachment-strip">
@@ -1037,8 +1053,12 @@ export function SessionPanel({ sessionId }: { sessionId: string }) {
             onKeyDown={onKeyDown}
             onPaste={onPaste}
             placeholder={
-              canSteer
-                ? `Steer the current turn (${uiPrefs.enterSends ? "Enter" : "Shift+Enter"} to steer). Type @ to mention a file.`
+              active
+                ? canSteer
+                  ? steerFirst
+                    ? `Steer this turn (${sendKey}), or queue for the next (⌘${sendKey}). Type @ to mention a file.`
+                    : `Queue for the next turn (${sendKey}), or steer this one (⌘${sendKey}). Type @ to mention a file.`
+                  : `Queue for the next turn (${sendKey}). Type @ to mention a file.`
                 : `Prompt (${uiPrefs.enterSends ? "Enter to send, Shift+Enter for newline" : "Shift+Enter to send, Enter for newline"}). Type @ to mention a file; drop or paste images to attach.`
             }
             ref={composerRef}
@@ -1066,16 +1086,34 @@ export function SessionPanel({ sessionId }: { sessionId: string }) {
           {!configOptions && <span className="chip small">the account's default model</span>}
           <TeamChip disabled={projection.process === "exited"} sessionId={sessionId} />
           <span className="composer-spacer" />
-          {active && !projection.capabilities?.supportsSteering && <span className="small muted">steering not advertised</span>}
           {active && (
             <button aria-label="Cancel turn" className="icon-button" onClick={() => void cancel(sessionId)} title="Cancel the current turn" type="button">
               <IconSquare />
             </button>
           )}
-          {canSteer ? (
-            <button className="send-button" disabled={steerInFlight || !draft.trim()} onClick={() => void steer(sessionId)} title="Steer the current turn" type="button">
-              Steer <IconArrowUp size={14} />
-            </button>
+          {active ? (
+            <>
+              {canSteer && (
+                <button
+                  className={`send-button ${steerFirst ? "" : "send-secondary"}`}
+                  disabled={steerInFlight || !draft.trim()}
+                  onClick={() => void steer(sessionId)}
+                  title={`Send into the running turn now${steerFirst ? ` (${sendKey})` : ` (⌘${sendKey})`}`}
+                  type="button"
+                >
+                  Steer
+                </button>
+              )}
+              <button
+                className={`send-button ${steerFirst ? "send-secondary" : ""}`}
+                disabled={!canSend || !hasInput}
+                onClick={() => void enqueue(sessionId)}
+                title={`Send when the running turn is over${steerFirst ? ` (⌘${sendKey})` : ` (${sendKey})`}`}
+                type="button"
+              >
+                Queue <IconArrowUp size={14} />
+              </button>
+            </>
           ) : (
             <button aria-label="Send" className="send-button send-round" disabled={!canSend || !hasInput} onClick={sendAndFollow} title="Send" type="button">
               <IconArrowUp size={16} />

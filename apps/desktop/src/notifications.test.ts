@@ -12,6 +12,8 @@ const base: NotificationSettings = {
   mutedWorkspaceIds: [],
   closeBehavior: "ask",
   odysseyMaxContinuations: 10,
+  keepAwake: true,
+  keepAwakeOnBattery: false,
 };
 
 describe("quiet hours", () => {

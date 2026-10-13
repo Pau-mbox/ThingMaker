@@ -33,11 +33,27 @@ pub const ADAPTER_ENV: &str = "THINGMAKER_CLAUDE_ACP";
 /// (docs/plans/odyssey.md §12.9). Mirrored in the contracts so the picker and
 /// the launch agree on one answer.
 ///
-/// `claude-fable-5-1` is Fable's selection id as claude-agent-acp 0.84 lists
-/// it (0.76 called it `claude-fable-5-1[1m]`). An adapter that does not offer
-/// it, or an account that cannot select it, lands on the fallback, which is
-/// the adapter's current Opus.
-pub const CLAUDE_ORCHESTRATOR_MODEL: &str = "claude-fable-5-1";
+/// `fable` is Fable's selection id as claude-agent-acp 0.89 lists it (0.84
+/// called it `claude-fable-5-1`, 0.76 `claude-fable-5-1[1m]`); whichever the
+/// installed adapter offers is the one selected ([`offered_model`]). An
+/// adapter that does not offer it, or an account that cannot select it, lands
+/// on the fallback, which is the adapter's current Opus.
+pub const CLAUDE_ORCHESTRATOR_MODEL: &str = "fable";
+
+/// Model ids the adapter has renamed between releases, each group one model.
+/// A saved choice, a team preset or a goal written under one id must select
+/// the same model under the adapter installed now.
+const MODEL_ALIASES: &[&[&str]] = &[&["fable", "claude-fable-5-1", "claude-fable-5-1[1m]"]];
+
+/// The id the adapter offers for `wanted`: itself when listed, else the
+/// listed id of the same model under another name, else `None`.
+pub fn offered_model(wanted: &str, offered: &[String]) -> Option<String> {
+    if offered.iter().any(|id| id == wanted) {
+        return Some(wanted.to_string());
+    }
+    let group = MODEL_ALIASES.iter().find(|group| group.contains(&wanted))?;
+    group.iter().find_map(|alias| offered.iter().find(|id| id == alias)).cloned()
+}
 pub const CLAUDE_ORCHESTRATOR_FALLBACK: &str = "opus";
 pub const CLAUDE_ORCHESTRATOR_EFFORT: &str = "high";
 

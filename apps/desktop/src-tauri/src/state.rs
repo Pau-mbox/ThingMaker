@@ -119,6 +119,7 @@ impl AppState {
     /// itself uses.
     pub fn insert_actor(&self, id: String, agent_session_id: String, actor: SessionActor, root: PathBuf) {
         self.activity.observe(actor.clone(), root.clone());
+        crate::titles::observe(Arc::clone(&self.storage), self.home.clone(), actor.clone(), agent_session_id.clone(), root.clone());
         self.actor_roots
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner())

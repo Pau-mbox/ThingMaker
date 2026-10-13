@@ -10,6 +10,8 @@
 //! tray, the app quits after stopping agents, or the renderer asks.
 
 pub mod commands;
+pub mod keep_awake;
+pub mod titles;
 pub mod remote;
 pub mod state;
 
@@ -115,6 +117,7 @@ pub fn run() {
             let state = state::AppState::initialize(&data_dir, resource_dir.as_deref())
                 .map_err(|error| format!("could not initialize desktop state: {error}"))?;
             app.manage(state);
+            titles::set_app(app.handle());
             // Delegation is an addition, not a precondition: without its
             // socket, sessions open as plain ones.
             if let Err(error) = commands::delegation::start(app.handle()) {
@@ -122,6 +125,8 @@ pub fn run() {
             }
             // Big Thing runs in the host, whether or not a window is open.
             commands::bigthing::start(app.handle());
+            // Holds off idle sleep while anything above is working.
+            keep_awake::start(app.handle());
             // Phone access through the Cloudflare relay; off until turned on in Settings.
             remote::start(app.handle(), data_dir.clone());
 
@@ -195,6 +200,12 @@ pub fn run() {
             commands::session::session_snapshot,
             commands::session::session_submit,
             commands::session::session_steer,
+            commands::session::session_enqueue,
+            keep_awake::keep_awake_status,
+            commands::providers::provider_versions,
+            commands::providers::provider_update,
+            keep_awake::keep_awake_refresh,
+            commands::session::session_queue,
             commands::session::session_cancel,
             commands::session::session_set_config_option,
             commands::session::session_stop,

@@ -1243,6 +1243,67 @@ code {
   border-color: rgba(255, 107, 34, 0.4);
 }
 
+/* Plan checklist: the agent's todo list, in the transcript and pinned above
+   the composer. A done step is checked and dimmed, the step in progress is
+   marked in the accent, the rest are empty boxes. */
+.plan-head {
+  margin-bottom: 4px;
+}
+
+.plan-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.plan-item {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  line-height: 18px;
+}
+
+.plan-mark {
+  flex: none;
+  width: 13px;
+  height: 13px;
+  border: 1.5px solid var(--muted);
+  border-radius: 4px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transform: translateY(2px);
+}
+
+.plan-completed .plan-mark {
+  border-color: var(--ok);
+  background: rgba(143, 211, 161, 0.16);
+  color: var(--ok);
+}
+
+.plan-completed .plan-text {
+  color: var(--muted);
+  text-decoration: line-through;
+  text-decoration-color: rgba(255, 255, 255, 0.25);
+}
+
+.plan-in_progress .plan-mark {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.plan-in_progress .plan-text {
+  color: var(--text);
+  font-weight: 600;
+}
+
+.plan-priority {
+  color: var(--warn);
+}
+
 .card-tool {
   padding: 6px 12px;
   font-size: 12.5px;
@@ -1312,6 +1373,138 @@ code {
 .composer > * {
   width: 100%;
   max-width: 880px;
+}
+
+.plan-bar {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--panel);
+  padding: 4px 8px 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.plan-bar-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.plan-bar-head {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: none;
+  border: none;
+  color: var(--text-2);
+  padding: 2px 0;
+  cursor: pointer;
+  font: inherit;
+  font-size: 12.5px;
+  text-align: left;
+}
+
+.plan-bar-count {
+  flex: none;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.plan-bar-current {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.plan-meter {
+  height: 2px;
+  border-radius: 2px;
+  background: var(--panel-3);
+  overflow: hidden;
+}
+
+.plan-meter > span {
+  display: block;
+  height: 100%;
+  background: var(--accent);
+  transition: width 240ms ease;
+}
+
+.plan-bar .plan-list {
+  padding: 2px 2px 2px 20px;
+  font-size: 12.5px;
+}
+
+/* Prompts waiting for the running turn, just above the composer they came
+   from. */
+.queue-strip {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.queue-paused {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--warn);
+  padding: 0 4px;
+}
+
+.queue-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.queue-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border: 1px dashed var(--border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--panel);
+  padding: 4px 6px 4px 10px;
+  font-size: 12.5px;
+}
+
+.queue-index {
+  flex: none;
+  min-width: 10px;
+}
+
+.queue-text {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-2);
+}
+
+.queue-actions {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  opacity: 0.55;
+}
+
+.queue-item:hover .queue-actions,
+.queue-item:focus-within .queue-actions {
+  opacity: 1;
+}
+
+.queue-actions .link:disabled {
+  opacity: 0.35;
+  cursor: default;
 }
 
 .composer-card {
@@ -1396,6 +1589,16 @@ code {
   background: var(--panel-3);
   color: var(--muted);
   cursor: not-allowed;
+}
+
+/* The follow-up that is one modifier away while a turn runs. */
+.send-secondary {
+  background: var(--panel-3);
+  color: var(--text);
+}
+
+.send-secondary:hover {
+  background: var(--border-strong);
 }
 
 .send-round {
@@ -5042,4 +5245,27 @@ button.odyssey-task-title svg {
 .chill-hidden-list {
   margin: 4px 0 8px;
   padding-left: 18px;
+}
+
+/* A provider program has a newer release (Providers button). */
+.icon-button:has(.badge-dot) {
+  position: relative;
+}
+
+.badge-dot {
+  position: absolute;
+  top: 3px;
+  right: 3px;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 0 2px var(--sidebar);
+}
+
+.provider-version {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 2px 0 6px;
 }

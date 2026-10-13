@@ -28,8 +28,8 @@ use thingmaker_supervisor::{
         workspaces::{ArchiveState, SessionOrigin, SessionRecord, TrustState, WorkspaceRecord},
     },
     supervisor::{
-        AgentLaunch, EventEnvelope, SessionActor, SessionActorConfig, Snapshot, SteerOutcome, SubmissionOutcome,
-        SubmissionState,
+        AgentLaunch, EnqueueOutcome, EventEnvelope, QueueOp, QueueReply, QueuedPrompt, SessionActor, SessionActorConfig,
+        Snapshot, SteerOutcome, SubmissionOutcome, SubmissionState, session_actor::QUEUE_RESTORE_LIMIT_BYTES,
     },
 };
 
@@ -403,33 +403,7 @@ pub async fn session_submit(request: SubmitRequest, state: State<'_, AppState>) 
         .map_err(storage_error)?
         .ok_or_else(|| DesktopError::not_ready("session record missing"))?;
 
-    // Block order: mentions (references or copied content), then the typed
-    // text, then media. Media is validated against the negotiated prompt
-    // capabilities before anything is recorded.
-    let mut blocks = Vec::new();
-    for mention in &request.mentions {
-        blocks.push(thingmaker_supervisor::attachments::mention_block(&root, mention)?);
-    }
-    if !request.text.trim().is_empty() {
-        blocks.push(json!({ "type": "text", "text": request.text }));
-    }
-    if !request.attachment_ids.is_empty() {
-        let capabilities = actor.snapshot().await?.capabilities;
-        let (prompt_image, prompt_audio) = capabilities
-            .as_ref()
-            .map(|c| (c.prompt_image, c.prompt_audio))
-            .unwrap_or((false, false));
-        let store = thingmaker_supervisor::attachments::AttachmentStore::new(&state.data_dir);
-        let mut snapshots = Vec::new();
-        let mut media = Vec::new();
-        for id in &request.attachment_ids {
-            let (snapshot, bytes) = store.load(id)?;
-            media.push(thingmaker_supervisor::attachments::media_block(&snapshot, &bytes, prompt_image, prompt_audio)?);
-            snapshots.push(snapshot);
-        }
-        thingmaker_supervisor::attachments::check_envelope(&snapshots)?;
-        blocks.extend(media);
-    }
+    let blocks = prompt_blocks(&state, &actor, &root, &request.text, &request.attachment_ids, &request.mentions).await?;
     let payload = serde_json::to_vec(&blocks).unwrap_or_default();
     let hash = content_hash(&payload);
     let payload_dir = state.data_dir.join("outbox");
@@ -465,6 +439,103 @@ pub async fn session_submit(request: SubmitRequest, state: State<'_, AppState>) 
         request_id: request.request_id,
         outcome,
     })
+}
+
+/// The ACP blocks of a prompt, in order: mentions (references or copied
+/// content), then the typed text, then media. Media is validated against the
+/// negotiated prompt capabilities before anything is recorded or queued.
+async fn prompt_blocks(
+    state: &AppState,
+    actor: &SessionActor,
+    root: &Path,
+    text: &str,
+    attachment_ids: &[String],
+    mentions: &[thingmaker_supervisor::attachments::Mention],
+) -> CommandResult<Vec<serde_json::Value>> {
+    let mut blocks = Vec::new();
+    for mention in mentions {
+        blocks.push(thingmaker_supervisor::attachments::mention_block(root, mention)?);
+    }
+    if !text.trim().is_empty() {
+        blocks.push(json!({ "type": "text", "text": text }));
+    }
+    if !attachment_ids.is_empty() {
+        let capabilities = actor.snapshot().await?.capabilities;
+        let (prompt_image, prompt_audio) = capabilities
+            .as_ref()
+            .map(|c| (c.prompt_image, c.prompt_audio))
+            .unwrap_or((false, false));
+        let store = thingmaker_supervisor::attachments::AttachmentStore::new(&state.data_dir);
+        let mut snapshots = Vec::new();
+        let mut media = Vec::new();
+        for id in attachment_ids {
+            let (snapshot, bytes) = store.load(id)?;
+            media.push(thingmaker_supervisor::attachments::media_block(&snapshot, &bytes, prompt_image, prompt_audio)?);
+            snapshots.push(snapshot);
+        }
+        thingmaker_supervisor::attachments::check_envelope(&snapshots)?;
+        blocks.extend(media);
+    }
+    Ok(blocks)
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct EnqueueRequest {
+    pub handle: SessionHandle,
+    /// Client-generated id the queued prompt is known by, and the request id
+    /// it is submitted under when its turn comes.
+    pub request_id: String,
+    pub text: String,
+    #[serde(default)]
+    pub attachment_ids: Vec<String>,
+    #[serde(default)]
+    pub mentions: Vec<thingmaker_supervisor::attachments::Mention>,
+    /// The composer state to hand back if the prompt is taken out to edit
+    /// (attachment snapshots, mentions). Opaque here; bounded.
+    #[serde(default)]
+    pub restore: serde_json::Value,
+}
+
+/// Holds a prompt for after the running turn (or sends it now, when nothing
+/// is running). The prompt is checked and built here, exactly as a submit
+/// would build it, so what was queued is what goes.
+#[tauri::command]
+pub async fn session_enqueue(request: EnqueueRequest, state: State<'_, AppState>) -> CommandResult<EnqueueOutcome> {
+    if request.text.trim().is_empty() && request.attachment_ids.is_empty() && request.mentions.is_empty() {
+        return Err(DesktopError::io("prompt is empty"));
+    }
+    if request.request_id.len() > 128 || request.request_id.is_empty() {
+        return Err(DesktopError::io("invalid request id"));
+    }
+    if serde_json::to_vec(&request.restore).map(|bytes| bytes.len()).unwrap_or(usize::MAX) > QUEUE_RESTORE_LIMIT_BYTES {
+        return Err(DesktopError::io("the queued prompt's composer state is too large"));
+    }
+    let actor = actor_for(&state, &request.handle)?;
+    let root = state
+        .actor_entries()
+        .into_iter()
+        .find(|(id, _)| *id == request.handle.id)
+        .map(|(_, root)| root)
+        .ok_or_else(|| DesktopError::not_ready("session root unknown"))?;
+    let blocks = prompt_blocks(&state, &actor, &root, &request.text, &request.attachment_ids, &request.mentions).await?;
+    actor
+        .enqueue(QueuedPrompt { id: request.request_id, text: request.text, blocks, restore: request.restore })
+        .await
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct QueueRequest {
+    pub handle: SessionHandle,
+    pub op: QueueOp,
+}
+
+/// Reorders, takes out, sends now, resumes or clears a session's queue.
+#[tauri::command]
+pub async fn session_queue(request: QueueRequest, state: State<'_, AppState>) -> CommandResult<QueueReply> {
+    let actor = actor_for(&state, &request.handle)?;
+    actor.queue(request.op).await
 }
 
 #[derive(Debug, Deserialize)]
@@ -593,10 +664,24 @@ pub fn session_rename(request: RenameRequest, state: State<'_, AppState>) -> Com
         .map_err(storage_error)
 }
 
-/// Desktop records for a workspace's sessions (archive flags, origin).
+/// Desktop records for a workspace's sessions (archive flags, origin, the
+/// titles they keep). A session listed without a kept title is given its
+/// provider's title here, once (`titles::backfill`).
 #[tauri::command]
-pub fn session_records(workspace_id: String, state: State<'_, AppState>) -> CommandResult<Vec<SessionRecord>> {
-    state.with_storage(|storage| storage.session_list(&workspace_id)).map_err(storage_error)
+pub async fn session_records(workspace_id: String, state: State<'_, AppState>) -> CommandResult<Vec<SessionRecord>> {
+    let mut records = state.with_storage(|storage| storage.session_list(&workspace_id)).map_err(storage_error)?;
+    let untitled = records.iter().any(|record| record.title_overlay.is_none() && record.auto_title.is_none());
+    let root = state.with_storage(|storage| storage.workspace_get(&workspace_id)).ok().flatten().map(|workspace| PathBuf::from(workspace.canonical_root));
+    if let (true, Some(home), Some(root)) = (untitled, state.home.clone(), root) {
+        let storage = Arc::clone(&state.storage);
+        records = tauri::async_runtime::spawn_blocking(move || {
+            crate::titles::backfill(&storage, &home, &root, &mut records);
+            records
+        })
+        .await
+        .map_err(|error| DesktopError::io(error.to_string()))?;
+    }
+    Ok(records)
 }
 
 #[derive(Debug, Serialize)]

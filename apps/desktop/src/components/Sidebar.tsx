@@ -301,6 +301,7 @@ export function Sidebar() {
   const toggleSidebar = useStore((s) => s.toggleSidebar);
   const setView = useStore((s) => s.setView);
   const loadProviders = useStore((s) => s.loadProviders);
+  const updatesOut = useStore((s) => Object.values(s.providerVersions ?? {}).filter((version) => version?.updateAvailable).length);
   const loadSettings = useStore((s) => s.loadSettings);
   const providers = useStore((s) => s.providers);
   const usage = useStore((s) => s.usage);
@@ -347,7 +348,7 @@ export function Sidebar() {
       project,
       id: session.snapshot.agentSessionId,
       provider: session.snapshot.provider,
-      label: (session.snapshot.agentSessionId && overlay.get(session.snapshot.agentSessionId)) || sessionTitle(session),
+      label: (session.snapshot.agentSessionId && overlay.get(session.snapshot.agentSessionId)) || sessionTitle(session, workspaceRecords),
       liveId: session.handle.id,
       attention: session.attention,
       running: session.projection.foreground === "running" || session.projection.foreground === "cancelling" || session.projection.foreground === "awaiting_user",
@@ -371,7 +372,8 @@ export function Sidebar() {
         project,
         id: record.agentSessionId,
         provider: record.provider,
-        label: overlay.get(record.agentSessionId) ?? storedLabel(record.agentSessionId, undefined),
+        // The rename, else the title the session kept after it closed.
+        label: overlay.get(record.agentSessionId) ?? storedLabel(record.agentSessionId, record.autoTitle || undefined),
         liveId: null,
         attention: "none",
         running: false,
@@ -646,10 +648,11 @@ export function Sidebar() {
               setView({ kind: "signin" });
               void loadProviders();
             }}
-            title="Providers (⌘,)"
+            title={updatesOut > 0 ? `Providers (⌘,): ${updatesOut} update${updatesOut === 1 ? "" : "s"} available` : "Providers (⌘,)"}
             type="button"
           >
             <IconKey />
+            {updatesOut > 0 && <span aria-label="update available" className="badge-dot" />}
           </button>
           <button
             className={`icon-button ${view.kind === "teams" ? "on" : ""}`}

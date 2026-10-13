@@ -17,6 +17,7 @@ use thingmaker_supervisor::{
         auth::run_bounded,
         claude, codex, gemini,
         login::{LoginEvent, run_login_process},
+        versions::{self, ProviderVersion},
     },
     security::EnvironmentProfile,
 };
@@ -71,6 +72,60 @@ pub async fn providers_status(state: State<'_, AppState>) -> CommandResult<Vec<P
     })
     .await
     .map_err(|error| DesktopError::io(error.to_string()))
+}
+
+/// Each provider program's installed version, the newest one where it can be
+/// asked without updating (`ask_latest`; npm answers for the Claude adapter),
+/// and how it updates. Asked in parallel: npm takes a second or two.
+#[tauri::command]
+pub async fn provider_versions(ask_latest: bool, state: State<'_, AppState>) -> CommandResult<Vec<ProviderVersion>> {
+    let resolved: Vec<(Provider, Result<ResolvedProvider, DesktopError>)> =
+        Provider::ALL.iter().map(|provider| (*provider, state.resolve_provider(*provider))).collect();
+    tauri::async_runtime::spawn_blocking(move || {
+        std::thread::scope(|scope| {
+            let asks: Vec<_> = resolved
+                .iter()
+                .map(|(provider, resolved)| {
+                    scope.spawn(move || match resolved {
+                        Ok(resolved) => versions::check(*provider, &resolved.program, &resolved.prefix_args, ask_latest),
+                        Err(error) => ProviderVersion::missing(*provider, error.message.clone()),
+                    })
+                })
+                .collect();
+            asks.into_iter().zip(&resolved).map(|(ask, (provider, _))| ask.join().unwrap_or_else(|_| ProviderVersion::missing(*provider, "the version check failed"))).collect()
+        })
+    })
+    .await
+    .map_err(|error| DesktopError::io(error.to_string()))
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProviderUpdateResult {
+    /// The tail of what the update printed.
+    pub output: String,
+    /// The version check after it.
+    pub version: ProviderVersion,
+}
+
+/// Updates a provider's program with its own tooling (`npm install -g` for
+/// the Claude adapter, `agy update`, `codex update`). Sessions already open
+/// keep the program they started with; new sessions start the updated one.
+#[tauri::command]
+pub async fn provider_update(provider: Provider, state: State<'_, AppState>) -> CommandResult<ProviderUpdateResult> {
+    let resolved = state.resolve_provider(provider)?;
+    tauri::async_runtime::spawn_blocking(move || {
+        tracing::info!(provider = provider.as_str(), "updating the provider program");
+        let output = versions::update(provider, &resolved.program, &resolved.prefix_args).map_err(|error| {
+            tracing::warn!(provider = provider.as_str(), %error, "provider update failed");
+            DesktopError::io(error)
+        })?;
+        let version = versions::check(provider, &resolved.program, &resolved.prefix_args, true);
+        tracing::info!(provider = provider.as_str(), installed = ?version.installed, "provider program updated");
+        Ok(ProviderUpdateResult { output, version })
+    })
+    .await
+    .map_err(|error| DesktopError::io(error.to_string()))?
 }
 
 #[derive(Debug, Deserialize)]

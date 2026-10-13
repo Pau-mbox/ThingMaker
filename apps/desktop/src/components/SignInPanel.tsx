@@ -87,6 +87,7 @@ function ProviderCard({ info }: { info: ProviderInfo }) {
           <p className="small chip-warn">{info.problem}</p>
         )}
         {SIGNS_IN_ELSEWHERE[info.provider] && <p className="small muted">{SIGNS_IN_ELSEWHERE[info.provider]}</p>}
+        <VersionRow provider={info.provider} />
         <div className="row wrap">
           {SIGNS_IN_ELSEWHERE[info.provider] ? null : auth?.loggedIn ? (
             <button className="button" disabled={!info.resolved || running || !!(signIn && signIn.state === "running")} onClick={() => void switchAccount(info.provider)} type="button">
@@ -128,15 +129,73 @@ function ProviderCard({ info }: { info: ProviderInfo }) {
   );
 }
 
+/**
+ * The program's version, and an update when one is out. ThingMaker runs
+ * whatever is installed, so this is where falling behind shows; the update
+ * itself is the provider's own tooling (npm for the Claude adapter,
+ * `agy update`), and a Codex inside the ChatGPT app updates with that app.
+ */
+export function VersionRow({ provider }: { provider: Provider }) {
+  const version = useStore((s) => s.providerVersions?.[provider]);
+  const update = useStore((s) => s.providerUpdate);
+  const updateProvider = useStore((s) => s.updateProvider);
+  const result = update.results[provider];
+  if (!version) return null;
+  const updating = update.running === provider;
+  const status = version.updateAvailable
+    ? `${version.latest} is out`
+    : version.latest
+      ? "up to date"
+      : version.canUpdate
+        ? null
+        : version.how;
+  return (
+    <div className="provider-version">
+      <div className="row wrap small">
+        <span>
+          Version <span className="mono">{version.installed ?? "unknown"}</span>
+        </span>
+        {status && <span className={version.updateAvailable ? "chip small chip-active" : "muted"}>{status}</span>}
+        {/* A program whose newest release cannot be asked for (agy) gets a
+            plain Update that runs its own updater; one npm already says is
+            current gets no button at all. */}
+        {version.canUpdate && (version.updateAvailable || !version.latest) && (
+          <button
+            className={`button small ${version.updateAvailable ? "button-primary" : ""}`}
+            disabled={update.running !== null}
+            onClick={() => void updateProvider(provider)}
+            title={`Runs ${version.how}`}
+            type="button"
+          >
+            {updating ? "Updating…" : version.updateAvailable ? `Update to ${version.latest}` : "Update"}
+          </button>
+        )}
+      </div>
+      {version.updateAvailable && version.tested && version.latest && version.latest !== version.tested && (
+        <p className="small muted">
+          ThingMaker was last checked against {version.tested}. Newer releases usually work; if a session misbehaves after updating, say so and it gets
+          checked.
+        </p>
+      )}
+      {version.problem && <p className="small muted">{version.problem}</p>}
+      {result && <p className={`small ${result.ok ? "muted" : "chip-warn"}`}>{result.text}</p>}
+    </div>
+  );
+}
+
 export function SignInPanel() {
   const providers = useStore((s) => s.providers);
   const loadProviders = useStore((s) => s.loadProviders);
+  const loadProviderVersions = useStore((s) => s.loadProviderVersions);
   const signIn = useStore((s) => s.signIn);
   const openUrl = useStore((s) => s.openUrl);
 
   useEffect(() => {
     if (!providers) void loadProviders();
   }, [providers, loadProviders]);
+  useEffect(() => {
+    void loadProviderVersions();
+  }, [loadProviderVersions]);
 
   return (
     <div className="panel">

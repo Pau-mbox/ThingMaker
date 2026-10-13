@@ -183,7 +183,7 @@ impl ActivityService {
                 )
                 .ok()
                 .flatten()
-                .and_then(|r| r.title_overlay)
+                .and_then(|r| r.title_overlay.or(r.auto_title.filter(|title| !title.is_empty())))
                 .unwrap_or_else(|| snapshot.provider.label().to_string());
             {
                 let mut s = service.state.lock().unwrap_or_else(|p| p.into_inner());

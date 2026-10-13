@@ -195,7 +195,15 @@ impl Engine {
         })
     }
 
-    pub fn view(&self, goal_id: &str) -> Result<Option<OdysseyView>, DesktopError> {
+    /// Goals that are running, or parked until an account's limit resets:
+    /// the ones that expect to keep working while nobody watches.
+    pub fn live_goal_count(&self) -> usize {
+        self.db(|storage| storage.odyssey_active())
+            .map(|goals| goals.iter().filter(|goal| matches!(goal.state, OdysseyState::Running | OdysseyState::WaitingUsage)).count())
+            .unwrap_or(0)
+    }
+
+        pub fn view(&self, goal_id: &str) -> Result<Option<OdysseyView>, DesktopError> {
         self.db(|storage| storage.odyssey_view(goal_id))
     }
 

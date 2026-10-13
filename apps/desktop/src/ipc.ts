@@ -9,6 +9,13 @@ import { Channel, invoke } from "@tauri-apps/api/core";
 import {
   COMMANDS,
   type ActivitySnapshot,
+  type EnqueueOutcome,
+  type KeepAwakeStatus,
+  type ProviderUpdateResult,
+  type ProviderVersion,
+  type QueueOp,
+  type QueueReply,
+  type QueueRestore,
   isDesktopError,
   type Combo,
   type JobView,
@@ -168,6 +175,9 @@ export const api = {
     }),
   sessionSteer: (handle: SessionHandle, text: string) =>
     call<SteerOutcome>(COMMANDS.sessionSteer, { request: { handle, text } }),
+  sessionEnqueue: (handle: SessionHandle, requestId: string, text: string, attachmentIds: string[], mentions: Mention[], restore: QueueRestore) =>
+    call<EnqueueOutcome>(COMMANDS.sessionEnqueue, { request: { handle, requestId, text, attachmentIds, mentions, restore } }),
+  sessionQueue: (handle: SessionHandle, op: QueueOp) => call<QueueReply>(COMMANDS.sessionQueue, { request: { handle, op } }),
   sessionCancel: (handle: SessionHandle) => call<void>(COMMANDS.sessionCancel, { handle }),
   sessionSetConfigOption: (handle: SessionHandle, configId: string, value: unknown) =>
     call<unknown>(COMMANDS.sessionSetConfigOption, { request: { handle, configId, value } }),
@@ -336,6 +346,8 @@ export const api = {
   },
   providerLoginCancel: (runId: string) => call<boolean>(COMMANDS.providerLoginCancel, { runId }),
   providerModels: (provider: Provider) => call<ProviderModel[]>(COMMANDS.providerModels, { provider }),
+  providerVersions: (askLatest: boolean) => call<ProviderVersion[]>(COMMANDS.providerVersions, { askLatest }),
+  providerUpdate: (provider: Provider) => call<ProviderUpdateResult>(COMMANDS.providerUpdate, { provider }),
   providerQuota: (provider: Provider) => call<QuotaSnapshot>(COMMANDS.providerQuota, { provider }),
   providerLogout: (provider: Provider) => call<void>(COMMANDS.providerLogout, { provider }),
   delegationComboGet: (handle: SessionHandle) => call<Combo | null>(COMMANDS.delegationComboGet, { handle }),
@@ -361,6 +373,8 @@ export const api = {
   /** From the phone, the Mac sends it to that phone; from the Mac, to one phone or every connected one. */
   remoteSendApk: (path: string, device?: string) => call<ApkOffer>(COMMANDS.remoteSendApk, { path, device: device ?? null }),
   settingsGet: () => call<NotificationSettings>(COMMANDS.settingsGet),
+  keepAwakeStatus: () => call<KeepAwakeStatus>(COMMANDS.keepAwakeStatus),
+  keepAwakeRefresh: () => call<KeepAwakeStatus>(COMMANDS.keepAwakeRefresh),
   settingsSet: (settings: NotificationSettings) => call<NotificationSettings>(COMMANDS.settingsSet, { settings }),
   appHideToTray: () => call<void>(COMMANDS.appHideToTray),
   appQuit: (stopSessions: boolean) => call<void>(COMMANDS.appQuit, { stopSessions }),

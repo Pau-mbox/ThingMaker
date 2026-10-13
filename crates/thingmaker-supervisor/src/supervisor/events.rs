@@ -10,8 +10,9 @@ use std::sync::Arc;
 use serde::Serialize;
 use tokio::sync::broadcast;
 
-use super::state::{
-    AttachmentState, DetachedCallState, ProcessState, SubmissionState, TurnEffect,
+use super::{
+    session_actor::QueueView,
+    state::{AttachmentState, DetachedCallState, ProcessState, SubmissionState, TurnEffect},
 };
 use crate::{
     DESKTOP_API_VERSION,
@@ -79,6 +80,8 @@ pub enum SessionEvent {
         message_id: String,
         state: SteerState,
     },
+    /// The prompts waiting for the running turn, whole, after any change.
+    Queue(QueueView),
     DetachedCall {
         call_id: String,
         state: DetachedCallState,

@@ -1,7 +1,7 @@
 //! The session actor against the Claude adapter.
 //!
 //! The mock in `packages/test-fixtures/acp/mock-claude-acp.py` answers to the
-//! shape of `claude-agent-acp` 0.84.0 as captured from the real program: ACP
+//! shape of `claude-agent-acp` 0.89.1 as captured from the real program: ACP
 //! protocol version 1, `agentInfo`, a session id of the agent's own choosing,
 //! config options for model and permission mode, a `session/prompt` that
 //! answers at turn end, message chunks with no `messageId`, the account's rate
@@ -105,7 +105,7 @@ async fn the_adapter_names_the_session_and_the_desktop_adopts_its_id() {
 
     let capabilities = snapshot.capabilities.expect("capabilities");
     assert_eq!(capabilities.protocol_version, 1);
-    assert_eq!(capabilities.agent_version, "0.84.0");
+    assert_eq!(capabilities.agent_version, "0.89.1");
     assert!(capabilities.supports_steering, "the adapter advertises `_session/steering`");
 
     // Model and permission mode are config options here, not launch flags,
@@ -270,7 +270,7 @@ async fn the_preferred_model_is_selected_with_its_effort_and_falls_back_when_ref
     // credits rather than the subscription, so it is the one model that can
     // run out while the account is otherwise fine. Landing on Opus is a
     // working run on a cheaper model; refusing to land is no run at all.
-    let Some(config) = config(&["--refuse-model=claude-fable-5-1"], None, PermissionStance::AcceptEdits, &std::env::temp_dir()) else {
+    let Some(config) = config(&["--refuse-model=fable"], None, PermissionStance::AcceptEdits, &std::env::temp_dir()) else {
         eprintln!("python is not available; skipping");
         return;
     };
@@ -307,7 +307,42 @@ async fn the_preferred_model_is_kept_when_the_account_offers_it() {
         .and_then(|option| option.get("currentValue"))
         .and_then(|v| v.as_str())
         .map(str::to_string);
-    assert_eq!(model.as_deref(), Some("claude-fable-5-1"));
+    assert_eq!(model.as_deref(), Some("fable"));
+    let _ = actor.stop().await;
+}
+
+/// The model the actor landed on.
+async fn current_model(actor: &SessionActor) -> Option<String> {
+    let snapshot = actor.snapshot().await.expect("snapshot");
+    snapshot
+        .config_options
+        .as_array()
+        .and_then(|options| options.iter().find(|option| option.get("id").and_then(|v| v.as_str()) == Some("model")))
+        .and_then(|option| option.get("currentValue"))
+        .and_then(|v| v.as_str())
+        .map(str::to_string)
+}
+
+#[tokio::test]
+async fn a_model_the_adapter_renamed_is_selected_under_its_new_name_and_its_old_one() {
+    // 0.89 lists Fable as `fable`, 0.84 as `claude-fable-5-1`. A run asking
+    // for either lands on Fable under whichever adapter is installed, rather
+    // than falling back to Opus because an id changed under it.
+    let Some(mut config) = config(&["--legacy-ids"], None, PermissionStance::AcceptEdits, &std::env::temp_dir()) else {
+        eprintln!("python is not available; skipping");
+        return;
+    };
+    let actor = SessionActor::open(config.clone()).await.expect("attached");
+    assert_eq!(current_model(&actor).await.as_deref(), Some("claude-fable-5-1"), "asked for `fable`, the 0.84 adapter has it as `claude-fable-5-1`");
+    let _ = actor.stop().await;
+
+    let Some(fresh) = self::config(&[], None, PermissionStance::AcceptEdits, &std::env::temp_dir()) else { return };
+    config = fresh;
+    if let AgentLaunch::Claude(options) = &mut config.launch {
+        options.model = Some("claude-fable-5-1".into());
+    }
+    let actor = SessionActor::open(config).await.expect("attached");
+    assert_eq!(current_model(&actor).await.as_deref(), Some("fable"), "a saved 0.84 id selects Fable on 0.89");
     let _ = actor.stop().await;
 }
 
@@ -438,5 +473,203 @@ async fn a_silent_turn_is_cancelled_and_a_turn_waiting_in_a_tool_is_not() {
         );
     }
     assert!(actor.snapshot().await.unwrap().foreground.is_active());
+    let _ = actor.stop().await;
+}
+
+// ------------------------------------------------------------------ queue
+
+use thingmaker_supervisor::supervisor::{EnqueueOutcome, QueueOp, SubmissionState, TurnEffect, TurnPhase};
+
+fn user_text(event: &SessionEvent, id: &str) -> bool {
+    matches!(event, SessionEvent::Update(SessionUpdate::UserMessage(message)) if message.message_id == format!("prompt-{id}"))
+}
+
+fn settled(event: &SessionEvent) -> Option<TurnPhase> {
+    match event {
+        SessionEvent::Turn(TurnEffect::Settled { phase, .. }) => Some(*phase),
+        _ => None,
+    }
+}
+
+#[tokio::test]
+async fn a_prompt_queued_while_a_turn_runs_goes_when_that_turn_succeeds() {
+    let Some(config) = config(&["--slow=0.6", "--echo"], None, PermissionStance::AcceptEdits, &std::env::temp_dir()) else {
+        eprintln!("python is not available; skipping");
+        return;
+    };
+    let actor = SessionActor::open(config).await.expect("attached");
+    let mut subscription = actor.subscribe();
+    actor.submit_text("r1", "first").await.expect("submitted");
+    let outcome = actor.enqueue_text("q1", "second").await.expect("queued");
+    assert_eq!(outcome, EnqueueOutcome::Queued { position: 1 });
+
+    let mut settles = 0;
+    let events = collect(&mut subscription, Duration::from_secs(10), |event| {
+        if settled(event).is_some() {
+            settles += 1;
+        }
+        settles == 2
+    })
+    .await;
+
+    // The queued prompt is on its way before the first turn's end is
+    // published: anyone reading the stream sees no idle gap to prompt into.
+    let sending = events.iter().position(|event| matches!(event, SessionEvent::Queue(queue) if queue.sending.as_deref() == Some("q1"))).expect("the queue sends q1");
+    let first_settle = events.iter().position(|event| settled(event).is_some()).expect("the first turn settles");
+    assert!(sending < first_settle, "the queue moved before the settle was published: {events:#?}");
+    assert_eq!(settled(&events[first_settle]), Some(TurnPhase::Succeeded));
+
+    // It ran as a turn of its own, with the user's message in the transcript.
+    assert!(events.iter().any(|event| user_text(event, "q1")), "{events:#?}");
+    assert!(events.iter().any(|event| matches!(event, SessionEvent::Submission { request_id, state: SubmissionState::Accepted, .. } if request_id == "q1")));
+    let snapshot = actor.snapshot().await.expect("snapshot");
+    assert!(snapshot.queue.items.is_empty() && snapshot.queue.sending.is_none() && snapshot.queue.paused.is_none());
+    let _ = actor.stop().await;
+}
+
+#[tokio::test]
+async fn a_queue_pauses_after_a_turn_that_did_not_succeed_and_resumes_when_asked() {
+    let Some(config) = config(&["--slow=0.4", "--refuse-first"], None, PermissionStance::AcceptEdits, &std::env::temp_dir()) else {
+        eprintln!("python is not available; skipping");
+        return;
+    };
+    let actor = SessionActor::open(config).await.expect("attached");
+    let mut subscription = actor.subscribe();
+    actor.submit_text("r1", "first").await.expect("submitted");
+    actor.enqueue_text("q1", "second").await.expect("queued");
+    let events = collect(&mut subscription, Duration::from_secs(10), |event| settled(event).is_some()).await;
+    assert!(events.iter().any(|event| settled(event) == Some(TurnPhase::Failed)), "{events:#?}");
+    assert!(events.iter().any(|event| matches!(event, SessionEvent::Queue(queue) if queue.paused.as_deref() == Some("the turn failed"))), "{events:#?}");
+    let snapshot = actor.snapshot().await.expect("snapshot");
+    assert_eq!(snapshot.queue.items.len(), 1, "nothing was sent after the refusal");
+    assert!(!snapshot.foreground.is_active());
+
+    // Enqueueing more while paused adds to the queue; it does not send.
+    assert_eq!(actor.enqueue_text("q2", "third").await.expect("queued"), EnqueueOutcome::Queued { position: 2 });
+
+    let reply = actor.queue(QueueOp::Resume).await.expect("resumed");
+    assert_eq!(reply.queue.sending.as_deref(), Some("q1"));
+    let mut settles = 0;
+    let events = collect(&mut subscription, Duration::from_secs(10), |event| {
+        if settled(event).is_some() {
+            settles += 1;
+        }
+        settles == 2
+    })
+    .await;
+    assert!(events.iter().any(|event| user_text(event, "q1")) && events.iter().any(|event| user_text(event, "q2")), "both went, in order: {events:#?}");
+    let first = events.iter().position(|event| user_text(event, "q1")).unwrap();
+    let second = events.iter().position(|event| user_text(event, "q2")).unwrap();
+    assert!(first < second);
+    let _ = actor.stop().await;
+}
+
+#[tokio::test]
+async fn queued_prompts_are_reordered_taken_out_and_cleared() {
+    let Some(config) = config(&["--hang-in-tool"], None, PermissionStance::AcceptEdits, &std::env::temp_dir()) else {
+        eprintln!("python is not available; skipping");
+        return;
+    };
+    let actor = SessionActor::open(config).await.expect("attached");
+    actor.submit_text("r1", "first").await.expect("submitted");
+    for (id, text) in [("a", "one"), ("b", "two"), ("c", "three")] {
+        actor.enqueue_text(id, text).await.expect("queued");
+    }
+    let reply = actor.queue(QueueOp::Move { id: "c".into(), index: 0 }).await.expect("moved");
+    let order: Vec<&str> = reply.queue.items.iter().map(|item| item.id.as_str()).collect();
+    assert_eq!(order, ["c", "a", "b"]);
+
+    let reply = actor.queue(QueueOp::Remove { id: "a".into() }).await.expect("removed");
+    assert_eq!(reply.removed.as_ref().map(|item| item.text.as_str()), Some("one"), "taken out with its text, to edit");
+    assert_eq!(reply.queue.items.len(), 2);
+    assert!(actor.queue(QueueOp::Remove { id: "a".into() }).await.is_err(), "it is gone");
+
+    let reply = actor.queue(QueueOp::Clear).await.expect("cleared");
+    assert!(reply.queue.items.is_empty());
+    let _ = actor.cancel().await;
+    let _ = actor.stop().await;
+}
+
+#[tokio::test]
+async fn send_now_steers_a_queued_prompt_into_a_turn_that_can_be_steered() {
+    let Some(config) = config(&["--hang-in-tool"], None, PermissionStance::AcceptEdits, &std::env::temp_dir()) else {
+        eprintln!("python is not available; skipping");
+        return;
+    };
+    let actor = SessionActor::open(config).await.expect("attached");
+    let mut subscription = actor.subscribe();
+    actor.submit_text("r1", "first").await.expect("submitted");
+    actor.enqueue_text("q1", "look at the tests too").await.expect("queued");
+    let reply = actor.queue(QueueOp::SendNow { id: "q1".into() }).await.expect("sent now");
+    assert!(reply.queue.items.is_empty(), "it left the queue for the running turn");
+    let events = collect(&mut subscription, Duration::from_secs(10), |event| matches!(event, SessionEvent::Steer { state: thingmaker_supervisor::supervisor::events::SteerState::Delivered, .. })).await;
+    assert!(!events.iter().any(|event| matches!(event, SessionEvent::Turn(TurnEffect::Cancelling { .. }))), "nothing was cancelled");
+    let _ = actor.cancel().await;
+    let _ = actor.stop().await;
+}
+
+#[tokio::test]
+async fn send_now_on_an_agent_that_cannot_steer_cancels_the_turn_and_goes_next() {
+    let Some(config) = config(&["--hang-in-tool", "--no-steer"], None, PermissionStance::AcceptEdits, &std::env::temp_dir()) else {
+        eprintln!("python is not available; skipping");
+        return;
+    };
+    let actor = SessionActor::open(config).await.expect("attached");
+    let mut subscription = actor.subscribe();
+    actor.submit_text("r1", "first").await.expect("submitted");
+    actor.enqueue_text("q1", "do this instead").await.expect("queued");
+    actor.enqueue_text("q2", "and then this").await.expect("queued");
+    actor.queue(QueueOp::SendNow { id: "q2".into() }).await.expect("sent now");
+    let events = collect(&mut subscription, Duration::from_secs(10), |event| user_text(event, "q2")).await;
+    assert!(events.iter().any(|event| settled(event) == Some(TurnPhase::Cancelled)), "the running turn was cancelled: {events:#?}");
+    // A cancelled turn would pause the queue; "send now" is the person
+    // saying what goes next, so it went, and the rest waits its turn.
+    let snapshot = actor.snapshot().await.expect("snapshot");
+    assert_eq!(snapshot.queue.items.iter().map(|item| item.id.as_str()).collect::<Vec<_>>(), ["q1"]);
+    let _ = actor.cancel().await;
+    let _ = actor.stop().await;
+}
+
+#[tokio::test]
+async fn enqueueing_into_an_idle_session_sends_at_once() {
+    let Some(config) = config(&["--echo"], None, PermissionStance::AcceptEdits, &std::env::temp_dir()) else {
+        eprintln!("python is not available; skipping");
+        return;
+    };
+    let actor = SessionActor::open(config).await.expect("attached");
+    let mut subscription = actor.subscribe();
+    assert_eq!(actor.enqueue_text("q1", "hello").await.expect("sent"), EnqueueOutcome::Sent);
+    let events = collect(&mut subscription, Duration::from_secs(10), |event| settled(event).is_some()).await;
+    assert!(events.iter().any(|event| user_text(event, "q1")));
+    let _ = actor.stop().await;
+}
+
+#[tokio::test]
+async fn big_thing_never_sees_an_idle_session_while_the_persons_queue_is_going() {
+    use thingmaker_supervisor::bigthing::watch::{Signal, Watch};
+    // Big Thing prompts a session the moment its watch says it is idle. A
+    // prompt the person queued must go first: at the settle that ends the
+    // running turn, the watch already knows the queue is sending.
+    let Some(config) = config(&["--slow=0.5"], None, PermissionStance::AcceptEdits, &std::env::temp_dir()) else {
+        eprintln!("python is not available; skipping");
+        return;
+    };
+    let actor = SessionActor::open(config).await.expect("attached");
+    let (signals, mut received) = tokio::sync::mpsc::unbounded_channel();
+    let watch = Watch::start(actor.clone(), Provider::Claude, signals).await;
+    actor.submit_text("r1", "first").await.expect("submitted");
+    actor.enqueue_text("q1", "second").await.expect("queued");
+
+    let mut settles = 0;
+    while settles < 2 {
+        let signal = tokio::time::timeout(Duration::from_secs(10), received.recv()).await.expect("a signal").expect("open");
+        if let Signal::Settled { .. } = signal {
+            settles += 1;
+            if settles == 1 {
+                assert!(!watch.idle(), "the queued prompt holds the session at the first settle");
+            }
+        }
+    }
+    assert!(watch.idle(), "with the queue empty and the turn over, the session is the runner's again");
     let _ = actor.stop().await;
 }
