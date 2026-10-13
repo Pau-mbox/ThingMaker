@@ -127,6 +127,21 @@ describe("shared Chill controller", () => {
     expect(resources.scenes[1]!.destroy).toHaveBeenCalledOnce();
     expect(document.querySelectorAll("canvas")).toHaveLength(0);
   });
+  it("hides a project from the scene but still raises attention for it", async () => {
+    const failing = {
+      workspaces,
+      snapshot: { ...snapshot, actors: [{ ...snapshot.actors[0]!, status: "failed" }] },
+    };
+    render(<ChillView onExit={() => undefined} preview={failing} />);
+    await waitFor(() => expect(resources.scenes.length).toBe(1));
+    fireEvent.click(screen.getByRole("button", { name: /Focus project/ }));
+    fireEvent.click(screen.getByRole("button", { name: "Hide repo from Chill" }));
+    await waitFor(() => expect(resources.scenes[0]!.update.mock.lastCall![0]).toEqual([]));
+    expect(screen.getByRole("button", { name: "Work needs attention" })).toBeTruthy();
+    await waitFor(() =>
+      expect(api.prefSet).toHaveBeenCalledWith("chill_preferences", expect.objectContaining({ hidden: ["w"] })),
+    );
+  });
   it("returns to overview before Escape leaves Chill, without adding visible text", async () => {
     const exit = vi.fn();
     render(<ChillView onExit={exit} preview={preview} />);

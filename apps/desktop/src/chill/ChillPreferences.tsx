@@ -9,6 +9,7 @@ import { resolveSkin, SKINS, skinOptions } from "./skins/registry";
 export default function ChillPreferences() {
   const chillMode = useStore((s) => s.chillMode);
   const setError = useStore((s) => s.setError);
+  const workspaces = useStore((s) => s.workspaces);
   const [prefs, setPrefs] = useState(DEFAULT_PREFS);
   const [ready, setReady] = useState(false);
   const [clearing, setClearing] = useState(false);
@@ -132,8 +133,29 @@ export default function ChillPreferences() {
             onChange={(e) => void update({ volume: Number(e.target.value) })}
           />
         </label>
+        {prefs.hidden.length > 0 && (
+          <div className="small">
+            Hidden from Chill (their failures still raise the attention icon):
+            <ul className="chill-hidden-list">
+              {prefs.hidden.map((id) => {
+                const workspace = workspaces.find((w) => w.id === id);
+                return (
+                  <li key={id}>
+                    <span className="mono" title={workspace?.displayPath}>
+                      {workspace ? (workspace.displayPath.replace(/[\\/]$/, "").split(/[\\/]/).pop() ?? workspace.displayPath) : "removed workspace"}
+                    </span>{" "}
+                    <button className="link small" onClick={() => void update({ hidden: prefs.hidden.filter((h) => h !== id) })} type="button">
+                      Show
+                    </button>
+                  </li>
+                );
+              })}
+            </ul>
+          </div>
+        )}
         <p className="small muted">
-          Sound starts muted. Active and pinned files stay prominent. Confirmed
+          Hide a project from the scene with the crossed-out eye after selecting
+          it there. Sound starts muted. Active and pinned files stay prominent. Confirmed
           file metadata is retained for seven days; source files and transcripts
           are separate.
         </p>

@@ -24,7 +24,8 @@ type IconName =
   | "attention"
   | "skin"
   | "economy"
-  | "pin";
+  | "pin"
+  | "hide";
 function Icon({ name }: { name: IconName }) {
   const paths: Record<IconName, React.ReactNode> = {
     exit: (
@@ -83,6 +84,12 @@ function Icon({ name }: { name: IconName }) {
     ),
     pin: (
       <path d="m12 3 2.8 5.7 6.2.9-4.5 4.4 1.1 6.2-5.6-3-5.6 3 1.1-6.2L3 9.6l6.2-.9Z" />
+    ),
+    hide: (
+      <>
+        <path d="M3 12s3.5-6 9-6c1.6 0 3 .5 4.2 1.2M21 12s-3.5 6-9 6c-1.6 0-3-.5-4.2-1.2" />
+        <path d="M4 20 20 4" />
+      </>
     ),
     economy: (
       <>
@@ -148,7 +155,7 @@ export default function ChillView({
   const skin = resolveSkin(prefs.skinId);
   const reduced = motion === "reduce" || systemMotion;
   const pageSize = IS_REMOTE ? skin.pageSize.compact : skin.pageSize.desktop;
-  const projects = useMemo(
+  const everyProject = useMemo(
     () =>
       projectsOf(snapshot, workspaces, now).map((p) =>
         connected
@@ -167,6 +174,11 @@ export default function ChillView({
       ),
     [snapshot, workspaces, now, connected],
   );
+  // Hidden projects leave the scene; their trouble still counts below.
+  const projects = useMemo(
+    () => everyProject.filter((p) => !prefs.hidden.includes(p.id)),
+    [everyProject, prefs.hidden],
+  );
   const display = projects.slice(page * pageSize, (page + 1) * pageSize);
   const actors = projects.flatMap((p) => p.actors);
   const active = actors.filter((a) =>
@@ -178,6 +190,8 @@ export default function ChillView({
       p.actors.some((a) => a.id === selection?.id) ||
       p.files.some((f) => f.id === selection?.id),
   );
+  // The project a hide applies to: the selection's, or the one zoomed into.
+  const shownProject = selectedProject ?? projects.find((p) => p.id === focus);
   const selectedActor =
     selection?.kind === "actor"
       ? actors.find((a) => a.id === selection.id)
@@ -186,10 +200,10 @@ export default function ChillView({
     selection?.kind === "file"
       ? selectedProject?.files.find((f) => f.id === selection.id)
       : undefined;
-  const attention = actors.filter((a) =>
-    ["attention", "failed"].includes(a.status),
-  );
-  const goalAttention = projects
+  const attention = everyProject
+    .flatMap((p) => p.actors)
+    .filter((a) => ["attention", "failed"].includes(a.status));
+  const goalAttention = everyProject
     .flatMap((p) => p.goals)
     .filter((g) => g.state === "blocked" || g.pending > 0);
   const otherAttention = preview
@@ -559,6 +573,18 @@ export default function ChillView({
             }
           >
             <Icon name="pin" />
+          </button>
+        )}
+        {shownProject && (
+          <button
+            aria-label={`Hide ${shownProject.name} from Chill`}
+            onClick={() => {
+              overview();
+              patch({ hidden: [...prefs.hidden, shownProject.id].slice(-500) });
+              setPage(0);
+            }}
+          >
+            <Icon name="hide" />
           </button>
         )}
         {selection && (

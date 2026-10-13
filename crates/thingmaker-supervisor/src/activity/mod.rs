@@ -69,6 +69,10 @@ struct State {
     cursors: HashMap<String, u64>,
     roots: HashMap<String, PathBuf>,
     sources: HashMap<String, String>,
+    /// The file each actor last worked on this turn. A tool call on a file
+    /// lasts milliseconds; the actor stays with the file until it moves to
+    /// another or its turn ends, so the view can show where it is working.
+    perches: HashMap<String, String>,
 }
 pub struct ActivityService {
     state: Mutex<State>,
@@ -137,6 +141,7 @@ impl ActivityService {
             .map(|a| a.id.clone())
             .collect();
         s.actors.retain(|_, a| a.session_id != id);
+        s.perches.retain(|actor, _| !removed.contains(actor));
         for f in s.files.values_mut() {
             f.active_actors.retain(|a| !removed.contains(a));
         }
@@ -392,6 +397,7 @@ impl ActivityService {
                         }
                     }
                     if matches!(effect, TurnEffect::Settled { .. }) {
+                        clear_perches(&mut s, session);
                         for (key, t) in &mut s.tools {
                             if key.starts_with(&format!("{session}|"))
                                 && t.meta.as_ref().and_then(|m| m.get("agentId")).is_none()
@@ -417,6 +423,7 @@ impl ActivityService {
                         a.status = "idle".into();
                         a.file_id = None;
                     }
+                    clear_perches(&mut s, session);
                     for f in s.files.values_mut() {
                         f.active_actors.retain(|a| !ids.contains(a));
                     }
@@ -480,6 +487,10 @@ impl ActivityService {
                         if !historical {
                             a.task = tool.title.clone().unwrap_or_default();
                         }
+                    }
+                    let failed = matches!(tool.status.as_deref(), Some("failed" | "cancelled"));
+                    if let Some((path, _, _)) = targets.first().filter(|_| !historical && !failed) {
+                        s.perches.insert(owner.clone(), format!("{}:{path}", parent.workspace_id));
                     }
                     for (path, external, operation) in targets {
                         let id = format!("{}:{path}", parent.workspace_id);
@@ -687,8 +698,10 @@ fn reconcile_tools(s: &mut State, session: &str) {
     for f in s.files.values_mut() {
         f.active_actors.retain(|a| !owners.contains(a));
     }
+    // A working actor stays on the file it last worked on; a tool still
+    // running on a file, below, puts it there instead.
     for a in s.actors.values_mut().filter(|a| a.session_id == session) {
-        a.file_id = None;
+        a.file_id = if matches!(a.status.as_str(), "working" | "starting") { s.perches.get(&a.id).cloned() } else { None };
     }
     let Some(root) = s.roots.get(session).cloned() else {
         return;
@@ -742,6 +755,12 @@ fn reconcile_tools(s: &mut State, session: &str) {
             }
         }
     }
+}
+
+/// A turn that ended sends its actors home; the next starts from there.
+fn clear_perches(s: &mut State, session: &str) {
+    let actors: HashSet<String> = s.actors.values().filter(|a| a.session_id == session).map(|a| a.id.clone()).collect();
+    s.perches.retain(|actor, _| !actors.contains(actor));
 }
 
 // Activity is bounded independently from transcript retention. Never evict a
@@ -1027,6 +1046,28 @@ mod tests {
         assert_eq!(service.snapshot().files[0].touched_at, first.touched_at);
         service.ingest(&tool(5, json!({"toolCallId":"b","status":"failed"})), false);
         assert!(service.snapshot().files[0].active_actors.is_empty());
+    }
+    #[test]
+    fn an_actor_stays_on_the_file_it_last_worked_on_until_its_turn_ends() {
+        let (service, workspace) = setup();
+        let on = |service: &ActivityService| service.snapshot().actors.iter().find(|a| a.id == "s").unwrap().file_id.clone();
+        service.ingest(&tool(1, json!({"toolCallId":"a","name":"Read","status":"in_progress","rawInput":{"file_path":"a.ts"}})), false);
+        service.ingest(&tool(2, json!({"toolCallId":"a","status":"completed"})), false);
+        assert_eq!(on(&service), Some(format!("{workspace}:a.ts")), "a finished read leaves the actor on its file");
+        service.ingest(&tool(3, json!({"toolCallId":"b","name":"Bash","kind":"execute","status":"in_progress","rawInput":{"command":"ls"}})), false);
+        service.ingest(&tool(4, json!({"toolCallId":"b","status":"completed"})), false);
+        assert_eq!(on(&service), Some(format!("{workspace}:a.ts")), "a command with no file does not send it home");
+        service.ingest(&tool(5, json!({"toolCallId":"c","name":"Edit","status":"in_progress","rawInput":{"file_path":"b.ts"}})), false);
+        service.ingest(&tool(6, json!({"toolCallId":"c","status":"completed"})), false);
+        assert_eq!(on(&service), Some(format!("{workspace}:b.ts")), "the next file moves it");
+        service.ingest(
+            &event(
+                7,
+                SessionEvent::Turn(TurnEffect::Settled { kind: TurnKind::Foreground, turn_id: None, phase: TurnPhase::Succeeded, stop_reason: None, error: None }),
+            ),
+            false,
+        );
+        assert_eq!(on(&service), None, "a finished turn sends it home");
     }
     #[test]
     fn replay_and_failed_edits_do_not_create_fresh_history() {

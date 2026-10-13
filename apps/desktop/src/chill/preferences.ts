@@ -6,6 +6,8 @@ export type ChillPrefs = {
   volume: number;
   retention: number;
   pins: string[];
+  /** Workspaces left out of the scene; their trouble still raises attention. */
+  hidden: string[];
   sound: boolean;
 };
 export const DEFAULT_PREFS: ChillPrefs = {
@@ -16,6 +18,7 @@ export const DEFAULT_PREFS: ChillPrefs = {
   volume: 0.25,
   retention: 24,
   pins: [],
+  hidden: [],
   sound: false,
 };
 export function readPrefs(value: unknown): ChillPrefs {
@@ -36,6 +39,9 @@ export function readPrefs(value: unknown): ChillPrefs {
       : 24,
     pins: Array.isArray(v.pins)
       ? v.pins.filter((p): p is string => typeof p === "string").slice(0, 500)
+      : [],
+    hidden: Array.isArray(v.hidden)
+      ? v.hidden.filter((p): p is string => typeof p === "string").slice(0, 500)
       : [],
   };
 }
