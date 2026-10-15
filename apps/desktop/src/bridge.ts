@@ -17,6 +17,10 @@ let connected = false;
 let everConnected = false;
 let sequence = 0;
 const pending = new Map<string, { resolve(value: unknown): void; reject(error: unknown): void; timer: ReturnType<typeof setTimeout> }>();
+// Startup and reconnect load many panels together. Keep below the host's
+// 16-command limit, without retrying mutations whose outcome is uncertain.
+const maxInFlight = 8;
+const queued: { id: string; command: string; args: Record<string, unknown>; resolve(value: unknown): void; reject(error: unknown): void }[] = [];
 const listeners = new Map<string, Set<EventCallback<unknown>>>();
 const channels = new Map<string, RemoteChannel<unknown>>();
 const subscriptions = new Map<string, { command: string; args: Record<string, unknown> }>();
@@ -25,10 +29,27 @@ function emit(name: string, payload: unknown) {
   for (const listener of listeners.get(name) ?? []) listener({ event: name, id: 0, payload });
 }
 function post(frame: unknown) { window.ThingMakerNative!.postMessage!(JSON.stringify(frame)); }
+function drain() {
+  while (connected && pending.size < maxInFlight && queued.length) {
+    const entry = queued.shift()!;
+    const timer = setTimeout(() => {
+      pending.delete(entry.id);
+      entry.reject({ code: "OUTCOME_UNKNOWN", message: "La operación tarda más de lo esperado. Revisa su estado antes de repetirla.", retry: "after_reconcile" });
+      drain();
+    }, 120000);
+    pending.set(entry.id, { resolve: entry.resolve, reject: entry.reject, timer });
+    try { post({ id: entry.id, command: entry.command, args: entry.args }); }
+    catch {
+      clearTimeout(timer); pending.delete(entry.id);
+      entry.reject({ code: "OUTCOME_UNKNOWN", message: "No se pudo enviar la acción. Comprueba su estado antes de repetirla.", retry: "after_reconcile" });
+    }
+  }
+}
 function lost(message: string) {
   connected = false;
   for (const entry of pending.values()) { clearTimeout(entry.timer); entry.reject({ code: "OUTCOME_UNKNOWN", message, retry: "after_reconcile" }); }
   pending.clear();
+  for (const entry of queued.splice(0)) entry.reject({ code: "IO", message: "La acción no se envió porque se interrumpió la conexión.", retry: "safe" });
 }
 if (isRemote) {
   window.ThingMakerNative!.onmessage = ({ data }) => {
@@ -51,6 +72,7 @@ if (isRemote) {
       const entry = pending.get(frame.id); if (!entry) return;
       clearTimeout(entry.timer); pending.delete(frame.id);
       if (frame.error) entry.reject(frame.error); else entry.resolve(frame.result);
+      drain();
     }
   };
   post({ command: "hello" });
@@ -77,10 +99,9 @@ export async function invoke<T>(command: string, args: Record<string, unknown> =
     subscriptions.set(channel.id, { command, args });
   }
   return new Promise<T>((resolve, reject) => {
-    const id = String(++sequence);
-    const timer = setTimeout(() => { pending.delete(id); reject({ code: "OUTCOME_UNKNOWN", message: "La operación tarda más de lo esperado. Revisa su estado antes de repetirla.", retry: "after_reconcile" }); }, 120000);
-    pending.set(id, { resolve: value => resolve(value as T), reject, timer });
-    post({ id, command, args });
+    if (!connected) { reject({ code: "IO", message: "La acción no se envió porque se interrumpió la conexión.", retry: "safe" }); return; }
+    queued.push({ id: String(++sequence), command, args, resolve: value => resolve(value as T), reject });
+    drain();
   });
 }
 class RemoteChannel<T> {

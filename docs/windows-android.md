@@ -1,8 +1,8 @@
 # ThingMaker en Windows y Android
 
 Guía de la adaptación local, actualizada el **15 de octubre de 2026**.
-El código original procede de `Pau-mbox/ThingMaker`; los cambios de Windows y
-Android están guardados en este repositorio y no se han enviado al upstream.
+El código original procede de `Pau-mbox/ThingMaker`; esta adaptación incorpora
+los cambios de Windows y Android descritos a continuación.
 El historial detallado de implementación y pruebas está en [NOTES.md](../NOTES.md).
 
 ## Estado verificado
@@ -11,17 +11,18 @@ El historial detallado de implementación y pruebas está en [NOTES.md](../NOTES
 | --- | --- |
 | Código | `origin/main` hasta `706a473` integrado; cambios locales pendientes guardados en `bb9b0dc` |
 | Respaldo | Rama `backup/before-upstream-20261015` y copia con SHA-256 en `target/integration-backup-20261015/` |
-| Windows instalado | Última comprobación histórica: compilación del 2 de octubre. No se reinstala ni comprueba la app instalada en esta integración |
-| Windows actualizado | Validación de fuentes, pruebas y empaquetado detallada en el informe de integración del 15 de octubre |
+| Windows instalado | Compilación integrada y corregida del 15 de octubre, instalada y probada desde la app con el perfil habitual |
+| Windows actualizado | 352 pruebas de interfaz aprobadas; compilaciones Vite, Android y NSIS correctas |
 | Android publicado | **2.0.3**, `versionCode` **5**, paquete `dev.thingmaker.remote` (6 de octubre de 2026) |
-| Acceso remoto | `https://thingmaker.jacksparrot.com`; API v2 verificada en la revisión anterior, sin comprobación en vivo en esta integración |
-| Validación móvil | APKs Remote y Phone compilados el 15 de octubre; revisión anterior en emulador API 35; móvil físico pendiente |
-| Proveedores | Esta integración usa proveedores simulados. La revisión anterior verificó Codex real; no se ejecutan pruebas reales nuevas |
+| Acceso remoto | `https://thingmaker.jacksparrot.com`; mensajes, archivos, imágenes y reconexión comprobados desde Android contra el PC real |
+| Validación móvil | Remote actualizado y probado en emulador Android 15/API 35, según lo solicitado; Phone solo compilado |
+| Proveedores | Codex y Claude reales probados desde Windows y Remote; Gemini no instalado |
 
-En la revisión del 3 de octubre, la ejecución automática del instalador de Windows fue rechazada con el
-motivo genérico «bloqueado por política». Compilarlo no equivale a haberlo
-instalado. El APK 2.0.1 funciona con el servidor anterior, pero los nuevos datos
-`commandActions` de Codex requieren instalar también la compilación nueva del PC.
+La revisión de uso del 15 de octubre actualizó la instalación habitual y verificó
+el ejecutable, el historial y ambos clientes. Se conservaron las 44 conversaciones
+previas y se añadieron dos conversaciones de prueba en un proyecto aislado.
+El APK local incluye las correcciones de esta revisión; no se ha publicado una
+nueva versión en JackApps. Véase el [informe de uso real](runtime-validation-2026-10-15.md).
 
 ## Qué se ha hecho
 
@@ -56,7 +57,7 @@ se superpone al compositor y Atrás cierra antes paleta o diálogos.
 1. Mantén encendidos el PC y ThingMaker. Los agentes se ejecutan en el PC.
 2. En los ajustes del escritorio, abre **Control remoto Android** y copia la
    clave generada en ese PC.
-3. En JackApps, refresca la lista e instala **ThingMaker Remote 2.0.2**.
+3. En JackApps, refresca la lista e instala **ThingMaker Remote 2.0.3**.
 4. Abre la app, utiliza `https://thingmaker.jacksparrot.com` y pega la clave.
 5. Selecciona un proyecto y abre o reanuda su conversación. Al añadir un
    proyecto por ruta desde Android, introduce una carpeta del **PC**.
@@ -154,12 +155,16 @@ pnpm.cmd --filter @thingmaker/desktop exec tauri build --config src-tauri/tauri.
 ```
 
 Instalador generado: `target/release/bundle/nsis/ThingMaker_0.0.0_x64-setup.exe`.
-Instalación local actual: `D:\apps\ThingMaker\thingmaker-desktop.exe`.
+Instalación local actual: `%LOCALAPPDATA%\ThingMaker\thingmaker-desktop.exe`.
 Cierra ThingMaker mediante **Quit and stop local tasks** antes de instalar una
 actualización. `pnpm.cmd app` compila e instala usando el directorio recordado
 en `target/install-directory.txt`; no debe confundirse con compilar únicamente.
 Comprueba si el instalador ya ha abierto ThingMaker antes de lanzar otra instancia.
 Un proceso `--thingmaker-mcp` es un relay de delegación y puede coexistir con la app.
+Si la instalación se lanza desde una aplicación MSIX, verifica la ruta del proceso
+y el perfil: Windows puede redirigir AppData a `Packages/.../LocalCache`. La revisión
+del 15 de octubre comprobó la instalación y la base de datos del usuario fuera de
+esa redirección; la copia privada no equivale a actualizar la app habitual.
 
 Android necesita Java 17 y SDK 36. Desde la raíz, genera primero el renderer
 compartido y después el APK:
@@ -192,7 +197,9 @@ la recuperación del historial. El cliente remoto original permanece en
 `apps/android`; el nuevo cliente emparejado del remoto está en `apps/phone`.
 Ambos usan la misma interfaz React y mantienen protocolos independientes.
 Consulta el [informe de integración](upstream-integration-2026-10-15.md) para
-las comprobaciones y los límites de validación de esta revisión.
+las comprobaciones de código. El [informe de uso real](runtime-validation-2026-10-15.md)
+documenta la instalación posterior, las pruebas de interfaz con Codex y Claude,
+la reconexión, las imágenes y el cierre sincronizado en ambas direcciones.
 
 La integración del 3 de octubre pasó **272 pruebas de interfaz/contratos**,
 **3 pruebas del puente Codex**, **4 pruebas nativas de escritorio**, revisión
@@ -205,9 +212,11 @@ estado. El emulador 2.0.1 conservó su login y mostró una acción real de shell
 un bloque plegado/desplegado, con control de 44 px y sin desbordamiento horizontal.
 La prueba de pérdida de red sin mensajes duplicados se realizó en 2.0.0.
 
-Los nuevos `commandActions` pasan las pruebas del puente, pero no se han
-validado en el PC instalado porque sigue con la compilación anterior. Tampoco
-se ha hecho todavía una prueba física en móvil ni un turno remoto real de Claude.
+Los nuevos `commandActions` pasan las pruebas del puente. Las acciones reales se
+mostraron en bloques desplegables, pero las respuestas observadas no contenían
+ese campo estructurado; no se atribuye a esta prueba su validación en vivo.
+El turno remoto real de Claude quedó verificado el 15 de octubre. La superficie
+móvil utilizada fue el emulador solicitado, sin prueba en teléfono físico.
 
 Las pruebas en vivo usan el proveedor y pueden consumir su cuota. Se ejecutan
 de forma separada de las pruebas unitarias:

@@ -4,6 +4,10 @@ Base local: `4778709`. Remoto incorporado: `706a473` (17 commits).
 Los seis commits locales previos se conservan. Los siete archivos modificados
 y tres nuevos se guardaron primero en `bb9b0dc`, antes de resolver la integración.
 
+La instalación y las pruebas posteriores desde Windows y el emulador, incluidos
+dos fallos corregidos durante el uso, están en el
+[informe de uso real](runtime-validation-2026-10-15.md).
+
 ## Compatibilidad conservada
 
 - ThingMaker Remote sigue en `apps/android`, con paquete `dev.thingmaker.remote`,
@@ -61,6 +65,6 @@ Evidencias locales: `target/integration-backup-20261015/`. La copia previa de
 los diez archivos incluye un manifiesto SHA-256 y el diff original; la rama
 `backup/before-upstream-20261015` conserva el HEAD previo.
 
-Esta validación cubre código, pruebas y compilaciones. No instala la aplicación
+Esta fase de validación cubre código, pruebas y compilaciones. No instala la aplicación
 en uso, no publica APKs ni consume cuotas de proveedores reales. No se ha hecho
 una prueba de uso en móvil físico ni un emparejamiento real con el nuevo relay.

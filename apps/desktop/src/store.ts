@@ -1595,12 +1595,28 @@ export const useStore = create<State>((set, get) => ({
    * re-sent; the supervisor's event log is the only source.
    */
   async rehydrate() {
+    const observed = Object.values(get().sessions).map((session) => session.handle);
     let open: Awaited<ReturnType<typeof api.sessionListOpen>> = [];
     try {
       open = await api.sessionListOpen();
     } catch {
       return;
     }
+    // A session stopped on the other screen is no longer live. Remove its
+    // stale attention marker too, but keep durable records and drafts.
+    // Do not remove attachments opened/replaced while this request was away.
+    const sessions = { ...get().sessions };
+    let view = get().view;
+    let removed = false;
+    for (const handle of observed) {
+      const session = sessions[handle.id];
+      if (!session || session.handle.attachmentGeneration !== handle.attachmentGeneration) continue;
+      if (open.some((entry) => entry.handle.id === handle.id && entry.handle.attachmentGeneration === handle.attachmentGeneration)) continue;
+      delete sessions[handle.id];
+      removed = true;
+      if (view.kind === "session" && view.sessionId === handle.id) view = { kind: "workspace", workspaceId: session.workspaceId };
+    }
+    if (removed) set({ sessions, sessionOrder: get().sessionOrder.filter((id) => !!sessions[id]), view });
     for (const entry of open) {
       if (get().sessions[entry.handle.id]) continue;
       const workspaceId = entry.workspaceId ?? get().workspaces.find((w) => w.canonicalRoot === entry.root)?.id;

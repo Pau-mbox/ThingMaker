@@ -59,4 +59,37 @@ describe("shared renderer duplex recovery", () => {
     await Promise.resolve();
     expect(sent.filter(frame => frame.command === "session_submit")).toHaveLength(1);
   });
+
+  it("queues a startup burst below the host limit and drains every reply", async () => {
+    const { bridge, sent, receive } = await remote();
+    const requests = Array.from({ length: 40 }, (_, index) => bridge.invoke("session_snapshot", { index }));
+    await Promise.resolve();
+    expect(sent.filter(frame => frame.id)).toHaveLength(8);
+    for (let index = 0; index < requests.length; index++) {
+      const frames = sent.filter(frame => frame.id);
+      expect(frames.length - index).toBeLessThanOrEqual(8);
+      receive({ id: frames[index]!.id, result: index });
+    }
+    await expect(Promise.all(requests)).resolves.toEqual(Array.from({ length: 40 }, (_, index) => index));
+    expect(sent.filter(frame => frame.id)).toHaveLength(40);
+  });
+
+  it("rejects unsent queued actions on disconnect without replaying them", async () => {
+    const { bridge, sent, receive } = await remote();
+    const requests = Array.from({ length: 12 }, (_, index) => bridge.invoke("session_submit", { request: { requestId: String(index) } }));
+    const results = Promise.allSettled(requests);
+    await Promise.resolve();
+    receive({ status: "offline" });
+    const settled = await results;
+    for (let index = 0; index < settled.length; index++) {
+      expect(settled[index]).toMatchObject({ status: "rejected", reason: { code: index < 8 ? "OUTCOME_UNKNOWN" : "IO", retry: index < 8 ? "after_reconcile" : "safe" } });
+    }
+    receive({ ready: true, apiVersion: 2 });
+    await Promise.resolve();
+    expect(sent.filter(frame => frame.command === "session_submit")).toHaveLength(8);
+    const fresh = bridge.invoke("workspace_list");
+    await Promise.resolve();
+    receive({ id: sent.at(-1)!.id, result: [] });
+    await expect(fresh).resolves.toEqual([]);
+  });
 });
