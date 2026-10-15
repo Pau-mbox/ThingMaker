@@ -9,6 +9,8 @@
 
 <p align="center">
   <img alt="macOS" src="https://img.shields.io/badge/macOS-Apple%20silicon-111?logo=apple&logoColor=white">
+  <img alt="Windows local port" src="https://img.shields.io/badge/Windows-local%20port-0078D4">
+  <img alt="Android remote" src="https://img.shields.io/badge/Android-remote%20UI-3DDC84">
   <img alt="Tauri 2" src="https://img.shields.io/badge/Tauri-2-24C8DB?logo=tauri&logoColor=white">
   <img alt="Rust" src="https://img.shields.io/badge/Rust-supervisor-B7410E?logo=rust&logoColor=white">
   <img alt="React" src="https://img.shields.io/badge/React-TypeScript-3178C6?logo=react&logoColor=white">
@@ -25,8 +27,15 @@ keeps working while you sleep and moves to another account when one runs out.
 Watch everything — every agent,
 every tool call, every image it makes — in one window.
 
-No API keys, ever. ThingMaker drives each provider's **own official program**
+No provider API keys. ThingMaker drives each provider's **own official program**
 with your own sign-in, and never reads, stores or passes on a token.
+The local Android adaptation uses a separate PC-generated API key to authorize
+remote control; it is not a provider credential or a billing key.
+
+For this checkout's Windows installation, Android releases, WebSocket transport,
+502 recovery and verified deployment status, see the
+[Windows and Android guide](docs/windows-android.md) (Spanish) and
+[implementation log](NOTES.md).
 
 ## Why
 
@@ -54,6 +63,8 @@ with your own sign-in, and never reads, stores or passes on a token.
 | 🔌 **MCP servers in one click** | Install Playwright, Context7, GitHub and others from a catalog, or paste any server's config or `mcp add` command. ThingMaker test-starts it, then writes it through each provider's own `mcp add`, so Claude Code, Codex and Antigravity all have it. Secrets stay in the keychain as `${NAME}` references. |
 | 📱 **On your phone** | An Android app follows and drives the Mac's sessions and Big Things from anywhere, through your own relay on Cloudflare: read transcripts live, send and steer, answer a Big Thing, pause and resume, and get notified when one needs you. Paired by QR code, locked by your fingerprint, revocable per phone — see [On your phone](#4-on-your-phone). |
 | 🔍 **Review and tools** | Diffs and baselines, git staging and commits, worktrees, an integrated terminal, file browsing, artifacts and skills. |
+| 📱 **Android remote UI (local adaptation)** | The same React interface on your phone, with authenticated WebSocket commands and live events. Agents, files and terminals execute on your PC. See [setup and limitations](docs/windows-android.md). |
+| 🧾 **Readable activity** | Consecutive tool calls are grouped into expandable runs, with progress, step counts and raw details. Windows paths and mobile touch controls are adapted in this checkout. |
 | 🔐 **Your accounts, your machine** | Each provider signs in through its own flow and keeps its own credentials. Switch accounts from the Providers panel. Everything runs locally. |
 
 ## How it works
@@ -136,6 +147,40 @@ which worker did each task, and the project memory.
   quota is your Google account's, shared with the Antigravity app.
 
 ### 2. Build and install ThingMaker
+
+#### Windows (local port)
+
+Install Node.js 24, pnpm 10+, Rust stable, and Visual Studio with **Desktop
+development with C++** plus a Windows 10/11 SDK. WebView2 Runtime is required
+and the installer can install it when missing.
+
+```powershell
+pnpm install --frozen-lockfile
+pnpm app
+```
+
+This builds an x64 NSIS installer and installs ThingMaker for the current
+user. Open **ThingMaker** from the Start menu. Quit it from the tray menu
+before rebuilding/updating. The installer is under `target/release/bundle/nsis`.
+Set `THINGMAKER_INSTALL_DIR` to an absolute path before running `pnpm app` to
+choose another installation directory; subsequent builds remember that path.
+
+On Windows, teams use an owner-only local named pipe, the terminal uses
+ConPTY with `cmd.exe`, and private runtime variables use Windows Credential
+Manager (up to 2560 bytes per value). Codex is discovered in the Codex desktop
+app's versioned install folder or on PATH. Claude's adapter is found in the
+Windows npm global prefix; install it using the provider instructions above.
+Sign in through the Providers panel if the provider CLI has no active login.
+
+For development, load the compiler environment and use the Windows window
+configuration:
+
+```powershell
+. ./scripts/windows-build-env.ps1
+pnpm --filter @thingmaker/desktop exec tauri dev --config src-tauri/tauri.dev.conf.json --config src-tauri/tauri.windows.conf.json
+```
+
+#### macOS
 
 You need Rust (stable), Node 24 (via [nvm](https://github.com/nvm-sh/nvm)),
 pnpm 10 and Xcode's command line tools.
@@ -243,6 +288,9 @@ Live tests against the real providers are opt-in and spend a few tokens:
 | Where | What |
 | --- | --- |
 | `apps/desktop` | the Tauri app: React interface (`src/`) and the host's commands (`src-tauri/`) |
+| `apps/android` | Android onboarding, encrypted connection storage and WebView for the shared React renderer |
+| `apps/phone` | Paired Android client for the upstream Cloudflare relay (`pnpm phone`) |
+| `apps/relay` | Cloudflare relay for paired phones |
 | `crates/thingmaker-supervisor` | the engine: transport, ACP client, provider bridges, delegation, Big Thing (`bigthing/`), session actors, storage |
 | `packages/contracts` | the TypeScript types of the desktop API |
 | `packages/test-fixtures` | mock providers, captured from the real programs |
@@ -263,6 +311,12 @@ Live tests against the real providers are opt-in and spend a few tokens:
 
 ThingMaker is young and moving fast. It is built and used daily on macOS
 (Apple silicon).
+
+This checkout also contains a validated Windows port and Android remote client.
+Android **2.0.2 (4)** is published in JackApps. Upstream `main` through
+`4326772` is integrated locally. Its Windows installer is built but awaits
+manual installation; the installed PC app still uses the preceding build.
+See the [dated validation and remaining checks](docs/windows-android.md#estado-verificado).
 
 ## License
 

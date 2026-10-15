@@ -1,7 +1,7 @@
 /** Tool calls read as steps a person can follow, from what each provider reported. */
 import { describe, expect, it } from "vitest";
 import type { ToolPatch } from "@thingmaker/contracts";
-import { mcpLabel, readShell, stepDoing, stepOf, stepText, summarize } from "./toolSteps";
+import { mcpLabel, relativePath, readShell, stepDoing, stepOf, stepText, summarize } from "./toolSteps";
 
 const ROOT = "/Users/me/UnityProjects/P3";
 const patch = (fields: Partial<ToolPatch>): ToolPatch => ({ toolCallId: "t", title: null, status: "completed", toolKind: "execute", content: null, rawInput: null, rawOutput: null, name: null, locations: null, meta: null, present: [], cleared: [], ...fields });
@@ -45,6 +45,23 @@ describe("a shell command as steps", () => {
 });
 
 describe("other tools", () => {
+  it("recognizes Windows paths from Codex, including canonical and mixed separators", () => {
+    const root = String.raw`\\?\D:\repos\ThingMaker`;
+    expect(relativePath(String.raw`Read d:\repos\ThingMaker\src\app.ts`, [root])).toBe(String.raw`Read src\app.ts`);
+    expect(relativePath("D:/repos/ThingMaker/src/app.ts", [root])).toBe("src/app.ts");
+    expect(relativePath(String.raw`\\?\D:\repos\ThingMaker`, [root])).toBe(".");
+    expect(relativePath(String.raw`D:\repos\ThingMakerOther\app.ts`, [root])).toBe(String.raw`D:\repos\ThingMakerOther\app.ts`);
+    const step = stepOf(patch({ rawInput: { actions: [{ type: "read", path: String.raw`\\?\D:\repos\ThingMaker\README.md` }] } }), [root]);
+    expect(stepText(step)).toBe("Read README.md");
+  });
+
+  it("keeps Windows backslashes and recognizes PowerShell and CMD reads", () => {
+    const roots = [String.raw`D:\My Project`];
+    expect(readShell(String.raw`Get-Content "D:\My Project\Docs\README.md"`, roots)[0]?.target).toBe(String.raw`Docs\README.md`);
+    expect(readShell(String.raw`type "D:\My Project\README.md"`, roots)[0]?.verb).toBe("read");
+    expect(readShell(String.raw`dir "D:\My Project\Docs"`, roots)[0]?.verb).toBe("list");
+  });
+
   it("keeps the adapter's title, with the project's prefix gone", () => {
     expect(stepText(stepOf(patch({ toolKind: "read", title: `Read ${ROOT}/Docs/GAME.md (1 - 40)` }), [ROOT]))).toBe("Read Docs/GAME.md (1 - 40)");
   });

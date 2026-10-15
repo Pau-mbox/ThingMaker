@@ -21,7 +21,11 @@ async fn every_provider_is_observed_without_opening_a_renderer_and_detaches_clea
     for provider in [Provider::Claude, Provider::Codex, Provider::Gemini] {
         let root = tempfile::tempdir().unwrap();
         let root_path = root.path().canonicalize().unwrap();
-        let python = PathBuf::from("python3");
+        let python = ["python3", "python"].into_iter().find_map(|name| {
+            let mut command = thingmaker_supervisor::platform::command(name);
+            let program = PathBuf::from(command.get_program());
+            command.arg("--version").output().ok().filter(|output| output.status.success()).map(|_| program)
+        }).expect("Python 3 is required for the captured provider fixtures");
         let fixture = match provider {
             Provider::Claude => "mock-claude-acp.py",
             Provider::Codex => "mock-codex-app-server.py",

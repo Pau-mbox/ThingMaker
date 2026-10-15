@@ -6,6 +6,8 @@ release gate, not a hidden feature.
 
 ## Local build and install - implemented
 
+### macOS
+
 `pnpm app` builds `ThingMaker.app` in release and installs it in `/Applications`
 (`scripts/install-app.sh`; `CODE_APP_DIR` changes the destination). It:
 
@@ -27,6 +29,27 @@ Nothing is bundled beside the app. Each provider's official program is found
 where it is installed: claude-agent-acp in a global npm prefix, `codex` on
 PATH or inside the ChatGPT app, or as chosen in Providers. The executable is
 also the team relay, started with `--thingmaker-mcp`.
+
+### Windows and Android local adaptation
+
+`scripts/install-app.mjs` selects the Windows PowerShell installer on Windows
+and the original shell script on macOS. Windows builds an x64 NSIS bundle,
+refuses installation while ThingMaker is running, remembers the destination
+and records the installed commit after successful installation. The default
+directory is `%LOCALAPPDATA%\ThingMaker`; this machine uses `D:\apps\ThingMaker`.
+
+Android bundles the shared React renderer through
+`scripts/shared-ui-android.py`, then Gradle produces the APK. Distribution is
+through the private JackApps backend. Keep the signing key, increment
+`versionCode`, dry-run publication, publish with release notes and verify the
+stored APK's SHA256. Provider binaries stay on the PC.
+
+As of 2026-10-03, Android **2.0.1 (3)** is published. The corresponding Windows
+NSIS build is ready but its automatic installation was blocked; the installed
+PC app remains on the preceding build. Full release links, verification and
+operational steps are in the [Windows/Android guide](windows-android.md).
+These internal builds do not establish public Windows signing or a production
+Android store release.
 
 ## Signing order and updater (REL-03) - not yet
 

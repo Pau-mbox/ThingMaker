@@ -9,6 +9,7 @@
 import { isPermissionGranted, requestPermission, sendNotification } from "@tauri-apps/plugin-notification";
 import type { NotificationSettings } from "@thingmaker/contracts";
 import type { AttentionKind } from "./store";
+import { isRemote } from "./bridge";
 
 export function parseClock(value: string): number | null {
   const match = /^(\d{1,2}):(\d{2})$/.exec(value.trim());
@@ -58,6 +59,7 @@ let permissionState: "unknown" | "granted" | "denied" = "unknown";
 
 /** Requests OS permission the first time it is needed; returns whether granted. */
 export async function ensurePermission(): Promise<boolean> {
+  if (isRemote) return false;
   if (permissionState === "granted") return true;
   if (permissionState === "denied") return false;
   try {

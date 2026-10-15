@@ -1,9 +1,10 @@
-//! Keeps the Mac from idle sleep while agents work.
+//! Keeps macOS and Windows from idle sleep while agents work.
 //!
 //! Big Thing promises to keep working while you sleep, and a team job that
 //! waits for a limit to reset expects the Mac to be awake when it does. The
 //! host holds a macOS power assertion (`PreventUserIdleSystemSleep`, the one
-//! `caffeinate -i` takes) whenever something is working, and releases it the
+//! `caffeinate -i` takes), or a Windows PowerRequestSystemRequired request,
+//! whenever something is working, and releases it the
 //! moment nothing is. The display may still sleep, and closing the lid still
 //! sleeps the Mac: only *idle* sleep is held off.
 //!
@@ -72,7 +73,7 @@ pub fn decide(enabled: bool, allow_on_battery: bool, work: &Work, on_battery: Op
         return (false, "Nothing is working.".into());
     }
     if on_battery == Some(true) && !allow_on_battery {
-        return (false, "On battery, so the Mac may sleep as usual.".into());
+        return (false, "On battery, so the computer may sleep as usual.".into());
     }
     let mut parts = Vec::new();
     let plural = |n: usize, one: &str, many: &str| format!("{n} {}", if n == 1 { one } else { many });
@@ -85,7 +86,7 @@ pub fn decide(enabled: bool, allow_on_battery: bool, work: &Work, on_battery: Op
     if work.jobs > 0 {
         parts.push(plural(work.jobs, "team job open", "team jobs open"));
     }
-    (true, format!("Keeping the Mac awake: {}.", parts.join(", ")))
+    (true, format!("Keeping the computer awake: {}.", parts.join(", ")))
 }
 
 async fn work_now(state: &AppState) -> Work {
@@ -122,12 +123,12 @@ pub fn start(app: &AppHandle) {
                     if held.is_some() {
                         tracing::info!(target: "keep_awake", %reason, "holding off idle sleep");
                     } else {
-                        tracing::warn!(target: "keep_awake", "macOS refused the power assertion");
+                        tracing::warn!(target: "keep_awake", "The operating system refused the power assertion");
                     }
                 } else if !want && held.take().is_some() {
                     tracing::info!(target: "keep_awake", %reason, "idle sleep allowed again");
                 }
-                let reason = if want && held.is_none() { "macOS refused to keep the Mac awake; see the log.".into() } else { reason };
+                let reason = if want && held.is_none() { "The operating system could not prevent idle sleep; see the log.".into() } else { reason };
                 KeepAwakeStatus { holding: held.is_some(), work, on_battery, reason }
             };
             *STATUS.lock().unwrap_or_else(|poisoned| poisoned.into_inner()) = Some(status);
@@ -209,7 +210,72 @@ mod power {
     }
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(windows)]
+mod power {
+    use windows_sys::Win32::{
+        Foundation::{CloseHandle, HANDLE, INVALID_HANDLE_VALUE},
+        System::{
+            Power::{GetSystemPowerStatus, PowerClearRequest, PowerCreateRequest, PowerRequestSystemRequired, PowerSetRequest, SYSTEM_POWER_STATUS},
+            SystemServices::POWER_REQUEST_CONTEXT_VERSION,
+            Threading::{POWER_REQUEST_CONTEXT_SIMPLE_STRING, REASON_CONTEXT, REASON_CONTEXT_0},
+        },
+    };
+
+    // Power request handles are process-wide, so the async poller can release
+    // one from a different worker thread. The owned handle is closed once.
+    pub struct Assertion(usize);
+
+    impl Assertion {
+        pub fn hold(name: &str) -> Option<Self> {
+            let mut reason: Vec<u16> = name.encode_utf16().chain(Some(0)).collect();
+            let context = REASON_CONTEXT {
+                Version: POWER_REQUEST_CONTEXT_VERSION,
+                Flags: POWER_REQUEST_CONTEXT_SIMPLE_STRING,
+                Reason: REASON_CONTEXT_0 { SimpleReasonString: reason.as_mut_ptr() },
+            };
+            // SAFETY: context and its terminated UTF-16 string outlive the call;
+            // the returned handle is checked and owned exclusively by this value.
+            unsafe {
+                let handle = PowerCreateRequest(&context);
+                if handle == INVALID_HANDLE_VALUE || handle.is_null() {
+                    return None;
+                }
+                if PowerSetRequest(handle, PowerRequestSystemRequired) == 0 {
+                    CloseHandle(handle);
+                    return None;
+                }
+                Some(Self(handle as usize))
+            }
+        }
+    }
+
+    impl Drop for Assertion {
+        fn drop(&mut self) {
+            // SAFETY: the owned handle came from PowerCreateRequest and is
+            // released exactly once, balancing the successful PowerSetRequest.
+            unsafe {
+                let handle = self.0 as HANDLE;
+                PowerClearRequest(handle, PowerRequestSystemRequired);
+                CloseHandle(handle);
+            }
+        }
+    }
+
+    pub fn on_battery() -> Option<bool> {
+        let mut status = SYSTEM_POWER_STATUS::default();
+        // SAFETY: status points to a writable structure for the duration of the call.
+        if unsafe { GetSystemPowerStatus(&mut status) } == 0 {
+            return None;
+        }
+        match status.ACLineStatus {
+            0 => Some(true),
+            1 => Some(false),
+            _ => None,
+        }
+    }
+}
+
+#[cfg(not(any(target_os = "macos", windows)))]
 mod power {
     pub struct Assertion;
 
@@ -233,7 +299,7 @@ mod tests {
         let busy = Work { sessions: 1, goals: 1, jobs: 2 };
         let (hold, reason) = decide(true, false, &busy, Some(false));
         assert!(hold);
-        assert_eq!(reason, "Keeping the Mac awake: 1 session working, 1 Big Thing running, 2 team jobs open.");
+        assert_eq!(reason, "Keeping the computer awake: 1 session working, 1 Big Thing running, 2 team jobs open.");
         assert!(!decide(true, false, &Work::default(), Some(false)).0, "nothing working");
         assert!(!decide(false, true, &busy, Some(false)).0, "off in Settings");
         assert!(!decide(true, false, &busy, Some(true)).0, "on battery, not allowed");
@@ -241,10 +307,10 @@ mod tests {
         assert!(decide(true, false, &busy, None).0, "a Mac with no battery reading is plugged in");
     }
 
-    #[cfg(target_os = "macos")]
+    #[cfg(any(target_os = "macos", windows))]
     #[test]
     fn an_assertion_is_taken_and_released() {
-        let held = power::Assertion::hold("ThingMaker test assertion").expect("macOS grants an idle-sleep assertion");
+        let held = power::Assertion::hold("ThingMaker test assertion").expect("the OS grants an idle-sleep assertion");
         drop(held);
         // Reading the power source never fails on a Mac that has IOKit.
         let _ = power::on_battery();

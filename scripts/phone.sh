@@ -2,7 +2,7 @@
 # Builds the ThingMaker Android app and, when a phone is plugged in with USB
 # debugging on, installs it.
 #
-#   pnpm phone            build apps/android → ThingMaker-phone.apk, install if a device is attached
+#   pnpm phone            build apps/phone → ThingMaker-phone.apk, install if a device is attached
 #
 # The app is a thin shell: its screens come from the Mac it pairs with, so
 # updating ThingMaker on the Mac updates the phone's screens too. Rebuild the
@@ -21,7 +21,7 @@ fi
 [ -n "$JAVA_HOME" ] || { echo "Java 17 is needed to build the Android app (brew install --cask temurin@17)." >&2; exit 1; }
 [ -d "$SDK" ] || { echo "No Android SDK at $SDK (install Android Studio, or set ANDROID_HOME)." >&2; exit 1; }
 
-cd "$ROOT/apps/android"
+cd "$ROOT/apps/phone"
 [ -f local.properties ] || echo "sdk.dir=$SDK" > local.properties
 ./gradlew assembleRelease -q --console=plain
 cp app/build/outputs/apk/release/app-release.apk "$ROOT/ThingMaker-phone.apk"

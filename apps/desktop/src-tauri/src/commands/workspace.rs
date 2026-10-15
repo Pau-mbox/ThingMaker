@@ -60,7 +60,11 @@ fn summarize_mcp(path: &Path) -> (Vec<String>, bool) {
                 .map(|(name, server)| {
                     let command = server.get("command").and_then(Value::as_str).unwrap_or("");
                     let url = server.get("url").and_then(Value::as_str).unwrap_or("");
-                    let transport = server.get("type").or_else(|| server.get("transport")).and_then(Value::as_str).unwrap_or("");
+                    let transport = server
+                        .get("type")
+                        .or_else(|| server.get("transport"))
+                        .and_then(Value::as_str)
+                        .unwrap_or("");
                     match (command.is_empty(), url.is_empty()) {
                         (false, _) => format!("{name}: runs `{command}`"),
                         (true, false) => format!("{name}: connects to {url} {transport}"),
@@ -124,15 +128,22 @@ fn inspect_sources(root: &Path) -> (Vec<ConfigSource>, String) {
 /// `.mcp.json` or the settings never leaves it "stale" and unopenable.
 pub fn ensure_trusted(state: &AppState, record: WorkspaceRecord) -> CommandResult<WorkspaceRecord> {
     let (_, digest) = inspect_sources(Path::new(&record.canonical_root));
-    if record.trust_state == TrustState::TrustedLocal && record.trust_digest.as_deref() == Some(digest.as_str()) {
+    if record.trust_state == TrustState::TrustedLocal
+        && record.trust_digest.as_deref() == Some(digest.as_str())
+    {
         return Ok(record);
     }
     state
-        .with_storage(|storage| storage.workspace_set_trust(&record.id, TrustState::TrustedLocal, Some(&digest)))
+        .with_storage(|storage| {
+            storage.workspace_set_trust(&record.id, TrustState::TrustedLocal, Some(&digest))
+        })
         .map_err(storage_error)
 }
 
-fn build_inspection(state: &AppState, record: WorkspaceRecord) -> CommandResult<WorkspaceInspection> {
+fn build_inspection(
+    state: &AppState,
+    record: WorkspaceRecord,
+) -> CommandResult<WorkspaceInspection> {
     let record = ensure_trusted(state, record)?;
     let root = Path::new(&record.canonical_root);
     let identity = WorkspaceIdentity::resolve(root)?;
@@ -142,7 +153,11 @@ fn build_inspection(state: &AppState, record: WorkspaceRecord) -> CommandResult<
     let _ = state;
     Ok(WorkspaceInspection {
         is_git_repository: identity.canonical_root.join(".git").exists(),
-        is_unity_project: identity.canonical_root.join("ProjectSettings").join("ProjectVersion.txt").is_file()
+        is_unity_project: identity
+            .canonical_root
+            .join("ProjectSettings")
+            .join("ProjectVersion.txt")
+            .is_file()
             && identity.canonical_root.join("Assets").is_dir(),
         identity,
         record,
@@ -153,7 +168,10 @@ fn build_inspection(state: &AppState, record: WorkspaceRecord) -> CommandResult<
 }
 
 #[tauri::command]
-pub fn workspace_inspect(path: String, state: State<'_, AppState>) -> CommandResult<WorkspaceInspection> {
+pub fn workspace_inspect(
+    path: String,
+    state: State<'_, AppState>,
+) -> CommandResult<WorkspaceInspection> {
     if path.trim().is_empty() {
         return Err(DesktopError::io("workspace path is empty"));
     }
@@ -181,7 +199,10 @@ pub struct TrustRequest {
 }
 
 #[tauri::command]
-pub fn workspace_trust(request: TrustRequest, state: State<'_, AppState>) -> CommandResult<WorkspaceInspection> {
+pub fn workspace_trust(
+    request: TrustRequest,
+    state: State<'_, AppState>,
+) -> CommandResult<WorkspaceInspection> {
     let record = state
         .with_storage(|storage| storage.workspace_get(&request.workspace_id))
         .map_err(storage_error)?
@@ -197,7 +218,11 @@ pub fn workspace_trust(request: TrustRequest, state: State<'_, AppState>) -> Com
             storage.workspace_set_trust(
                 &request.workspace_id,
                 request.state,
-                if request.state == TrustState::Untrusted { None } else { Some(&current_digest) },
+                if request.state == TrustState::Untrusted {
+                    None
+                } else {
+                    Some(&current_digest)
+                },
             )
         })
         .map_err(storage_error)?;
@@ -206,7 +231,9 @@ pub fn workspace_trust(request: TrustRequest, state: State<'_, AppState>) -> Com
 
 #[tauri::command]
 pub fn workspace_list(state: State<'_, AppState>) -> CommandResult<Vec<WorkspaceRecord>> {
-    state.with_storage(|storage| storage.workspace_list()).map_err(storage_error)
+    state
+        .with_storage(|storage| storage.workspace_list())
+        .map_err(storage_error)
 }
 
 /// Native folder picker. Returns `None` when the user cancels. Picking does not
@@ -225,7 +252,6 @@ pub async fn workspace_pick(app: tauri::AppHandle) -> CommandResult<Option<Strin
     Ok(picked.map(|path| path.to_string()))
 }
 
-
 /// Forgets a workspace in the desktop (records, baselines, archive flags).
 /// Refused while any session of that workspace is attached; files on disk
 /// and the agents' transcripts are never touched.
@@ -242,7 +268,9 @@ pub fn workspace_remove(workspace_id: String, state: State<'_, AppState>) -> Com
             live.len()
         )));
     }
-    state.with_storage(|s| s.workspace_delete(&workspace_id)).map_err(storage_error)
+    state
+        .with_storage(|s| s.workspace_delete(&workspace_id))
+        .map_err(storage_error)
 }
 
 #[derive(Debug, Serialize)]
@@ -279,21 +307,39 @@ pub fn execution_profiles() -> Vec<ProfileInfo> {
 /// workspace Code knows are opened; anything else is refused.
 #[tauri::command]
 pub fn reveal_in_finder(path: String, state: State<'_, AppState>) -> CommandResult<()> {
-    let resolved = std::fs::canonicalize(&path).map_err(|error| DesktopError::io(format!("{path}: {error}")))?;
+    let resolved = std::fs::canonicalize(&path)
+        .map_err(|error| DesktopError::io(format!("{path}: {error}")))?;
     let known = state
         .with_storage(|storage| storage.workspace_list())
         .map_err(storage_error)?
         .iter()
         .any(|workspace| resolved.starts_with(&workspace.canonical_root));
     if !known {
-        return Err(DesktopError::untrusted("only folders inside a workspace are opened"));
+        return Err(DesktopError::untrusted(
+            "only folders inside a workspace are opened",
+        ));
     }
-    let mut command = std::process::Command::new("open");
+    let mut command = std::process::Command::new(if cfg!(windows) {
+        "explorer.exe"
+    } else if cfg!(target_os = "macos") {
+        "open"
+    } else {
+        "xdg-open"
+    });
     // A folder opens; a file is shown selected in its folder.
     if resolved.is_dir() {
         command.arg(&resolved);
     } else {
-        command.arg("-R").arg(&resolved);
+        if cfg!(windows) {
+            command.arg(format!("/select,{}", resolved.display()));
+        } else if cfg!(target_os = "macos") {
+            command.arg("-R").arg(&resolved);
+        } else {
+            command.arg(resolved.parent().unwrap_or(&resolved));
+        }
     }
-    command.spawn().map(|_| ()).map_err(|error| DesktopError::io(format!("could not open Finder: {error}")))
+    command
+        .spawn()
+        .map(|_| ())
+        .map_err(|error| DesktopError::io(format!("could not open file manager: {error}")))
 }

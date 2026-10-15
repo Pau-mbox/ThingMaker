@@ -15,6 +15,7 @@ import type { TerminalEvent, TerminalInfo } from "@thingmaker/contracts";
 import { api } from "../ipc";
 import { redactText, type Redaction } from "../redact";
 import { useStore } from "../store";
+import { listen } from "../bridge";
 
 const SCROLLBACK_LINES = 5000;
 
@@ -80,9 +81,30 @@ export function TerminalPane({ workspaceId }: { workspaceId: string }) {
     fitRef.current = fit;
     const id = info.id;
     let disposed = false;
+    const unlistenReconnect = listen("thingmaker://remote-reconnected", () => {
+      // The new subscription replays scrollback; replace, rather than append it.
+      term.reset();
+      void api.terminalList().then(entries => {
+        if (!disposed && !entries.some(entry => entry.info.id === id)) setInfo(null);
+      }).catch(() => undefined);
+    });
 
+    // One write in flight at a time: the remote transport handles requests
+    // concurrently, so parallel keystrokes could reach the shell out of order.
+    let queued = "";
+    let writing = false;
+    const flush = () => {
+      if (writing || !queued || disposed) return;
+      const text = queued;
+      queued = "";
+      writing = true;
+      api.terminalWrite(id, text)
+        .catch((error: unknown) => setError(error))
+        .finally(() => { writing = false; flush(); });
+    };
     const dataDisposable = term.onData((data) => {
-      api.terminalWrite(id, data).catch((error: unknown) => setError(error));
+      queued += data;
+      flush();
     });
     const resizeDisposable = term.onResize(({ cols, rows }) => {
       api.terminalResize(id, cols, rows).catch(() => undefined);
@@ -132,6 +154,7 @@ export function TerminalPane({ workspaceId }: { workspaceId: string }) {
 
     return () => {
       disposed = true;
+      void unlistenReconnect.then(unlisten => unlisten());
       observer.disconnect();
       host.removeEventListener("paste", onPaste, true);
       dataDisposable.dispose();

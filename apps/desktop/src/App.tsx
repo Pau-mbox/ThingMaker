@@ -15,6 +15,17 @@ import { IntegrationsPanel } from "./components/IntegrationsPanel";
 import { TeamsView } from "./components/TeamsView";
 import { CommandPalette } from "./components/CommandPalette";
 import { IconFolder, IconKey } from "./components/icons";
+import { isRemote, listen, disconnectRemote } from "./bridge";
+import { useState } from "react";
+
+function RemoteConnection() {
+  const [status, setStatus] = useState("connected");
+  useEffect(() => { const unlisten = listen<string>("thingmaker://connection", event => {
+    setStatus(event.payload);
+    if (event.payload === "connected" && useStore.getState().error?.code === "IO") { useStore.getState().clearError(); void useStore.getState().bootstrap(); }
+  }); return () => { void unlisten.then(fn => fn()); }; }, []);
+  return <div className={`remote-connection ${status === "connected" ? "" : "remote-offline"}`} role="status"><span>{status === "connected" ? "Conectado al PC" : status === "unauthorized" ? "API key incorrecta o revocada" : status === "update-required" ? "Actualiza ThingMaker en el PC" : "Reconectando con el PC…"}</span><button className="link" onClick={disconnectRemote} type="button">Desconectar</button></div>;
+}
 
 const ChillView = lazy(() => import("./chill/ChillView"));
 
@@ -78,6 +89,21 @@ export function App() {
   useEffect(() => {
     void bootstrap();
   }, [bootstrap]);
+  useEffect(() => {
+    if (!isRemote) return;
+    // Android Back closes the topmost layer first, as Escape does on the desktop.
+    const back = () => {
+      const state = useStore.getState();
+      if (state.paletteOpen) return state.setPaletteOpen(false);
+      if (document.querySelector('[aria-modal="true"]')) {
+        (document.activeElement ?? document.body).dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+        return;
+      }
+      state.toggleSidebar();
+    };
+    window.addEventListener("thingmaker-mobile-back", back);
+    return () => window.removeEventListener("thingmaker-mobile-back", back);
+  }, []);
 
   useKeyboardShortcuts();
 
@@ -103,9 +129,11 @@ export function App() {
       <CommandPalette />
       <CloseRequestDialog />
       <LockedResumeDialog />
+      {isRemote && <RemoteConnection />}
       {IS_REMOTE && !chillMode && <ConnectionBanner />}
       {chillMode && <ErrorBoundary label="Chill" onReset={() => setChillMode(false)} fallback={<div className="chill" role="alert" aria-label="Chill rendering unavailable"><button aria-label="Back to work" onClick={() => setChillMode(false)}><svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor"><path d="M9 5H5v14h4M13 8l4 4-4 4M9 12h11" /></svg></button></div>}><Suspense fallback={<div className="chill" aria-label="Opening Chill" />}><ChillView onExit={() => setChillMode(false)} /></Suspense></ErrorBoundary>}
       <div className="shell" style={chillMode ? { display: "none" } : undefined}>
+        {isRemote && !sidebarCollapsed && <button className="mobile-sidebar-backdrop" aria-label="Cerrar menú" onClick={() => useStore.getState().toggleSidebar()} />}
         {(!sidebarCollapsed || IS_REMOTE) && (
           <ErrorBoundary label="sidebar">
             <Sidebar />

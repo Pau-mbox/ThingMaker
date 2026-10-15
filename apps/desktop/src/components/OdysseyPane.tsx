@@ -11,7 +11,7 @@
  * confirmed, and the screen must never let the two read the same.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { getCurrentWebview } from "@tauri-apps/api/webview";
+import { getCurrentWebview } from "../bridge";
 import { ODYSSEY_STATE_NOTE, ORCHESTRATOR_PROVIDERS, PROVIDER_LABELS, type AdoptedPlan, type Orchestrator, type OnPlanChange, type OnReport, type CheckKind, type MilestoneRecord, type OdysseyView, type OnUsageReset, type Provider, type StopCondition } from "@thingmaker/contracts";
 import { PLAN_REQUESTED, useStore } from "../store";
 import { checkLabel } from "../odysseyPrompt";

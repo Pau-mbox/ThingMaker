@@ -1301,6 +1301,10 @@ impl ActorState {
     /// the queue sends with none.
     fn start_prompt(&mut self, session_id: String, request_id: String, blocks: Vec<Value>, reply: Option<Reply<SubmissionOutcome>>) {
         self.flush_chunk();
+        // The provider can emit tool updates before PromptWritten is handled.
+        // Reset before dispatch so accepting the prompt cannot erase live tools.
+        self.open_tools.clear();
+        self.last_progress = Instant::now();
         self.submitted_prompts.insert(request_id.clone(), blocks.clone());
         self.emit(SessionEvent::Submission {
             request_id: request_id.clone(),
@@ -1310,7 +1314,7 @@ impl ActorState {
         let (written_tx, written_rx) = oneshot::channel();
         let internal = self.internal.clone();
         let written_id = request_id.clone();
-        tokio::spawn(async move {
+        let acceptance = tokio::spawn(async move {
             if written_rx.await.is_ok() {
                 let _ = internal
                     .send(Internal::PromptWritten {
@@ -1326,13 +1330,20 @@ impl ActorState {
         // ceiling.
         let timeout = self.config.timeouts.turn;
         self.pending_submits.insert(request_id.clone(), reply);
-        self.spawn_request(
-            "session/prompt",
-            json!({ "sessionId": session_id, "prompt": blocks }),
-            timeout,
-            Some(written_tx),
-            move |result| Internal::PromptResult { request_id, result },
-        );
+        let transport = self.transport.clone();
+        let internal = self.internal.clone();
+        tokio::spawn(async move {
+            let result = transport.request_observed(
+                "session/prompt",
+                json!({ "sessionId": session_id, "prompt": blocks }),
+                timeout,
+                Some(written_tx),
+            ).await;
+            // A fast provider can answer before the write observer is scheduled.
+            // Deliver acceptance first so even an immediate refusal settles a turn.
+            let _ = acceptance.await;
+            let _ = internal.send(Internal::PromptResult { request_id, result }).await;
+        });
     }
 
     /// Sends input into the running turn, and returns the id the desktop
@@ -1671,7 +1682,6 @@ impl ActorState {
                 // turn. The response still arrives; it is read as the turn's
                 // outcome instead (see `PromptResult`).
                 if let Some(reply) = self.pending_submits.remove(&request_id) {
-                    self.open_tools.clear();
                     self.last_progress = Instant::now();
                     self.apply_turn(TurnInput::PromptAccepted);
                     self.emit(SessionEvent::Submission {

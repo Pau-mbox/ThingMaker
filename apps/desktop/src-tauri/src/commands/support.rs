@@ -29,7 +29,13 @@ fn redact_home(text: &str, home: Option<&Path>) -> String {
 /// collapsed. The agents' own output is not part of this log.
 fn recent_log_lines(data_dir: &Path, home: Option<&Path>, limit: usize) -> Vec<String> {
     let mut files: Vec<PathBuf> = std::fs::read_dir(data_dir.join("logs"))
-        .map(|entries| entries.flatten().map(|e| e.path()).filter(|p| p.is_file()).collect())
+        .map(|entries| {
+            entries
+                .flatten()
+                .map(|e| e.path())
+                .filter(|p| p.is_file())
+                .collect()
+        })
         .unwrap_or_default();
     files.sort();
     let mut lines = Vec::new();
@@ -56,7 +62,10 @@ fn recent_log_lines(data_dir: &Path, home: Option<&Path>, limit: usize) -> Vec<S
 /// saving. Contents: versions, anonymized state, recent safe errors, settings.
 /// Excluded by design: prompts, transcripts, environment variables, tokens.
 #[tauri::command]
-pub async fn support_bundle_preview(app: tauri::AppHandle, state: State<'_, AppState>) -> CommandResult<Value> {
+pub async fn support_bundle_preview(
+    app: tauri::AppHandle,
+    state: State<'_, AppState>,
+) -> CommandResult<Value> {
     let package = app.package_info();
     let mut sessions = Vec::new();
     for (id, _root) in state.actor_entries() {
@@ -73,19 +82,31 @@ pub async fn support_bundle_preview(app: tauri::AppHandle, state: State<'_, AppS
             }));
         }
     }
-    let workspaces = state.with_storage(|s| s.workspace_list()).map_err(storage_error)?;
+    let workspaces = state
+        .with_storage(|s| s.workspace_list())
+        .map_err(storage_error)?;
     let mut uncertain = 0;
     for workspace in &workspaces {
-        uncertain += state.with_storage(|s| s.outbox_uncertain_for_workspace(&workspace.id)).map(|v| v.len()).unwrap_or(0);
+        uncertain += state
+            .with_storage(|s| s.outbox_uncertain_for_workspace(&workspace.id))
+            .map(|v| v.len())
+            .unwrap_or(0);
     }
-    let schema_version = state.with_storage(|s| s.schema_version()).map_err(storage_error)?;
-    let settings: Option<Value> = state.with_storage(|s| s.setting_get("notifications", "global")).ok().flatten();
+    let schema_version = state
+        .with_storage(|s| s.schema_version())
+        .map_err(storage_error)?;
+    let settings: Option<Value> = state
+        .with_storage(|s| s.setting_get("notifications", "global"))
+        .ok()
+        .flatten();
     // Where each provider's program was found and how, never who is signed
     // in: an account name is personal data and does not help a bug report.
     let providers: Vec<Value> = thingmaker_supervisor::agents::Provider::ALL
         .iter()
         .map(|provider| match state.resolve_provider(*provider) {
-            Ok(resolved) => json!({ "provider": provider.as_str(), "found": true, "source": resolved.source }),
+            Ok(resolved) => {
+                json!({ "provider": provider.as_str(), "found": true, "source": resolved.source })
+            }
             Err(_) => json!({ "provider": provider.as_str(), "found": false }),
         })
         .collect();
@@ -135,20 +156,84 @@ pub struct StorageReport {
 #[tauri::command]
 pub fn storage_inspect(state: State<'_, AppState>) -> CommandResult<StorageReport> {
     let d = &state.data_dir;
-    let size = |p: PathBuf| if p.is_dir() { dir_size(&p) } else { std::fs::metadata(&p).map(|m| m.len()).unwrap_or(0) };
+    let size = |p: PathBuf| {
+        if p.is_dir() {
+            dir_size(&p)
+        } else {
+            std::fs::metadata(&p).map(|m| m.len()).unwrap_or(0)
+        }
+    };
     let entries = vec![
-        StorageEntry { name: "metadata database", path: d.join("thingmaker.db").to_string_lossy().into_owned(), bytes: size(d.join("thingmaker.db")) + size(d.join("thingmaker.db-wal")), policy: "kept; backed up before migrations" },
-        StorageEntry { name: "database backups", path: d.to_string_lossy().into_owned(), bytes: std::fs::read_dir(d).map(|e| e.flatten().filter(|e| e.file_name().to_string_lossy().contains(".bak.db")).map(|e| e.metadata().map(|m| m.len()).unwrap_or(0)).sum()).unwrap_or(0), policy: "cleanup candidate after 30 days" },
-        StorageEntry { name: "submission payloads", path: d.join("outbox").to_string_lossy().into_owned(), bytes: size(d.join("outbox")), policy: "kept while the submission is queued or uncertain" },
-        StorageEntry { name: "attachments", path: d.join("attachments").to_string_lossy().into_owned(), bytes: size(d.join("attachments")), policy: "kept while referenced by a draft; cleanup candidate after 30 days otherwise" },
-        StorageEntry { name: "review baselines", path: d.join("blobs").to_string_lossy().into_owned(), bytes: size(d.join("blobs")), policy: "derived cache; kept while a baseline references it" },
-        StorageEntry { name: "artifact versions", path: d.join("artifacts").to_string_lossy().into_owned(), bytes: size(d.join("artifacts")), policy: "kept; user-visible history is never auto-deleted" },
-        StorageEntry { name: "desktop logs", path: d.join("logs").to_string_lossy().into_owned(), bytes: size(d.join("logs")), policy: "7 days" },
-        StorageEntry { name: "skill backups", path: d.join("skill-backups").to_string_lossy().into_owned(), bytes: size(d.join("skill-backups")), policy: "replaced or removed skills; delete by hand when no longer needed" },
-        StorageEntry { name: "managed worktrees", path: d.join("worktrees").to_string_lossy().into_owned(), bytes: size(d.join("worktrees")), policy: "removed only through the worktree preview flow" },
+        StorageEntry {
+            name: "metadata database",
+            path: d.join("thingmaker.db").to_string_lossy().into_owned(),
+            bytes: size(d.join("thingmaker.db")) + size(d.join("thingmaker.db-wal")),
+            policy: "kept; backed up before migrations",
+        },
+        StorageEntry {
+            name: "database backups",
+            path: d.to_string_lossy().into_owned(),
+            bytes: std::fs::read_dir(d)
+                .map(|e| {
+                    e.flatten()
+                        .filter(|e| e.file_name().to_string_lossy().contains(".bak.db"))
+                        .map(|e| e.metadata().map(|m| m.len()).unwrap_or(0))
+                        .sum()
+                })
+                .unwrap_or(0),
+            policy: "cleanup candidate after 30 days",
+        },
+        StorageEntry {
+            name: "submission payloads",
+            path: d.join("outbox").to_string_lossy().into_owned(),
+            bytes: size(d.join("outbox")),
+            policy: "kept while the submission is queued or uncertain",
+        },
+        StorageEntry {
+            name: "attachments",
+            path: d.join("attachments").to_string_lossy().into_owned(),
+            bytes: size(d.join("attachments")),
+            policy: "kept while referenced by a draft; cleanup candidate after 30 days otherwise",
+        },
+        StorageEntry {
+            name: "review baselines",
+            path: d.join("blobs").to_string_lossy().into_owned(),
+            bytes: size(d.join("blobs")),
+            policy: "derived cache; kept while a baseline references it",
+        },
+        StorageEntry {
+            name: "artifact versions",
+            path: d.join("artifacts").to_string_lossy().into_owned(),
+            bytes: size(d.join("artifacts")),
+            policy: "kept; user-visible history is never auto-deleted",
+        },
+        StorageEntry {
+            name: "desktop logs",
+            path: d.join("logs").to_string_lossy().into_owned(),
+            bytes: size(d.join("logs")),
+            policy: "7 days",
+        },
+        StorageEntry {
+            name: "skill backups",
+            path: d.join("skill-backups").to_string_lossy().into_owned(),
+            bytes: size(d.join("skill-backups")),
+            policy: "replaced or removed skills; delete by hand when no longer needed",
+        },
+        StorageEntry {
+            name: "managed worktrees",
+            path: d.join("worktrees").to_string_lossy().into_owned(),
+            bytes: size(d.join("worktrees")),
+            policy: "removed only through the worktree preview flow",
+        },
     ];
-    let attachments = state.with_storage(|s| s.attachment_list()).map(|v| v.len()).unwrap_or(0);
-    let artifact_versions = state.with_storage(|s| s.artifact_hashes_in_use()).map(|v| v.len()).unwrap_or(0);
+    let attachments = state
+        .with_storage(|s| s.attachment_list())
+        .map(|v| v.len())
+        .unwrap_or(0);
+    let artifact_versions = state
+        .with_storage(|s| s.artifact_hashes_in_use())
+        .map(|v| v.len())
+        .unwrap_or(0);
     Ok(StorageReport {
         data_dir: d.to_string_lossy().into_owned(),
         entries,
@@ -184,7 +269,12 @@ fn compute_candidates(state: &AppState) -> CommandResult<Vec<CleanupCandidate>> 
     if let Ok(entries) = std::fs::read_dir(d.join("logs")) {
         for entry in entries.flatten() {
             if older_than(&entry.path(), LOG_RETENTION_DAYS) {
-                out.push(CleanupCandidate { kind: "log_file", path: entry.path().to_string_lossy().into_owned(), bytes: entry.metadata().map(|m| m.len()).unwrap_or(0), reason: format!("older than {LOG_RETENTION_DAYS} days") });
+                out.push(CleanupCandidate {
+                    kind: "log_file",
+                    path: entry.path().to_string_lossy().into_owned(),
+                    bytes: entry.metadata().map(|m| m.len()).unwrap_or(0),
+                    reason: format!("older than {LOG_RETENTION_DAYS} days"),
+                });
             }
         }
     }
@@ -192,17 +282,40 @@ fn compute_candidates(state: &AppState) -> CommandResult<Vec<CleanupCandidate>> 
         for entry in entries.flatten() {
             let name = entry.file_name().to_string_lossy().into_owned();
             if name.contains(".bak.db") && older_than(&entry.path(), CACHE_RETENTION_DAYS) {
-                out.push(CleanupCandidate { kind: "database_backup", path: entry.path().to_string_lossy().into_owned(), bytes: entry.metadata().map(|m| m.len()).unwrap_or(0), reason: format!("pre-migration backup older than {CACHE_RETENTION_DAYS} days") });
+                out.push(CleanupCandidate {
+                    kind: "database_backup",
+                    path: entry.path().to_string_lossy().into_owned(),
+                    bytes: entry.metadata().map(|m| m.len()).unwrap_or(0),
+                    reason: format!("pre-migration backup older than {CACHE_RETENTION_DAYS} days"),
+                });
             }
         }
     }
-    let referenced = state.with_storage(|s| s.attachment_referenced_ids()).map_err(storage_error)?;
-    let attachments = state.with_storage(|s| s.attachment_list()).map_err(storage_error)?;
+    let referenced = state
+        .with_storage(|s| s.attachment_referenced_ids())
+        .map_err(storage_error)?;
+    let attachments = state
+        .with_storage(|s| s.attachment_list())
+        .map_err(storage_error)?;
     let now = now_unix_ms();
     for attachment in attachments {
         let age_days = (now - attachment.created_at).max(0) as u64 / 86_400_000;
-        if !referenced.contains(&attachment.id) && attachment.retention_state != "pinned" && age_days > CACHE_RETENTION_DAYS {
-            out.push(CleanupCandidate { kind: "attachment", path: d.join("attachments").join(&attachment.id).to_string_lossy().into_owned(), bytes: attachment.bytes.max(0) as u64, reason: format!("not referenced by any draft and older than {CACHE_RETENTION_DAYS} days") });
+        if !referenced.contains(&attachment.id)
+            && attachment.retention_state != "pinned"
+            && age_days > CACHE_RETENTION_DAYS
+        {
+            out.push(CleanupCandidate {
+                kind: "attachment",
+                path: d
+                    .join("attachments")
+                    .join(&attachment.id)
+                    .to_string_lossy()
+                    .into_owned(),
+                bytes: attachment.bytes.max(0) as u64,
+                reason: format!(
+                    "not referenced by any draft and older than {CACHE_RETENTION_DAYS} days"
+                ),
+            });
         }
     }
     Ok(out)
@@ -222,18 +335,25 @@ pub struct CleanupRunRequest {
 /// Deletes only paths that are both requested and currently listed as
 /// candidates, and only inside the app data directory.
 #[tauri::command]
-pub fn cleanup_run(request: CleanupRunRequest, state: State<'_, AppState>) -> CommandResult<Vec<CleanupCandidate>> {
+pub fn cleanup_run(
+    request: CleanupRunRequest,
+    state: State<'_, AppState>,
+) -> CommandResult<Vec<CleanupCandidate>> {
     let candidates = compute_candidates(&state)?;
-    let data_dir = std::fs::canonicalize(&state.data_dir).map_err(|e| DesktopError::io(e.to_string()))?;
+    let data_dir =
+        std::fs::canonicalize(&state.data_dir).map_err(|e| DesktopError::io(e.to_string()))?;
     let mut removed = Vec::new();
     for candidate in candidates {
         if !request.paths.contains(&candidate.path) {
             continue;
         }
         let path = PathBuf::from(&candidate.path);
-        let canonical = std::fs::canonicalize(&path).map_err(|e| DesktopError::io(e.to_string()))?;
+        let canonical =
+            std::fs::canonicalize(&path).map_err(|e| DesktopError::io(e.to_string()))?;
         if !canonical.starts_with(&data_dir) {
-            return Err(DesktopError::io("refusing to delete outside the app data directory"));
+            return Err(DesktopError::io(
+                "refusing to delete outside the app data directory",
+            ));
         }
         std::fs::remove_file(&canonical).map_err(|e| DesktopError::io(e.to_string()))?;
         if candidate.kind == "attachment"

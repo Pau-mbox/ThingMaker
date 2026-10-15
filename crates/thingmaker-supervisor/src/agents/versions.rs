@@ -141,7 +141,7 @@ pub fn channel(provider: Provider, program: &Path, prefix_args: &[String]) -> Ch
         }
         Provider::Codex => {
             let real = std::fs::canonicalize(program).unwrap_or_else(|_| program.to_path_buf());
-            let text = real.to_string_lossy();
+            let text = real.to_string_lossy().replace('\\', "/");
             if let Some(end) = text.find(".app/Contents/") {
                 let app = Path::new(&text[..end]).file_name().map(|name| name.to_string_lossy().into_owned()).unwrap_or_else(|| "its app".into());
                 return Channel::App { app };
@@ -238,10 +238,13 @@ pub fn run_capturing(mut command: Command, timeout: Duration) -> Result<(bool, S
 fn command(program: &Path, node_bin: Option<&Path>) -> Command {
     let mut env = EnvironmentProfile::trusted_local().resolve(std::env::vars());
     if let Some(bin) = node_bin {
-        let path = env.get("PATH").cloned().unwrap_or_else(|| "/usr/bin:/bin".into());
-        env.insert("PATH".into(), format!("{}:{path}", bin.display()));
+        let path = env.get("PATH").cloned().unwrap_or_default();
+        let paths = std::iter::once(bin.to_path_buf()).chain(std::env::split_paths(&path));
+        if let Ok(path) = std::env::join_paths(paths) {
+            env.insert("PATH".into(), path.to_string_lossy().into_owned());
+        }
     }
-    let mut command = Command::new(program);
+    let mut command = crate::platform::command(program);
     command.env_clear().envs(env).current_dir(std::env::temp_dir());
     command
 }
@@ -407,11 +410,25 @@ mod tests {
 
     #[test]
     fn output_is_read_while_the_program_runs_and_its_tail_kept() {
+        #[cfg(not(windows))]
         let mut command = Command::new("/bin/sh");
+        #[cfg(not(windows))]
         command.args(["-c", "i=0; while [ $i -lt 20000 ]; do echo line-$i; i=$((i+1)); done; echo done >&2"]);
+        #[cfg(windows)]
+        let mut command = crate::platform::command(std::env::var_os("COMSPEC").unwrap_or_else(|| "cmd.exe".into()));
+        #[cfg(windows)]
+        command.args(["/d", "/c", "(for /L %i in (0,1,19999) do @echo line-%i) & echo done 1>&2"]);
         let (ok, tail) = run_capturing(command, Duration::from_secs(20)).expect("ran");
         assert!(ok);
         assert!(tail.ends_with("done"), "stderr follows stdout: {}", &tail[tail.len().saturating_sub(40)..]);
         assert!(tail.len() <= OUTPUT_TAIL_BYTES + 8);
+    }
+
+    #[test]
+    fn toolchain_path_uses_the_platform_separator() {
+        let bin = std::env::temp_dir().join("toolchain with spaces");
+        let command = command(Path::new("node"), Some(&bin));
+        let (_, path) = command.get_envs().find(|(name, _)| *name == "PATH").unwrap();
+        assert_eq!(std::env::split_paths(path.unwrap()).next(), Some(bin));
     }
 }

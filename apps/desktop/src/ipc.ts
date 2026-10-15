@@ -5,7 +5,7 @@
  * There is no generic invoke passthrough: the renderer can only call the
  * commands enumerated in `@thingmaker/contracts`.
  */
-import { Channel, invoke } from "@tauri-apps/api/core";
+import { Channel, invoke } from "./bridge";
 import {
   COMMANDS,
   type ActivitySnapshot,

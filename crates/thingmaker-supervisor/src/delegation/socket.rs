@@ -18,9 +18,10 @@ use std::{
 use serde_json::{Value, json};
 use tokio::{
     io::{AsyncBufReadExt, AsyncWriteExt, BufReader as AsyncBufReader},
-    net::{UnixListener, UnixStream},
     sync::mpsc,
 };
+#[cfg(unix)]
+use tokio::net::UnixListener;
 
 use super::{jobs::Delegation, mcp};
 
@@ -37,22 +38,33 @@ const MAX_LINE: usize = 1024 * 1024;
 /// app data directory under a long home can be close; the temporary
 /// directory, which is per-user on macOS, is the fallback.
 pub fn socket_path(data_dir: &Path) -> PathBuf {
+    #[cfg(windows)]
+    {
+        let _ = data_dir;
+        PathBuf::from(format!(r"\\.\pipe\thingmaker-{}", uuid::Uuid::new_v4()))
+    }
+    #[cfg(unix)]
+    {
     let preferred = data_dir.join("mcp.sock");
     if preferred.as_os_str().len() < 100 {
         return preferred;
     }
     std::env::temp_dir().join(format!("thingmaker-{}.sock", std::process::id()))
+    }
 }
 
 /// The listening side, owned by the host for the app's lifetime.
 pub struct DelegationSocket {
     path: PathBuf,
+    task: tokio::task::JoinHandle<()>,
 }
 
 impl DelegationSocket {
     /// Binds `path` (replacing a stale socket from an earlier run) and serves
     /// connections on the current Tokio runtime.
     pub fn bind(delegation: Delegation, path: PathBuf) -> std::io::Result<Self> {
+        #[cfg(unix)]
+        {
         if path.exists() {
             std::fs::remove_file(&path)?;
         }
@@ -65,7 +77,7 @@ impl DelegationSocket {
             use std::os::unix::fs::PermissionsExt;
             std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600))?;
         }
-        tokio::spawn(async move {
+        let task = tokio::spawn(async move {
             loop {
                 match listener.accept().await {
                     Ok((stream, _)) => {
@@ -83,7 +95,36 @@ impl DelegationSocket {
                 }
             }
         });
-        Ok(Self { path })
+        Ok(Self { path, task })
+        }
+        #[cfg(windows)]
+        {
+            let mut listener = windows_pipe(&path, true)?;
+            let endpoint = path.clone();
+            let task = tokio::spawn(async move {
+                loop {
+                    if let Err(error) = listener.connect().await {
+                        tracing::warn!(%error, "ThingMaker MCP pipe stopped accepting");
+                        break;
+                    }
+                    let next = match windows_pipe(&endpoint, false) {
+                        Ok(next) => next,
+                        Err(error) => {
+                            tracing::warn!(%error, "ThingMaker MCP pipe could not create an instance");
+                            break;
+                        }
+                    };
+                    let stream = std::mem::replace(&mut listener, next);
+                    let delegation = delegation.clone();
+                    tokio::spawn(async move {
+                        if let Err(error) = serve(delegation, stream).await {
+                            tracing::debug!(%error, "ThingMaker MCP connection ended");
+                        }
+                    });
+                }
+            });
+            Ok(Self { path, task })
+        }
     }
 
     pub fn path(&self) -> &Path {
@@ -93,12 +134,15 @@ impl DelegationSocket {
 
 impl Drop for DelegationSocket {
     fn drop(&mut self) {
+        self.task.abort();
+        #[cfg(unix)]
         let _ = std::fs::remove_file(&self.path);
     }
 }
 
-async fn serve(delegation: Delegation, stream: UnixStream) -> std::io::Result<()> {
-    let (read, mut write) = stream.into_split();
+async fn serve<S>(delegation: Delegation, stream: S) -> std::io::Result<()>
+where S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send + 'static {
+    let (read, mut write) = tokio::io::split(stream);
     let mut lines = AsyncBufReader::new(read).lines();
     let Some(hello) = lines.next_line().await? else { return Ok(()) };
     let token = serde_json::from_str::<Value>(&hello).ok().and_then(|value| value.get("token").and_then(Value::as_str).map(str::to_string));
@@ -155,6 +199,7 @@ pub fn relay() -> std::io::Result<()> {
     relay_to(Path::new(&path), &token, BufReader::new(std::io::stdin()), std::io::stdout())
 }
 
+#[cfg(unix)]
 pub fn relay_to(path: &Path, token: &str, input: impl BufRead + Send + 'static, mut output: impl Write) -> std::io::Result<()> {
     let stream = std::os::unix::net::UnixStream::connect(path)?;
     let mut upstream = stream.try_clone()?;
@@ -176,6 +221,76 @@ pub fn relay_to(path: &Path, token: &str, input: impl BufRead + Send + 'static, 
         output.flush()?;
     }
     Ok(())
+}
+
+/// Windows uses an owner-only local named pipe, with the same per-session
+/// authentication as Unix. There is no TCP listener or shared socket file.
+#[cfg(windows)]
+fn windows_pipe(path: &Path, first: bool) -> std::io::Result<tokio::net::windows::named_pipe::NamedPipeServer> {
+    use windows_sys::Win32::{
+        Foundation::LocalFree,
+        Security::{Authorization::ConvertStringSecurityDescriptorToSecurityDescriptorW, SECURITY_ATTRIBUTES},
+    };
+    let sddl: Vec<u16> = "D:P(A;;GA;;;OW)\0".encode_utf16().collect();
+    let mut descriptor = std::ptr::null_mut();
+    // SAFETY: Windows allocates the descriptor; it remains alive until
+    // CreateNamedPipe has copied it, and is then released with LocalFree.
+    unsafe {
+        if ConvertStringSecurityDescriptorToSecurityDescriptorW(sddl.as_ptr(), 1, &mut descriptor, std::ptr::null_mut()) == 0 {
+            return Err(std::io::Error::last_os_error());
+        }
+        let attributes = SECURITY_ATTRIBUTES {
+            nLength: std::mem::size_of::<SECURITY_ATTRIBUTES>() as u32,
+            lpSecurityDescriptor: descriptor,
+            bInheritHandle: 0,
+        };
+        let result = tokio::net::windows::named_pipe::ServerOptions::new()
+            .first_pipe_instance(first)
+            .reject_remote_clients(true)
+            .create_with_security_attributes_raw(path, &attributes as *const _ as *mut _);
+        LocalFree(descriptor);
+        result
+    }
+}
+
+#[cfg(windows)]
+pub fn relay_to(path: &Path, token: &str, input: impl BufRead + Send + 'static, mut output: impl Write) -> std::io::Result<()> {
+    use tokio::net::windows::named_pipe::ClientOptions;
+    let runtime = tokio::runtime::Builder::new_current_thread().enable_all().build()?;
+    runtime.block_on(async move {
+        let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(5);
+        let stream = loop {
+            match ClientOptions::new().open(path) {
+                Ok(stream) => break stream,
+                Err(error) if error.raw_os_error() == Some(231) && tokio::time::Instant::now() < deadline => {
+                    tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+                }
+                Err(error) => return Err(error),
+            }
+        };
+        let (read, mut write) = tokio::io::split(stream);
+        write.write_all(format!("{}\n", json!({"token": token})).as_bytes()).await?;
+        let (tx, mut rx) = mpsc::channel::<String>(64);
+        std::thread::spawn(move || {
+            for line in input.lines() {
+                let Ok(line) = line else { break };
+                if tx.blocking_send(line).is_err() { break; }
+            }
+        });
+        let mut lines = AsyncBufReader::new(read).lines();
+        loop {
+            tokio::select! {
+                line = rx.recv() => match line {
+                    Some(line) => { write.write_all(line.as_bytes()).await?; write.write_all(b"\n").await?; }
+                    None => return Ok(()),
+                },
+                line = lines.next_line() => match line? {
+                    Some(line) => { writeln!(output, "{line}")?; output.flush()?; }
+                    None => return Ok(()),
+                }
+            }
+        }
+    })
 }
 
 /// The ACP `mcpServers` entry that starts the relay for one session.

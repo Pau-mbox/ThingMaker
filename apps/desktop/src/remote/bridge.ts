@@ -14,9 +14,8 @@ type Pending = { resolve: (value: unknown) => void; reject: (error: unknown) => 
 type ChannelSink = { onmessage?: ((message: unknown) => void) | null };
 
 declare global {
-  interface Window {
-    ThingMakerNative?: {
-      token(): string;
+  interface ThingMakerNativeBridge {
+      token?(): string;
       notify?(title: string, body: string): void;
       connectionChanged?(state: string): void;
       unpair?(): void;
@@ -28,7 +27,9 @@ declare global {
       socketOpen?(path: string): string;
       socketSend?(id: string, data: string): void;
       socketClose?(id: string): void;
-    };
+  }
+  interface Window {
+    ThingMakerNative?: ThingMakerNativeBridge;
     __thingmakerSocket?: (id: string, kind: "open" | "message" | "close", data: string) => void;
   }
 }
@@ -81,7 +82,7 @@ function openSocket(path: string): Socket {
 const TOKEN_KEY = "thingmaker.remote.token";
 
 function token(): string {
-  const native = window.ThingMakerNative?.token();
+  const native = window.ThingMakerNative?.token?.();
   if (native) return native;
   const fromHash = /token=([A-Za-z0-9_-]{20,})/.exec(window.location.hash)?.[1];
   if (fromHash) {

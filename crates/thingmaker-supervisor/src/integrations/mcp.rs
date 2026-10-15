@@ -18,12 +18,14 @@ use std::{
     collections::{BTreeMap, HashMap},
     io::{BufRead, BufReader, Write},
     path::{Path, PathBuf},
-    process::{Command, Stdio},
+    process::Stdio,
     sync::mpsc,
     time::Duration,
 };
 
 use serde::{Deserialize, Serialize};
+#[cfg(test)]
+use std::process::Command;
 use serde_json::{Map, Value, json};
 
 use crate::{agents::Provider, error::DesktopError};
@@ -575,7 +577,7 @@ const INITIALIZE: &str = r#"{"jsonrpc":"2.0","id":1,"method":"initialize","param
 pub fn probe(spec: &McpServerSpec, env: &HashMap<String, String>, cwd: &Path, timeout: Duration) -> Result<ProbeResult, String> {
     match &spec.transport {
         McpTransport::Stdio { command, args, env: own } => {
-            let mut child = Command::new(command)
+            let mut child = crate::platform::command(command)
                 .args(args.iter().map(|arg| expand(arg, env)))
                 .current_dir(cwd)
                 .env_clear()

@@ -20,7 +20,15 @@ fn store(state: &AppState) -> AttachmentStore {
 fn record(state: &AppState, snapshot: &AttachmentSnapshot) -> CommandResult<()> {
     let relative = format!("attachments/{}", snapshot.id);
     state
-        .with_storage(|s| s.attachment_upsert(&snapshot.id, &snapshot.id, &relative, &snapshot.mime, snapshot.bytes as i64))
+        .with_storage(|s| {
+            s.attachment_upsert(
+                &snapshot.id,
+                &snapshot.id,
+                &relative,
+                &snapshot.mime,
+                snapshot.bytes as i64,
+            )
+        })
         .map_err(storage_error)
 }
 
@@ -46,13 +54,20 @@ pub struct PreviewRequest {
 }
 
 #[tauri::command]
-pub fn attachment_preview(request: PreviewRequest, state: State<'_, AppState>) -> CommandResult<AttachmentPreview> {
+pub fn attachment_preview(
+    request: PreviewRequest,
+    state: State<'_, AppState>,
+) -> CommandResult<AttachmentPreview> {
     let (snapshot, bytes) = store(&state).load(&request.id)?;
     if snapshot.kind != thingmaker_supervisor::attachments::MediaKind::Image {
-        return Err(DesktopError::unsupported("only image attachments have a preview"));
+        return Err(DesktopError::unsupported(
+            "only image attachments have a preview",
+        ));
     }
     if snapshot.bytes > MAX_PREVIEW_BYTES {
-        return Err(DesktopError::limit_exceeded("attachment is too large to preview"));
+        return Err(DesktopError::limit_exceeded(
+            "attachment is too large to preview",
+        ));
     }
     Ok(AttachmentPreview {
         id: snapshot.id,
@@ -63,21 +78,31 @@ pub fn attachment_preview(request: PreviewRequest, state: State<'_, AppState>) -
 
 /// Native multi-file picker; each file is validated and snapshotted.
 #[tauri::command]
-pub async fn attachment_pick(app: AppHandle, state: State<'_, AppState>) -> CommandResult<Vec<AttachmentSnapshot>> {
+pub async fn attachment_pick(
+    app: AppHandle,
+    state: State<'_, AppState>,
+) -> CommandResult<Vec<AttachmentSnapshot>> {
     use tauri_plugin_dialog::DialogExt;
     let picked = tauri::async_runtime::spawn_blocking(move || {
         app.dialog()
             .file()
-            .add_filter("Images and audio", &["png", "jpg", "jpeg", "gif", "webp", "wav", "mp3"])
+            .add_filter(
+                "Images and audio",
+                &["png", "jpg", "jpeg", "gif", "webp", "wav", "mp3"],
+            )
             .blocking_pick_files()
     })
     .await
     .map_err(|e| DesktopError::io(e.to_string()))?;
-    let Some(paths) = picked else { return Ok(Vec::new()) };
+    let Some(paths) = picked else {
+        return Ok(Vec::new());
+    };
     let store = store(&state);
     let mut out = Vec::new();
     for path in paths {
-        let path = path.into_path().map_err(|e| DesktopError::io(e.to_string()))?;
+        let path = path
+            .into_path()
+            .map_err(|e| DesktopError::io(e.to_string()))?;
         let snapshot = store.add_path(&path)?;
         record(&state, &snapshot)?;
         out.push(snapshot);
@@ -93,7 +118,10 @@ pub struct AttachPathsRequest {
 
 /// Drag-and-drop paths from the OS. Each is read once and snapshotted.
 #[tauri::command]
-pub fn attachment_add_paths(request: AttachPathsRequest, state: State<'_, AppState>) -> CommandResult<Vec<AttachmentSnapshot>> {
+pub fn attachment_add_paths(
+    request: AttachPathsRequest,
+    state: State<'_, AppState>,
+) -> CommandResult<Vec<AttachmentSnapshot>> {
     if request.paths.len() > 8 {
         return Err(DesktopError::limit_exceeded("at most 8 files at once"));
     }
@@ -126,7 +154,10 @@ fn decode_base64(input: &str) -> Result<Vec<u8>, DesktopError> {
             _ => None,
         }
     }
-    let clean: Vec<u8> = input.bytes().filter(|b| !b.is_ascii_whitespace() && *b != b'=').collect();
+    let clean: Vec<u8> = input
+        .bytes()
+        .filter(|b| !b.is_ascii_whitespace() && *b != b'=')
+        .collect();
     let mut out = Vec::with_capacity(clean.len() * 3 / 4);
     for chunk in clean.chunks(4) {
         let mut acc: u32 = 0;
@@ -146,7 +177,10 @@ fn decode_base64(input: &str) -> Result<Vec<u8>, DesktopError> {
 }
 
 #[tauri::command]
-pub fn attachment_add_bytes(request: AttachBytesRequest, state: State<'_, AppState>) -> CommandResult<AttachmentSnapshot> {
+pub fn attachment_add_bytes(
+    request: AttachBytesRequest,
+    state: State<'_, AppState>,
+) -> CommandResult<AttachmentSnapshot> {
     if request.data_base64.len() as u64 > MAX_ATTACHMENT_BYTES * 4 / 3 + 4 {
         return Err(DesktopError::limit_exceeded("attachment exceeds 10 MiB"));
     }
@@ -174,11 +208,18 @@ pub struct FileSearchResult {
 /// Mention autocomplete over the ignore-aware tree (UX-05). Bounded walk; no
 /// content is read.
 #[tauri::command]
-pub fn workspace_search_files(request: FileSearchRequest, state: State<'_, AppState>) -> CommandResult<FileSearchResult> {
+pub fn workspace_search_files(
+    request: FileSearchRequest,
+    state: State<'_, AppState>,
+) -> CommandResult<FileSearchResult> {
     let record = state
         .with_storage(|s| s.workspace_get(&request.workspace_id))
         .map_err(storage_error)?
         .ok_or_else(|| DesktopError::not_ready("workspace not found"))?;
-    let (matches, truncated) = search_files(&PathBuf::from(record.canonical_root), &request.query, request.limit.clamp(1, 200));
+    let (matches, truncated) = search_files(
+        &PathBuf::from(record.canonical_root),
+        &request.query,
+        request.limit.clamp(1, 200),
+    );
     Ok(FileSearchResult { matches, truncated })
 }

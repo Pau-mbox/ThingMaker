@@ -70,7 +70,8 @@ pub struct AppState {
     /// Teams and jobs, and the socket agents' ThingMaker MCP children reach
     /// them on. Set once in `setup`.
     pub delegation: std::sync::OnceLock<thingmaker_supervisor::delegation::Delegation>,
-    pub delegation_socket: std::sync::OnceLock<thingmaker_supervisor::delegation::socket::DelegationSocket>,
+    pub delegation_socket:
+        std::sync::OnceLock<thingmaker_supervisor::delegation::socket::DelegationSocket>,
     /// Big Thing's engine (ADR-010). Set once in `setup`, after delegation.
     pub engine: std::sync::OnceLock<thingmaker_supervisor::bigthing::Engine>,
     /// The model each live attachment was opened on, when one was asked for.
@@ -90,7 +91,9 @@ impl AppState {
             agent_session_ids: Mutex::new(HashMap::new()),
             actor_roots: Mutex::new(HashMap::new()),
             auth_runs: Arc::new(Mutex::new(HashMap::new())),
-            home: std::env::var_os("HOME").map(PathBuf::from),
+            home: std::env::var_os("HOME")
+                .or_else(|| std::env::var_os("USERPROFILE"))
+                .map(PathBuf::from),
             terminals: TerminalManager::new(),
             terminal_workspaces: Mutex::new(HashMap::new()),
             data_dir: data_dir.to_path_buf(),
@@ -103,7 +106,10 @@ impl AppState {
     }
 
     pub fn with_storage<T>(&self, f: impl FnOnce(&Storage) -> T) -> T {
-        let guard = self.storage.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+        let guard = self
+            .storage
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
         f(&guard)
     }
 
@@ -149,7 +155,10 @@ impl AppState {
 
     /// Remembers the model an attachment was opened on.
     pub fn set_actor_model(&self, id: &str, model: Option<&str>) {
-        let mut models = self.actor_models.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+        let mut models = self
+            .actor_models
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
         match model {
             Some(model) => {
                 models.insert(id.to_string(), model.to_string());
@@ -161,7 +170,11 @@ impl AppState {
     }
 
     pub fn actor_model(&self, id: &str) -> Option<String> {
-        self.actor_models.lock().unwrap_or_else(|poisoned| poisoned.into_inner()).get(id).cloned()
+        self.actor_models
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .get(id)
+            .cloned()
     }
 
     pub fn remove_actor(&self, id: &str) -> Option<SessionActor> {
@@ -224,9 +237,14 @@ impl AppState {
 impl AppState {
     /// The explicit location chosen in Settings for a provider, if any.
     pub fn provider_location(&self, provider: Provider) -> Option<ProviderLocation> {
-        self.with_storage(|s| s.setting_get::<ProviderLocation>(PROVIDER_LOCATION_KEY, &format!("provider:{}", provider.as_str())))
-            .ok()
-            .flatten()
+        self.with_storage(|s| {
+            s.setting_get::<ProviderLocation>(
+                PROVIDER_LOCATION_KEY,
+                &format!("provider:{}", provider.as_str()),
+            )
+        })
+        .ok()
+        .flatten()
     }
 
     /// Finds a provider's program. Resolved each time it is needed rather
@@ -237,7 +255,9 @@ impl AppState {
         let home = self.home.clone().unwrap_or_default();
         match provider {
             Provider::Claude => {
-                let chosen = configured.as_ref().and_then(|location| Some((location.program.clone(), location.script.clone()?)));
+                let chosen = configured.as_ref().and_then(|location| {
+                    Some((location.program.clone(), location.script.clone()?))
+                });
                 let source = if chosen.is_some() {
                     "settings"
                 } else if std::env::var_os(claude::launch::ADAPTER_ENV).is_some() {
@@ -245,7 +265,11 @@ impl AppState {
                 } else {
                     "discovered"
                 };
-                let (node, script) = claude::launch::locate_adapter(&home, chosen, std::env::var(claude::launch::ADAPTER_ENV).ok())?;
+                let (node, script) = claude::launch::locate_adapter(
+                    &home,
+                    chosen,
+                    std::env::var(claude::launch::ADAPTER_ENV).ok(),
+                )?;
                 Ok(ResolvedProvider {
                     provider,
                     program: node,
@@ -255,31 +279,67 @@ impl AppState {
             }
             Provider::Codex => {
                 if let Some(location) = configured {
-                    return Ok(ResolvedProvider { provider, program: location.program, prefix_args: Vec::new(), source: "settings" });
+                    return Ok(ResolvedProvider {
+                        provider,
+                        program: location.program,
+                        prefix_args: Vec::new(),
+                        source: "settings",
+                    });
                 }
-                if let Some(path) = std::env::var_os("THINGMAKER_CODEX").map(PathBuf::from).filter(|path| path.is_file()) {
-                    return Ok(ResolvedProvider { provider, program: path, prefix_args: Vec::new(), source: "environment" });
+                if let Some(path) = std::env::var_os("THINGMAKER_CODEX")
+                    .map(PathBuf::from)
+                    .filter(|path| path.is_file())
+                {
+                    return Ok(ResolvedProvider {
+                        provider,
+                        program: path,
+                        prefix_args: Vec::new(),
+                        source: "environment",
+                    });
                 }
                 let program = find_codex(&home).ok_or_else(|| {
                     DesktopError::not_ready(
                         "Codex is not installed. Install the Codex CLI (`npm install -g @openai/codex`) or the ChatGPT app, or choose the `codex` binary in Settings.",
                     )
                 })?;
-                Ok(ResolvedProvider { provider, program, prefix_args: Vec::new(), source: "discovered" })
+                Ok(ResolvedProvider {
+                    provider,
+                    program,
+                    prefix_args: Vec::new(),
+                    source: "discovered",
+                })
             }
             Provider::Gemini => {
                 if let Some(location) = configured {
-                    return Ok(ResolvedProvider { provider, program: location.program, prefix_args: Vec::new(), source: "settings" });
+                    return Ok(ResolvedProvider {
+                        provider,
+                        program: location.program,
+                        prefix_args: Vec::new(),
+                        source: "settings",
+                    });
                 }
-                if let Some(path) = std::env::var_os(gemini::launch::PROGRAM_ENV).map(PathBuf::from).filter(|path| path.is_file()) {
-                    return Ok(ResolvedProvider { provider, program: path, prefix_args: Vec::new(), source: "environment" });
+                if let Some(path) = std::env::var_os(gemini::launch::PROGRAM_ENV)
+                    .map(PathBuf::from)
+                    .filter(|path| path.is_file())
+                {
+                    return Ok(ResolvedProvider {
+                        provider,
+                        program: path,
+                        prefix_args: Vec::new(),
+                        source: "environment",
+                    });
                 }
                 let program = gemini::launch::find_program(&home).ok_or_else(|| {
                     DesktopError::not_ready(
                         "Antigravity CLI (agy) is not installed. Install it with `curl -fsSL https://antigravity.google/cli/install.sh | bash`, or choose the `agy` binary in Settings.",
                     )
                 })?;
-                Ok(ResolvedProvider { provider, program, prefix_args: Vec::new(), source: "discovered" })
+                Ok(ResolvedProvider {
+                    provider,
+                    program,
+                    prefix_args: Vec::new(),
+                    source: "discovered",
+                })
             }
         }
     }
@@ -291,7 +351,9 @@ impl AppState {
 fn find_codex(home: &Path) -> Option<PathBuf> {
     let name = if cfg!(windows) { "codex.exe" } else { "codex" };
     let path_var = std::env::var_os("PATH").unwrap_or_default();
-    let mut candidates: Vec<PathBuf> = std::env::split_paths(&path_var).map(|dir| dir.join(name)).collect();
+    let mut candidates: Vec<PathBuf> = std::env::split_paths(&path_var)
+        .map(|dir| dir.join(name))
+        .collect();
     let mut nvm: Vec<PathBuf> = std::fs::read_dir(home.join(".nvm/versions/node"))
         .into_iter()
         .flatten()
@@ -301,6 +363,27 @@ fn find_codex(home: &Path) -> Option<PathBuf> {
     nvm.sort();
     nvm.reverse();
     candidates.extend(nvm);
+    #[cfg(windows)]
+    {
+        // The Codex desktop installer keeps versioned native binaries here.
+        let base = home.join("AppData/Local/OpenAI/Codex/bin");
+        let mut bundled: Vec<_> = std::fs::read_dir(base)
+            .into_iter()
+            .flatten()
+            .flatten()
+            .map(|entry| entry.path().join(name))
+            .collect();
+        bundled.sort_by_key(|path| std::fs::metadata(path).and_then(|m| m.modified()).ok());
+        candidates.extend(bundled.into_iter().rev());
+        for dir in std::env::split_paths(&path_var).chain([home.join("AppData/Roaming/npm")]) {
+            candidates.push(
+                dir.join(
+                    "node_modules/@openai/codex/vendor/x86_64-pc-windows-msvc/codex/codex.exe",
+                ),
+            );
+            candidates.push(dir.join("node_modules/@openai/codex/node_modules/@openai/codex-win32-x64/vendor/x86_64-pc-windows-msvc/codex/codex.exe"));
+        }
+    }
     candidates.extend([
         PathBuf::from("/opt/homebrew/bin").join(name),
         PathBuf::from("/usr/local/bin").join(name),
@@ -317,7 +400,10 @@ pub struct StorageHandle(Arc<Mutex<Storage>>);
 
 impl StorageHandle {
     pub fn with_storage<T>(&self, f: impl FnOnce(&Storage) -> T) -> T {
-        let guard = self.0.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+        let guard = self
+            .0
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
         f(&guard)
     }
 }

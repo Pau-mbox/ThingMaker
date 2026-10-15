@@ -13,13 +13,16 @@ use tauri::{AppHandle, Emitter, Manager, State};
 use thingmaker_supervisor::{
     DesktopError,
     agents::{Provider, events::QuotaSnapshot},
+    bigthing::{
+        Engine, EngineEvent, EngineHost, LiveSession, MoveTarget, OpenSpec, RuntimeView,
+        TICK_INTERVAL, worktree::RunCommit,
+    },
     delegation::jobs::BoxFuture,
     review::git::MergeOutcome,
     storage::{
         memory::{MemoryEntry, MemoryWrite},
         odyssey::NewAmendment,
     },
-    bigthing::{Engine, EngineEvent, EngineHost, LiveSession, MoveTarget, OpenSpec, RuntimeView, TICK_INTERVAL, worktree::RunCommit},
 };
 
 use super::{CommandResult, storage_error};
@@ -31,7 +34,12 @@ pub const BIGTHING_EVENT: &str = "thingmaker://bigthing";
 pub fn start(app: &AppHandle) {
     let state = app.state::<AppState>();
     let host = std::sync::Arc::new(HostEngine { app: app.clone() });
-    let engine = Engine::new(state.storage.clone(), host, state.delegation.get().cloned(), state.data_dir.clone());
+    let engine = Engine::new(
+        state.storage.clone(),
+        host,
+        state.delegation.get().cloned(),
+        state.data_dir.clone(),
+    );
     if let Some(delegation) = state.delegation.get() {
         delegation.add_extension(std::sync::Arc::new(engine.clone()));
     }
@@ -51,20 +59,45 @@ impl HostEngine {
     fn live_by(&self, handle: &str) -> Option<LiveSession> {
         let state = self.state();
         let actor = state.actor(handle)?;
-        let root = state.actor_entries().into_iter().find(|(id, _)| id == handle).map(|(_, root)| root)?;
+        let root = state
+            .actor_entries()
+            .into_iter()
+            .find(|(id, _)| id == handle)
+            .map(|(_, root)| root)?;
         let agent_session_id = state.agent_session_id(handle);
-        let workspace = state.with_storage(|s| s.workspace_by_root(&root.to_string_lossy())).ok().flatten()?;
-        let row = state.with_storage(|s| s.session_by_agent_id(&workspace.id, &agent_session_id)).ok().flatten()?;
+        let workspace = state
+            .with_storage(|s| s.workspace_by_root(&root.to_string_lossy()))
+            .ok()
+            .flatten()?;
+        let row = state
+            .with_storage(|s| s.session_by_agent_id(&workspace.id, &agent_session_id))
+            .ok()
+            .flatten()?;
         let model = state.actor_model(handle);
-        Some(LiveSession { actor, handle: handle.to_string(), agent_session_id, row_id: row.id, workspace_id: workspace.id, provider: row.provider, root, model })
+        Some(LiveSession {
+            actor,
+            handle: handle.to_string(),
+            agent_session_id,
+            row_id: row.id,
+            workspace_id: workspace.id,
+            provider: row.provider,
+            root,
+            model,
+        })
     }
 }
 
 impl EngineHost for HostEngine {
     fn live(&self, row_id: &str) -> Option<LiveSession> {
         let state = self.state();
-        let row = state.with_storage(|s| s.session_get(row_id)).ok().flatten()?;
-        let handle = state.actor_ids().into_iter().find(|id| state.agent_session_id(id) == row.agent_session_id)?;
+        let row = state
+            .with_storage(|s| s.session_get(row_id))
+            .ok()
+            .flatten()?;
+        let handle = state
+            .actor_ids()
+            .into_iter()
+            .find(|id| state.agent_session_id(id) == row.agent_session_id)?;
         self.live_by(&handle)
     }
 
@@ -80,9 +113,17 @@ impl EngineHost for HostEngine {
                 Some(session_id) => super::session::OpenRequestMode::Resume { session_id },
                 None => super::session::OpenRequestMode::New,
             };
-            let request = super::session::OpenRequest { workspace_id: spec.workspace_id, mode, provider: Some(spec.provider), model: spec.model, reasoning_effort: spec.effort, combo: spec.combo };
+            let request = super::session::OpenRequest {
+                workspace_id: spec.workspace_id,
+                mode,
+                provider: Some(spec.provider),
+                model: spec.model,
+                reasoning_effort: spec.effort,
+                combo: spec.combo,
+            };
             let opened = super::session::session_open(request, app.state::<AppState>()).await?;
-            host.live_by(&opened.handle.id).ok_or_else(|| DesktopError::not_ready("the session opened but is not attached"))
+            host.live_by(&opened.handle.id)
+                .ok_or_else(|| DesktopError::not_ready("the session opened but is not attached"))
         })
     }
 
@@ -92,12 +133,17 @@ impl EngineHost for HostEngine {
             if provider == Provider::Gemini {
                 return None;
             }
-            super::providers::provider_quota(provider, app.state::<AppState>()).await.ok()
+            super::providers::provider_quota(provider, app.state::<AppState>())
+                .await
+                .ok()
         })
     }
 
     fn session_tokens(&self, session: &LiveSession) -> Option<i64> {
-        let request = super::session::TokenUsageRequest { workspace_id: session.workspace_id.clone(), agent_session_id: session.agent_session_id.clone() };
+        let request = super::session::TokenUsageRequest {
+            workspace_id: session.workspace_id.clone(),
+            agent_session_id: session.agent_session_id.clone(),
+        };
         let usage = super::session::session_token_usage(request, self.state()).ok()?;
         Some((usage.totals.paid_input_tokens + usage.totals.output_tokens) as i64)
     }
@@ -108,13 +154,22 @@ impl EngineHost for HostEngine {
 
     fn install_delegate(&self, root: &Path) -> bool {
         let state = self.state();
-        let Some(workspace) = state.with_storage(|s| s.workspace_by_root(&root.to_string_lossy())).ok().flatten() else { return false };
+        let Some(workspace) = state
+            .with_storage(|s| s.workspace_by_root(&root.to_string_lossy()))
+            .ok()
+            .flatten()
+        else {
+            return false;
+        };
         super::odyssey::odyssey_install_delegate(workspace.id, state).is_ok()
     }
 
     fn usable_providers(&self) -> Vec<Provider> {
         let state = self.state();
-        Provider::ALL.into_iter().filter(|provider| state.resolve_provider(*provider).is_ok()).collect()
+        Provider::ALL
+            .into_iter()
+            .filter(|provider| state.resolve_provider(*provider).is_ok())
+            .collect()
     }
 
     fn emit(&self, event: EngineEvent) {
@@ -123,7 +178,11 @@ impl EngineHost for HostEngine {
 }
 
 fn engine(state: &AppState) -> CommandResult<Engine> {
-    state.engine.get().cloned().ok_or_else(|| DesktopError::not_ready("Big Thing's engine did not start"))
+    state
+        .engine
+        .get()
+        .cloned()
+        .ok_or_else(|| DesktopError::not_ready("Big Thing's engine did not start"))
 }
 
 #[tauri::command]
@@ -132,7 +191,11 @@ pub async fn bigthing_start(goal_id: String, state: State<'_, AppState>) -> Comm
 }
 
 #[tauri::command]
-pub async fn bigthing_pause(goal_id: String, reason: Option<String>, state: State<'_, AppState>) -> CommandResult<()> {
+pub async fn bigthing_pause(
+    goal_id: String,
+    reason: Option<String>,
+    state: State<'_, AppState>,
+) -> CommandResult<()> {
     engine(&state)?.pause(&goal_id, reason.as_deref()).await
 }
 
@@ -152,7 +215,9 @@ pub struct MoveRequest {
 
 #[tauri::command]
 pub async fn bigthing_move(request: MoveRequest, state: State<'_, AppState>) -> CommandResult<()> {
-    engine(&state)?.move_goal(&request.goal_id, request.target).await
+    engine(&state)?
+        .move_goal(&request.goal_id, request.target)
+        .await
 }
 
 #[derive(Debug, Deserialize)]
@@ -163,22 +228,38 @@ pub struct MilestoneRequest {
 }
 
 #[tauri::command]
-pub async fn bigthing_verify(request: MilestoneRequest, state: State<'_, AppState>) -> CommandResult<()> {
-    engine(&state)?.verify(&request.goal_id, &request.milestone_id).await
+pub async fn bigthing_verify(
+    request: MilestoneRequest,
+    state: State<'_, AppState>,
+) -> CommandResult<()> {
+    engine(&state)?
+        .verify(&request.goal_id, &request.milestone_id)
+        .await
 }
 
 #[tauri::command]
-pub async fn bigthing_run_check(request: MilestoneRequest, state: State<'_, AppState>) -> CommandResult<()> {
-    engine(&state)?.run_check(&request.goal_id, &request.milestone_id).await
+pub async fn bigthing_run_check(
+    request: MilestoneRequest,
+    state: State<'_, AppState>,
+) -> CommandResult<()> {
+    engine(&state)?
+        .run_check(&request.goal_id, &request.milestone_id)
+        .await
 }
 
 #[tauri::command]
-pub async fn bigthing_request_plan(goal_id: String, state: State<'_, AppState>) -> CommandResult<()> {
+pub async fn bigthing_request_plan(
+    goal_id: String,
+    state: State<'_, AppState>,
+) -> CommandResult<()> {
     engine(&state)?.request_plan(&goal_id).await
 }
 
 #[tauri::command]
-pub async fn bigthing_amend(request: NewAmendment, state: State<'_, AppState>) -> CommandResult<()> {
+pub async fn bigthing_amend(
+    request: NewAmendment,
+    state: State<'_, AppState>,
+) -> CommandResult<()> {
     engine(&state)?.add_amendment(request).await
 }
 
@@ -193,8 +274,18 @@ pub struct PlanChangeDecision {
 }
 
 #[tauri::command]
-pub async fn bigthing_decide_plan_change(request: PlanChangeDecision, state: State<'_, AppState>) -> CommandResult<()> {
-    engine(&state)?.decide_plan_change(&request.goal_id, &request.id, request.apply, request.note.as_deref()).await
+pub async fn bigthing_decide_plan_change(
+    request: PlanChangeDecision,
+    state: State<'_, AppState>,
+) -> CommandResult<()> {
+    engine(&state)?
+        .decide_plan_change(
+            &request.goal_id,
+            &request.id,
+            request.apply,
+            request.note.as_deref(),
+        )
+        .await
 }
 
 #[derive(Debug, Deserialize)]
@@ -207,8 +298,13 @@ pub struct AnswerRequest {
 }
 
 #[tauri::command]
-pub async fn bigthing_answer(request: AnswerRequest, state: State<'_, AppState>) -> CommandResult<()> {
-    engine(&state)?.answer_question(&request.goal_id, &request.id, request.answer.as_deref()).await
+pub async fn bigthing_answer(
+    request: AnswerRequest,
+    state: State<'_, AppState>,
+) -> CommandResult<()> {
+    engine(&state)?
+        .answer_question(&request.goal_id, &request.id, request.answer.as_deref())
+        .await
 }
 
 #[tauri::command]
@@ -217,12 +313,18 @@ pub fn bigthing_runtime(goal_id: String, state: State<'_, AppState>) -> CommandR
 }
 
 #[tauri::command]
-pub async fn bigthing_briefing(goal_id: String, state: State<'_, AppState>) -> CommandResult<String> {
+pub async fn bigthing_briefing(
+    goal_id: String,
+    state: State<'_, AppState>,
+) -> CommandResult<String> {
     engine(&state)?.briefing_preview(&goal_id).await
 }
 
 #[tauri::command]
-pub fn bigthing_commits(goal_id: String, state: State<'_, AppState>) -> CommandResult<Vec<RunCommit>> {
+pub fn bigthing_commits(
+    goal_id: String,
+    state: State<'_, AppState>,
+) -> CommandResult<Vec<RunCommit>> {
     engine(&state)?.run_commits(&goal_id)
 }
 
@@ -234,12 +336,20 @@ pub struct RollbackRequest {
 }
 
 #[tauri::command]
-pub async fn bigthing_rollback(request: RollbackRequest, state: State<'_, AppState>) -> CommandResult<()> {
-    engine(&state)?.rollback(&request.goal_id, &request.commit).await
+pub async fn bigthing_rollback(
+    request: RollbackRequest,
+    state: State<'_, AppState>,
+) -> CommandResult<()> {
+    engine(&state)?
+        .rollback(&request.goal_id, &request.commit)
+        .await
 }
 
 #[tauri::command]
-pub async fn bigthing_merge(goal_id: String, state: State<'_, AppState>) -> CommandResult<MergeOutcome> {
+pub async fn bigthing_merge(
+    goal_id: String,
+    state: State<'_, AppState>,
+) -> CommandResult<MergeOutcome> {
     engine(&state)?.merge_run(&goal_id).await
 }
 
@@ -253,8 +363,13 @@ pub struct MemoryListRequest {
 
 /// The project's shared memory, for the screen.
 #[tauri::command]
-pub fn memory_list(request: MemoryListRequest, state: State<'_, AppState>) -> CommandResult<Vec<MemoryEntry>> {
-    state.with_storage(|s| s.memory_list(&request.workspace_id, request.query.as_deref())).map_err(storage_error)
+pub fn memory_list(
+    request: MemoryListRequest,
+    state: State<'_, AppState>,
+) -> CommandResult<Vec<MemoryEntry>> {
+    state
+        .with_storage(|s| s.memory_list(&request.workspace_id, request.query.as_deref()))
+        .map_err(storage_error)
 }
 
 #[derive(Debug, Deserialize)]
@@ -265,11 +380,18 @@ pub struct MemoryWriteRequest {
 }
 
 #[tauri::command]
-pub fn memory_write(request: MemoryWriteRequest, state: State<'_, AppState>) -> CommandResult<MemoryEntry> {
-    state.with_storage(|s| s.memory_write(&request.workspace_id, &request.entry, "user", None)).map_err(storage_error)
+pub fn memory_write(
+    request: MemoryWriteRequest,
+    state: State<'_, AppState>,
+) -> CommandResult<MemoryEntry> {
+    state
+        .with_storage(|s| s.memory_write(&request.workspace_id, &request.entry, "user", None))
+        .map_err(storage_error)
 }
 
 #[tauri::command]
 pub fn memory_delete(id: String, state: State<'_, AppState>) -> CommandResult<()> {
-    state.with_storage(|s| s.memory_delete(&id)).map_err(storage_error)
+    state
+        .with_storage(|s| s.memory_delete(&id))
+        .map_err(storage_error)
 }

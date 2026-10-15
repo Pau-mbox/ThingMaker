@@ -1,3 +1,12 @@
 packages:
   - apps/*
   - packages/*
+
+# Native tools required by the relay's pinned Wrangler dependency.
+onlyBuiltDependencies:
+  - esbuild
+  - workerd
+# pnpm 11+ uses the equivalent explicit map.
+allowBuilds:
+  esbuild: true
+  workerd: true

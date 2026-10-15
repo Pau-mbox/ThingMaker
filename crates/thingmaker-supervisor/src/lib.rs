@@ -39,6 +39,7 @@ pub mod c2pa;
 pub mod delegation;
 pub mod error;
 pub mod ids;
+pub mod platform;
 pub mod integrations;
 pub mod acp;
 pub mod agents;

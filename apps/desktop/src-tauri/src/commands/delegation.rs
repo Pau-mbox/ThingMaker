@@ -49,14 +49,21 @@ pub fn start(app: &AppHandle) -> Result<(), String> {
     let delegation = Delegation::new(launcher, move |job: &JobView| {
         let _ = emitter.emit(JOB_EVENT, job);
         // Big Thing follows the jobs it gave out, and the tasks they are named after.
-        if let Some(engine) = emitter.try_state::<AppState>().and_then(|state| state.engine.get().cloned()) {
+        if let Some(engine) = emitter
+            .try_state::<AppState>()
+            .and_then(|state| state.engine.get().cloned())
+        {
             engine.note_job(job);
         }
     });
     let path = socket_path(&state.data_dir);
-    let socket = tauri::async_runtime::block_on(async { DelegationSocket::bind(delegation.clone(), path) }).map_err(|error| format!("could not open the ThingMaker MCP socket: {error}"))?;
+    let socket =
+        tauri::async_runtime::block_on(async { DelegationSocket::bind(delegation.clone(), path) })
+            .map_err(|error| format!("could not open the ThingMaker MCP socket: {error}"))?;
     tracing::info!(path = %socket.path().display(), "ThingMaker MCP socket listening");
-    if let Ok(Some(policy)) = state.with_storage(|s| s.setting_get::<RetryPolicy>(RETRY_KEY, GLOBAL_SCOPE)) {
+    if let Ok(Some(policy)) =
+        state.with_storage(|s| s.setting_get::<RetryPolicy>(RETRY_KEY, GLOBAL_SCOPE))
+    {
         delegation.set_retry_policy(policy);
     }
     let _ = state.delegation.set(delegation);
@@ -67,7 +74,9 @@ pub fn start(app: &AppHandle) -> Result<(), String> {
 /// The program an agent starts as its ThingMaker MCP server: this executable,
 /// which relays instead of opening a window when given [`RELAY_ARG`].
 fn relay_program() -> Option<PathBuf> {
-    std::env::var_os("THINGMAKER_MCP_PROGRAM").map(PathBuf::from).or_else(|| std::env::current_exe().ok())
+    std::env::var_os("THINGMAKER_MCP_PROGRAM")
+        .map(PathBuf::from)
+        .or_else(|| std::env::current_exe().ok())
 }
 
 /// The team a session starts with: the one asked for, else the one it had
@@ -76,9 +85,19 @@ pub fn starting_combo(state: &AppState, requested: Option<Combo>, row_id: Option
     if let Some(combo) = requested {
         return combo.normalized();
     }
-    let stored = row_id.and_then(|id| state.with_storage(|s| s.setting_get::<Combo>(COMBO_KEY, &session_scope(id))).ok().flatten());
+    let stored = row_id.and_then(|id| {
+        state
+            .with_storage(|s| s.setting_get::<Combo>(COMBO_KEY, &session_scope(id)))
+            .ok()
+            .flatten()
+    });
     stored
-        .or_else(|| state.with_storage(|s| s.setting_get::<Combo>(COMBO_KEY, GLOBAL_SCOPE)).ok().flatten())
+        .or_else(|| {
+            state
+                .with_storage(|s| s.setting_get::<Combo>(COMBO_KEY, GLOBAL_SCOPE))
+                .ok()
+                .flatten()
+        })
         .unwrap_or_default()
         .normalized()
 }
@@ -86,17 +105,33 @@ pub fn starting_combo(state: &AppState, requested: Option<Combo>, row_id: Option
 /// Makes the attachment about to open an orchestrator: registers it, hands
 /// it the ThingMaker MCP server, and tells it about its team. Without the
 /// service (it failed to start) the session opens as a plain one.
-pub fn prepare_orchestrator(state: &AppState, key: &str, root: PathBuf, combo: &Combo, launch: &mut AgentLaunch, config: &mut SessionActorConfig) {
+pub fn prepare_orchestrator(
+    state: &AppState,
+    key: &str,
+    root: PathBuf,
+    combo: &Combo,
+    launch: &mut AgentLaunch,
+    config: &mut SessionActorConfig,
+) {
     // A provider that cannot take the session's own MCP server cannot lead
     // a team: it opens as a plain session.
     if !launch.provider().can_orchestrate() {
         return;
     }
-    let (Some(delegation), Some(socket), Some(program)) = (state.delegation.get(), state.delegation_socket.get(), relay_program()) else {
+    let (Some(delegation), Some(socket), Some(program)) = (
+        state.delegation.get(),
+        state.delegation_socket.get(),
+        relay_program(),
+    ) else {
         return;
     };
     let token = delegation.register(key, launch.provider(), root, combo.clone());
-    config.mcp_servers = vec![server_entry(&program, &[RELAY_ARG.to_string()], socket.path(), &token)];
+    config.mcp_servers = vec![server_entry(
+        &program,
+        &[RELAY_ARG.to_string()],
+        socket.path(),
+        &token,
+    )];
     let withheld = combo.withholds_native_subagents();
     let guidance = orchestrator_guidance(withheld);
     match launch {
@@ -105,11 +140,17 @@ pub fn prepare_orchestrator(state: &AppState, key: &str, root: PathBuf, combo: &
                 options.disallowed_tools = vec!["Agent".into(), "Task".into()];
             }
             options.append_system_prompt = Some(guidance);
-            config.environment = config.environment.clone().with_set("MCP_TOOL_TIMEOUT", CLAUDE_MCP_TOOL_TIMEOUT_MS);
+            config.environment = config
+                .environment
+                .clone()
+                .with_set("MCP_TOOL_TIMEOUT", CLAUDE_MCP_TOOL_TIMEOUT_MS);
         }
         AgentLaunch::Codex(options) => {
             if withheld {
-                options.config.insert(thingmaker_supervisor::agents::codex::launch::MULTI_AGENT_FEATURE.into(), serde_json::Value::Bool(false));
+                options.config.insert(
+                    thingmaker_supervisor::agents::codex::launch::MULTI_AGENT_FEATURE.into(),
+                    serde_json::Value::Bool(false),
+                );
             }
             options.developer_instructions = Some(guidance);
         }
@@ -119,7 +160,9 @@ pub fn prepare_orchestrator(state: &AppState, key: &str, root: PathBuf, combo: &
 
 /// After the orchestrator is open: its quota reports feed the router.
 pub fn watch_orchestrator(state: &AppState, actor: &SessionActor) {
-    let Some(delegation) = state.delegation.get().cloned() else { return };
+    let Some(delegation) = state.delegation.get().cloned() else {
+        return;
+    };
     let mut subscription = actor.subscribe();
     tauri::async_runtime::spawn(async move {
         while let Some(event) = subscription.recv().await {
@@ -155,32 +198,69 @@ impl WorkerLauncher for HostLauncher {
                 .ok_or_else(|| DesktopError::not_ready("the orchestrator's workspace is gone"))?;
             let record = super::workspace::ensure_trusted(&state, record)?;
             let reserved = SessionId::reserve();
-            let (target, launch) = super::session::build_launch(&state, &record, spec.slot.provider, spec.slot.model.clone(), spec.slot.effort.clone(), None, reserved.clone())?;
+            let (target, launch) = super::session::build_launch(
+                &state,
+                &record,
+                spec.slot.provider,
+                spec.slot.model.clone(),
+                spec.slot.effort.clone(),
+                None,
+                reserved.clone(),
+            )?;
             let mut config = SessionActorConfig::new(target, launch);
             config.environment = super::session::launch_environment(&state);
             // The worker's own reduced team server: the project memory and the
             // run's board (ADR-010). A provider that cannot load one goes without.
-            if let (Some(token), Some(socket), Some(program)) = (spec.mcp_token.as_deref(), state.delegation_socket.get(), relay_program())
-                && spec.slot.provider.can_orchestrate()
+            if let (Some(token), Some(socket), Some(program)) = (
+                spec.mcp_token.as_deref(),
+                state.delegation_socket.get(),
+                relay_program(),
+            ) && spec.slot.provider.can_orchestrate()
             {
-                config.mcp_servers = vec![server_entry(&program, &[RELAY_ARG.to_string()], socket.path(), token)];
+                config.mcp_servers = vec![server_entry(
+                    &program,
+                    &[RELAY_ARG.to_string()],
+                    socket.path(),
+                    token,
+                )];
                 if spec.slot.provider == Provider::Claude {
-                    config.environment = config.environment.clone().with_set("MCP_TOOL_TIMEOUT", CLAUDE_MCP_TOOL_TIMEOUT_MS);
+                    config.environment = config
+                        .environment
+                        .clone()
+                        .with_set("MCP_TOOL_TIMEOUT", CLAUDE_MCP_TOOL_TIMEOUT_MS);
                 }
             }
             let actor = SessionActor::open(config).await?;
             let snapshot = actor.snapshot().await?;
-            let recorded = snapshot.agent_session_id.clone().unwrap_or_else(|| reserved.as_str().to_string());
+            let recorded = snapshot
+                .agent_session_id
+                .clone()
+                .unwrap_or_else(|| reserved.as_str().to_string());
             let row = state
-                .with_storage(|s| s.session_upsert(&record.id, &recorded, SessionOrigin::Desktop, spec.slot.provider))
+                .with_storage(|s| {
+                    s.session_upsert(
+                        &record.id,
+                        &recorded,
+                        SessionOrigin::Desktop,
+                        spec.slot.provider,
+                    )
+                })
                 .map_err(storage_error)?;
             let parent_agent_id = state.agent_session_id(&spec.orchestrator);
-            let parent = state.with_storage(|s| s.session_by_agent_id(&record.id, &parent_agent_id)).ok().flatten();
+            let parent = state
+                .with_storage(|s| s.session_by_agent_id(&record.id, &parent_agent_id))
+                .ok()
+                .flatten();
             let _ = state.with_storage(|s| {
                 s.session_set_parent(&row.id, parent.as_ref().map(|parent| parent.id.as_str()))?;
                 s.session_set_title_overlay(&row.id, Some(&spec.title))
             });
-            state.insert_actor(actor.handle().id.clone(), recorded, actor.clone(), spec.root.clone());
+            state.insert_actor(
+                actor.handle().id.clone(),
+                recorded,
+                actor.clone(),
+                spec.root.clone(),
+            );
             state.set_actor_model(&actor.handle().id, spec.slot.model.as_deref());
             Ok(actor)
         })
@@ -191,12 +271,23 @@ impl WorkerLauncher for HostLauncher {
             // A closed worker's session is archived: its job is over, and the
             // sidebar keeps it under Archived rather than among live work.
             let agent_session_id = state.agent_session_id(worker_handle);
-            let root = state.actor_entries().into_iter().find(|(id, _)| id == worker_handle).map(|(_, root)| root);
+            let root = state
+                .actor_entries()
+                .into_iter()
+                .find(|(id, _)| id == worker_handle)
+                .map(|(_, root)| root);
             if let Some(root) = root
-                && let Ok(Some(workspace)) = state.with_storage(|s| s.workspace_by_root(&root.to_string_lossy()))
-                && let Ok(Some(row)) = state.with_storage(|s| s.session_by_agent_id(&workspace.id, &agent_session_id))
+                && let Ok(Some(workspace)) =
+                    state.with_storage(|s| s.workspace_by_root(&root.to_string_lossy()))
+                && let Ok(Some(row)) =
+                    state.with_storage(|s| s.session_by_agent_id(&workspace.id, &agent_session_id))
             {
-                let _ = state.with_storage(|s| s.session_set_archive(&row.id, thingmaker_supervisor::storage::workspaces::ArchiveState::Archived));
+                let _ = state.with_storage(|s| {
+                    s.session_set_archive(
+                        &row.id,
+                        thingmaker_supervisor::storage::workspaces::ArchiveState::Archived,
+                    )
+                });
             }
             state.remove_actor(worker_handle);
         }
@@ -204,20 +295,35 @@ impl WorkerLauncher for HostLauncher {
 }
 
 fn delegation(state: &AppState) -> CommandResult<&Delegation> {
-    state.delegation.get().ok_or_else(|| DesktopError::not_ready("delegation is not available: the team socket did not start"))
+    state.delegation.get().ok_or_else(|| {
+        DesktopError::not_ready("delegation is not available: the team socket did not start")
+    })
 }
 
 /// The desktop row of a live attachment, for persisting its team.
 fn row_id(state: &AppState, handle: &SessionHandle) -> Option<String> {
     let agent_id = state.agent_session_id(&handle.id);
-    let (_, root) = state.actor_entries().into_iter().find(|(id, _)| *id == handle.id)?;
-    let workspace = state.with_storage(|s| s.workspace_by_root(&root.to_string_lossy())).ok().flatten()?;
-    state.with_storage(|s| s.session_by_agent_id(&workspace.id, &agent_id)).ok().flatten().map(|row| row.id)
+    let (_, root) = state
+        .actor_entries()
+        .into_iter()
+        .find(|(id, _)| *id == handle.id)?;
+    let workspace = state
+        .with_storage(|s| s.workspace_by_root(&root.to_string_lossy()))
+        .ok()
+        .flatten()?;
+    state
+        .with_storage(|s| s.session_by_agent_id(&workspace.id, &agent_id))
+        .ok()
+        .flatten()
+        .map(|row| row.id)
 }
 
 /// A live session's team.
 #[tauri::command]
-pub fn delegation_combo_get(handle: SessionHandle, state: State<'_, AppState>) -> CommandResult<Option<Combo>> {
+pub fn delegation_combo_get(
+    handle: SessionHandle,
+    state: State<'_, AppState>,
+) -> CommandResult<Option<Combo>> {
     Ok(delegation(&state)?.combo(&handle.id))
 }
 
@@ -231,13 +337,18 @@ pub struct ComboSetRequest {
 /// Changes a live session's team; the next `delegate` uses it. Kept for the
 /// session's next attachment too.
 #[tauri::command]
-pub fn delegation_combo_set(request: ComboSetRequest, state: State<'_, AppState>) -> CommandResult<Combo> {
+pub fn delegation_combo_set(
+    request: ComboSetRequest,
+    state: State<'_, AppState>,
+) -> CommandResult<Combo> {
     if request.combo.workers.len() > 16 {
         return Err(DesktopError::io("a team has at most 16 workers"));
     }
     let combo = delegation(&state)?.set_combo(&request.handle.id, request.combo)?;
     if let Some(row) = row_id(&state, &request.handle) {
-        state.with_storage(|s| s.setting_set(COMBO_KEY, &session_scope(&row), &combo)).map_err(storage_error)?;
+        state
+            .with_storage(|s| s.setting_set(COMBO_KEY, &session_scope(&row), &combo))
+            .map_err(storage_error)?;
     }
     Ok(combo)
 }
@@ -245,19 +356,30 @@ pub fn delegation_combo_set(request: ComboSetRequest, state: State<'_, AppState>
 /// The team a new session starts with.
 #[tauri::command]
 pub fn delegation_default_combo_get(state: State<'_, AppState>) -> CommandResult<Combo> {
-    Ok(state.with_storage(|s| s.setting_get::<Combo>(COMBO_KEY, GLOBAL_SCOPE)).map_err(storage_error)?.unwrap_or_default())
+    Ok(state
+        .with_storage(|s| s.setting_get::<Combo>(COMBO_KEY, GLOBAL_SCOPE))
+        .map_err(storage_error)?
+        .unwrap_or_default())
 }
 
 #[tauri::command]
-pub fn delegation_default_combo_set(combo: Combo, state: State<'_, AppState>) -> CommandResult<Combo> {
+pub fn delegation_default_combo_set(
+    combo: Combo,
+    state: State<'_, AppState>,
+) -> CommandResult<Combo> {
     let combo = combo.normalized();
-    state.with_storage(|s| s.setting_set(COMBO_KEY, GLOBAL_SCOPE, &combo)).map_err(storage_error)?;
+    state
+        .with_storage(|s| s.setting_set(COMBO_KEY, GLOBAL_SCOPE, &combo))
+        .map_err(storage_error)?;
     Ok(combo)
 }
 
 /// A live session's jobs, oldest first.
 #[tauri::command]
-pub fn delegation_jobs(handle: SessionHandle, state: State<'_, AppState>) -> CommandResult<Vec<JobView>> {
+pub fn delegation_jobs(
+    handle: SessionHandle,
+    state: State<'_, AppState>,
+) -> CommandResult<Vec<JobView>> {
     Ok(delegation(&state)?.jobs(&handle.id))
 }
 
@@ -269,13 +391,22 @@ pub struct JobCancelRequest {
 }
 
 #[tauri::command]
-pub async fn delegation_job_cancel(request: JobCancelRequest, state: State<'_, AppState>) -> CommandResult<JobView> {
-    delegation(&state)?.cancel(&request.handle.id, &request.job_id).await.map_err(DesktopError::not_ready)
+pub async fn delegation_job_cancel(
+    request: JobCancelRequest,
+    state: State<'_, AppState>,
+) -> CommandResult<JobView> {
+    delegation(&state)?
+        .cancel(&request.handle.id, &request.job_id)
+        .await
+        .map_err(DesktopError::not_ready)
 }
 
 /// Whether a provider is spent as far as the router knows, for the picker.
 #[tauri::command]
-pub fn delegation_quota(provider: Provider, state: State<'_, AppState>) -> CommandResult<Option<thingmaker_supervisor::agents::events::QuotaSnapshot>> {
+pub fn delegation_quota(
+    provider: Provider,
+    state: State<'_, AppState>,
+) -> CommandResult<Option<thingmaker_supervisor::agents::events::QuotaSnapshot>> {
     Ok(delegation(&state)?.quota(provider))
 }
 
@@ -288,8 +419,13 @@ pub struct JobRetryRequest {
 
 /// Ends a waiting job's wait now.
 #[tauri::command]
-pub fn delegation_job_retry(request: JobRetryRequest, state: State<'_, AppState>) -> CommandResult<JobView> {
-    delegation(&state)?.retry_now(&request.handle.id, &request.job_id).map_err(DesktopError::not_ready)
+pub fn delegation_job_retry(
+    request: JobRetryRequest,
+    state: State<'_, AppState>,
+) -> CommandResult<JobView> {
+    delegation(&state)?
+        .retry_now(&request.handle.id, &request.job_id)
+        .map_err(DesktopError::not_ready)
 }
 
 /// What a job does after a temporary limit.
@@ -299,7 +435,10 @@ pub fn delegation_retry_policy_get(state: State<'_, AppState>) -> CommandResult<
 }
 
 #[tauri::command]
-pub fn delegation_retry_policy_set(policy: RetryPolicy, state: State<'_, AppState>) -> CommandResult<RetryPolicy> {
+pub fn delegation_retry_policy_set(
+    policy: RetryPolicy,
+    state: State<'_, AppState>,
+) -> CommandResult<RetryPolicy> {
     let policy = RetryPolicy {
         first_delay_secs: policy.first_delay_secs.clamp(30, 6 * 3600),
         step_secs: policy.step_secs.min(6 * 3600),
@@ -308,7 +447,9 @@ pub fn delegation_retry_policy_set(policy: RetryPolicy, state: State<'_, AppStat
         max_wait_secs: policy.max_wait_secs.clamp(60, 24 * 3600),
         ..policy
     };
-    state.with_storage(|s| s.setting_set(RETRY_KEY, GLOBAL_SCOPE, &policy)).map_err(storage_error)?;
+    state
+        .with_storage(|s| s.setting_set(RETRY_KEY, GLOBAL_SCOPE, &policy))
+        .map_err(storage_error)?;
     delegation(&state)?.set_retry_policy(policy);
     Ok(policy)
 }

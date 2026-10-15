@@ -12,6 +12,20 @@ import {
 import { useStore, basenameOf } from "../store";
 import { api } from "../ipc";
 import { redactText } from "../redact";
+import { invoke, isRemote } from "../bridge";
+
+function RemoteAccessSection() {
+  const [key, setKey] = useState("");
+  const [error, setError] = useState("");
+  const load = (rotate = false) => invoke<string>(rotate ? "remote_key_rotate" : "remote_key_get").then(setKey).catch((e) => setError(String(e)));
+  return <section><h3>Control remoto Android</h3>
+    <p>Servidor: https://thingmaker.jacksparrot.com</p>
+    <p className="small muted">Introduce esta API key en ThingMaker Remote. El ordenador debe estar encendido y ThingMaker abierto, también en la bandeja.</p>
+    <div className="row wrap"><button className="button" onClick={() => void load()}>Mostrar API key</button>
+    {key && <><button className="button" onClick={() => void navigator.clipboard.writeText(key)}>Copiar</button><button className="button" onClick={() => void load(true)}>Generar nueva y revocar anterior</button></>}</div>
+    {key && <textarea aria-label="API key de control remoto" className="textarea" readOnly value={key} />}{error && <p>{error}</p>}
+  </section>;
+}
 
 const ChillPreferences = lazy(() => import("../chill/ChillPreferences"));
 
@@ -466,8 +480,9 @@ export function SettingsPanel() {
         ))}
       </section>
 
+      {!isRemote && <RemoteAccessSection />}
       <Suspense fallback={null}><ChillPreferences /></Suspense>
-      <PhoneSection />
+      {!isRemote && <PhoneSection />}
       <SupportBundleSection />
       <StorageSection />
     </div>
@@ -498,7 +513,7 @@ function KeepAwakeSection({ settings, onChange }: { settings: NotificationSettin
     <section>
       <h3>While agents work</h3>
       <label className="check">
-        <input checked={settings.keepAwake} onChange={(e) => onChange({ keepAwake: e.target.checked })} type="checkbox" /> Keep the Mac awake while sessions, Big Things or
+        <input checked={settings.keepAwake} onChange={(e) => onChange({ keepAwake: e.target.checked })} type="checkbox" /> Keep this computer awake while sessions, Big Things or
         team jobs are working
       </label>
       <label className="check">
@@ -506,7 +521,7 @@ function KeepAwakeSection({ settings, onChange }: { settings: NotificationSettin
         battery too
       </label>
       <p className="small muted">
-        Only idle sleep is held off: the display still sleeps, and closing the lid still sleeps the Mac. A Big Thing parked until a limit resets counts as working, so
+        Only idle sleep is held off: the display still sleeps, and manual sleep and lid actions still follow system settings. A Big Thing parked until a limit resets counts as working, so
         it is awake to carry on.
       </p>
       {status && (

@@ -8,7 +8,7 @@
  * rather than offering a code no phone could reach.
  */
 import { useCallback, useEffect, useState } from "react";
-import { listen } from "@tauri-apps/api/event";
+import { listen } from "../bridge";
 import { REMOTE_EVENT, type RemoteStatus } from "@thingmaker/contracts";
 import { api } from "../ipc";
 import { useStore } from "../store";

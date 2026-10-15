@@ -4,7 +4,9 @@
 fn main() {
     // An agent starting its ThingMaker MCP server runs this executable as a
     // stdio relay; no window, no app state.
-    if std::env::args().nth(1).as_deref() == Some(thingmaker_supervisor::delegation::socket::RELAY_ARG) {
+    if std::env::args().nth(1).as_deref()
+        == Some(thingmaker_supervisor::delegation::socket::RELAY_ARG)
+    {
         if let Err(error) = thingmaker_supervisor::delegation::socket::relay() {
             eprintln!("thingmaker-mcp: {error}");
             std::process::exit(1);

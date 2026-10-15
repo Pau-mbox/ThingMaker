@@ -80,7 +80,7 @@ async fn a_thread_opens_and_one_real_turn_streams_settles_and_counts() {
 
     let thread = snapshot.agent_session_id.clone().unwrap();
     let _ = actor.stop().await;
-    let home = PathBuf::from(std::env::var("HOME").unwrap()).join(".codex");
+    let home = PathBuf::from(std::env::var_os("HOME").or_else(|| std::env::var_os("USERPROFILE")).unwrap()).join(".codex");
     match thingmaker_supervisor::agents::codex::transcript_usage::find_rollout(&home, &thread) {
         Some(path) => {
             let usage = thingmaker_supervisor::agents::codex::transcript_usage::read_transcript_usage(&path).unwrap();

@@ -4754,6 +4754,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2",
+ "subtle",
  "tauri",
  "tauri-build",
  "tauri-plugin-dialog",
@@ -4770,6 +4771,7 @@ dependencies = [
  "tracing-appender",
  "tracing-subscriber",
  "uuid",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -4793,6 +4795,7 @@ dependencies = [
  "toml_edit 0.25.13+spec-1.1.0",
  "tracing",
  "uuid",
+ "windows-sys 0.61.2",
  "zip",
 ]
 

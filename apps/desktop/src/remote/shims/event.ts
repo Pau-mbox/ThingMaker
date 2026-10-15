@@ -9,3 +9,6 @@ let next = 1;
 export async function listen<T>(name: string, handler: (event: Event<T>) => void): Promise<UnlistenFn> {
   return bridge().listen(name, (payload) => handler({ event: name, id: next++, payload: payload as T }));
 }
+
+/** Desktop-only state notifications do not originate from a relay client. */
+export async function emit(_event: string, _payload?: unknown): Promise<void> {}

@@ -59,7 +59,7 @@ pub struct Terminal {
     pub id: String,
     cwd: PathBuf,
     program: String,
-    master: Mutex<Box<dyn MasterPty + Send>>,
+    master: Mutex<Option<Box<dyn MasterPty + Send>>>,
     writer: Mutex<Box<dyn Write + Send>>,
     child: Mutex<Box<dyn portable_pty::Child + Send + Sync>>,
     pid: Option<u32>,
@@ -127,6 +127,7 @@ impl Terminal {
         let cols = cols.clamp(2, 1000);
         let rows = rows.clamp(1, 500);
         lock(&self.master)
+            .as_ref().ok_or_else(|| DesktopError::not_ready("terminal process has exited"))?
             .resize(PtySize { rows, cols, pixel_width: 0, pixel_height: 0 })
             .map_err(|e| DesktopError::io(e.to_string()))?;
         *lock(&self.size) = (cols, rows);
@@ -191,7 +192,7 @@ impl TerminalManager {
             id: uuid::Uuid::new_v4().simple().to_string(),
             cwd: spawn.cwd.clone(),
             program: spawn.program.to_string_lossy().into_owned(),
-            master: Mutex::new(pair.master),
+            master: Mutex::new(Some(pair.master)),
             writer: Mutex::new(writer),
             child: Mutex::new(child),
             pid,
@@ -230,6 +231,27 @@ impl TerminalManager {
                 let _ = reader_terminal.events.send(Arc::new(TerminalEvent::Exit { code }));
             })
             .map_err(|e| DesktopError::io(e.to_string()))?;
+        #[cfg(windows)]
+        {
+            // ConPTY does not close its output pipe when the shell exits
+            // while the pseudo-console handle remains open. Close that
+            // handle after the child exits, so the reader can drain to EOF
+            // and publish the same exit event as on Unix.
+            let watched = Arc::downgrade(&terminal);
+            thread::Builder::new().name(format!("pty-exit-{}", terminal.id)).spawn(move || {
+                loop {
+                    let Some(terminal) = watched.upgrade() else { break };
+                    let exited = lock(&terminal.child).try_wait().ok().flatten().is_some();
+                    if exited {
+                        let master = lock(&terminal.master).take();
+                        drop(master);
+                        break;
+                    }
+                    drop(terminal);
+                    thread::sleep(std::time::Duration::from_millis(25));
+                }
+            }).map_err(|e| DesktopError::io(e.to_string()))?;
+        }
         lock(&self.terminals).insert(terminal.id.clone(), Arc::clone(&terminal));
         Ok(terminal)
     }
@@ -270,7 +292,7 @@ mod tests {
             cwd: std::env::temp_dir(),
             program: PathBuf::from(program),
             args: args.iter().map(|a| a.to_string()).collect(),
-            env: vec![("PATH".into(), "/usr/bin:/bin".into())],
+            env: crate::security::EnvironmentProfile::trusted_local().resolve(std::env::vars()).into_iter().collect(),
             cols: 80,
             rows: 24,
         }
@@ -287,7 +309,12 @@ mod tests {
                 _ => break,
             };
             match &*event {
-                TerminalEvent::Output { .. } => text = String::from_utf8_lossy(&terminal.scrollback()).into_owned(),
+                TerminalEvent::Output { .. } => {
+                    text = String::from_utf8_lossy(&terminal.scrollback()).into_owned();
+                    // ConPTY asks the terminal emulator for its cursor on
+                    // startup. xterm.js answers this in the real desktop.
+                    if cfg!(windows) && text.contains("\x1b[6n") { let _ = terminal.write(b"\x1b[1;1R"); }
+                },
                 TerminalEvent::Exit { code } => return (text, *code),
             }
             if !until_exit && text.contains("abc") {
@@ -308,7 +335,9 @@ mod tests {
     #[tokio::test]
     async fn runs_a_command_captures_output_and_exit_code() {
         let manager = TerminalManager::new();
-        let terminal = manager.open(spawn("/bin/sh", &["-c", "echo hello-pty; exit 3"])).unwrap();
+        let spec = if cfg!(windows) { spawn("cmd.exe", &["/D", "/C", "echo hello-pty & exit /b 3"]) }
+            else { spawn("/bin/sh", &["-c", "echo hello-pty; exit 3"]) };
+        let terminal = manager.open(spec).unwrap();
         let (text, code) = collect(&terminal, true).await;
         assert!(text.contains("hello-pty"), "{text:?}");
         assert_eq!(code, Some(3));
@@ -322,8 +351,9 @@ mod tests {
     #[tokio::test]
     async fn writes_reach_the_process_and_close_kills_it() {
         let manager = TerminalManager::new();
-        let terminal = manager.open(spawn("/bin/cat", &[])).unwrap();
-        terminal.write(b"abc\n").unwrap();
+        let spec = if cfg!(windows) { spawn("cmd.exe", &["/D", "/Q"]) } else { spawn("/bin/cat", &[]) };
+        let terminal = manager.open(spec).unwrap();
+        terminal.write(if cfg!(windows) { b"echo abc\r\n" } else { b"abc\n" }).unwrap();
         let (text, _) = collect(&terminal, false).await;
         assert!(text.contains("abc"), "{text:?}");
         terminal.resize(120, 40).unwrap();
