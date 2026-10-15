@@ -14,6 +14,7 @@ import { ContextPane } from "./ContextPane";
 import { ArtifactsPane } from "./ArtifactsPane";
 import { ActivityBar } from "./ActivityBar";
 import { ToolGroup } from "./ToolGroup";
+import { ToolPayloads } from "./ToolPayloads";
 import { ImagesPane } from "./ImagesPane";
 import { OdysseyPane } from "./OdysseyPane";
 import { AttachmentThumb, BlockImage, InlineImage, workspaceImageRenderer } from "./InlineImage";
@@ -77,7 +78,7 @@ function Blocks({ blocks, markdown, onLink, workspaceId }: { blocks: ContentBloc
 }
 
 /** A tool call's raw detail: what went in, what came out, what it wrote. */
-function ToolDetail({ patch, provider }: { patch: ToolPatch; provider: Provider | undefined }) {
+function ToolDetail({ patch, provider, workspaceId }: { patch: ToolPatch; provider: Provider | undefined; workspaceId: string }) {
   // Both are read from what the tool returned, so they appear only when the
   // call actually produced that shape.
   const testRun = useMemo(() => detectTestRun(patch.rawInput, patch.rawOutput, shellResultsOf(patch, provider)), [patch, provider]);
@@ -93,24 +94,7 @@ function ToolDetail({ patch, provider }: { patch: ToolPatch; provider: Provider 
           <EditedFilesList files={edited} />
         </>
       )}
-      {patch.rawInput !== null && patch.rawInput !== undefined && (
-        <>
-          <h4>Input</h4>
-          <pre className="text">{JSON.stringify(patch.rawInput, null, 2)}</pre>
-        </>
-      )}
-      {patch.rawOutput !== null && patch.rawOutput !== undefined && (
-        <>
-          <h4>Output</h4>
-          <pre className="text">{JSON.stringify(patch.rawOutput, null, 2)}</pre>
-        </>
-      )}
-      {patch.content !== null && patch.content !== undefined && (
-        <>
-          <h4>Content</h4>
-          <pre className="text">{JSON.stringify(patch.content, null, 2)}</pre>
-        </>
-      )}
+      <ToolPayloads patch={patch} workspaceId={workspaceId} />
       <p className="small muted">
         {patch.toolKind ?? "tool"} · {patch.status ?? "no status"} · supplied fields: {patch.present.join(", ") || "none"}
         {patch.cleared.length > 0 ? `; cleared: ${patch.cleared.join(", ")}` : ""}
@@ -119,7 +103,7 @@ function ToolDetail({ patch, provider }: { patch: ToolPatch; provider: Provider 
   );
 }
 
-function ToolCard({ patch, detached, provider }: { patch: ToolPatch; detached: string | undefined; provider: Provider | undefined }) {
+function ToolCard({ patch, detached, provider, workspaceId }: { patch: ToolPatch; detached: string | undefined; provider: Provider | undefined; workspaceId: string }) {
   return (
     <details className="card card-tool">
       <summary>
@@ -127,7 +111,7 @@ function ToolCard({ patch, detached, provider }: { patch: ToolPatch; detached: s
         <span className="chip small">{patch.status ?? "no status"}</span>
         {detached && <span className="chip chip-warn small">detached: {detached.replace("_", " ")}</span>}
       </summary>
-      <ToolDetail patch={patch} provider={provider} />
+      <ToolDetail patch={patch} provider={provider} workspaceId={workspaceId} />
     </details>
   );
 }
@@ -207,7 +191,7 @@ function CardBody({ card, sessionId }: { card: Card; sessionId: string }) {
       );
     case "tool": {
       if (!patch) return null;
-      return <ToolCard detached={detached} patch={patch} provider={provider} />;
+      return <ToolCard detached={detached} patch={patch} provider={provider} workspaceId={workspaceId} />;
     }
     case "notice":
       return (
@@ -798,7 +782,7 @@ export function SessionPanel({ sessionId }: { sessionId: string }) {
                   key={group.key}
                   live={active && index === groups.length - 1}
                   renderCard={(card) => <CardView card={card} images={cardImages.get(card.key)} key={card.key} sessionId={sessionId} />}
-                  renderDetail={(patch) => <ToolDetail patch={patch} provider={session.snapshot.provider} />}
+                  renderDetail={(patch) => <ToolDetail patch={patch} provider={session.snapshot.provider} workspaceId={session.workspaceId} />}
                   sessionId={sessionId}
                 />
               ) : (

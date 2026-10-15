@@ -56,12 +56,28 @@ use crate::{
 /// `[A-Za-z0-9-]` becomes one dash, so a leading `/` is why every slug starts
 /// with one and `/a/-b` becomes `-a--b` rather than `-a-b`.
 pub fn project_dir(home: &Path, root: &Path) -> PathBuf {
-    home.join(".claude/projects").join(slug_for(root))
+    let projects = home.join(".claude/projects");
+    let normal = projects.join(slug_for(root));
+    // Retain compatibility with transcripts written using the verbatim path.
+    let legacy = projects.join(slug_chars(&root.to_string_lossy()));
+    if !normal.is_dir() && legacy.is_dir() { legacy } else { normal }
 }
 
 /// The directory name Claude Code gives a project root.
 pub fn slug_for(root: &Path) -> String {
-    root.to_string_lossy()
+    let path = root.to_string_lossy();
+    // Rust canonicalizes Windows paths with \\?\; Claude uses the ordinary
+    // drive/UNC path for its project folder, without that namespace prefix.
+    let ordinary = if let Some(unc) = path.strip_prefix(r"\\?\UNC\") {
+        format!(r"\\{unc}")
+    } else {
+        path.strip_prefix(r"\\?\").unwrap_or(&path).to_string()
+    };
+    slug_chars(&ordinary)
+}
+
+fn slug_chars(path: &str) -> String {
+    path
         .chars()
         .map(|c| if c.is_ascii_alphanumeric() || c == '-' { c } else { '-' })
         .collect()
@@ -208,6 +224,21 @@ mod tests {
             },
         })
         .to_string()
+    }
+
+    #[test]
+    fn windows_verbatim_paths_find_claudes_existing_transcripts() {
+        assert_eq!(slug_for(Path::new(r"\\?\D:\repos\kidgame")), "D--repos-kidgame");
+        assert_eq!(slug_for(Path::new(r"\\?\UNC\server\share\game")), "--server-share-game");
+        let home = tempfile::tempdir().unwrap();
+        let normal = home.path().join(".claude/projects/D--repos-kidgame");
+        std::fs::create_dir_all(&normal).unwrap();
+        std::fs::write(normal.join("s.jsonl"), "{}").unwrap();
+        assert!(transcript_path(home.path(), Path::new(r"\\?\D:\repos\kidgame"), "s").is_file());
+        let legacy = home.path().join(".claude/projects/----D--repos-old");
+        std::fs::create_dir_all(&legacy).unwrap();
+        std::fs::write(legacy.join("s.jsonl"), "{}").unwrap();
+        assert!(transcript_path(home.path(), Path::new(r"\\?\D:\repos\old"), "s").is_file());
     }
 
     #[test]

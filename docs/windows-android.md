@@ -13,7 +13,7 @@ El historial detallado de implementación y pruebas está en [NOTES.md](../NOTES
 | Respaldo | Rama `backup/windows-android-before-main-20261003` |
 | Windows instalado | Compilación del 2 de octubre, con servidor remoto API v2 |
 | Windows actualizado | Compilación e instalador del 3 de octubre terminados; instalación manual pendiente |
-| Android publicado | **2.0.2**, `versionCode` **4**, paquete `dev.thingmaker.remote` |
+| Android publicado | **2.0.3**, `versionCode` **5**, paquete `dev.thingmaker.remote` (6 de octubre de 2026) |
 | Acceso remoto | `https://thingmaker.jacksparrot.com`; `/health` respondió API v2 en la comprobación de esta actualización |
 | Validación móvil | Emulador Android API 35; no se ha probado todavía en un teléfono físico |
 | Proveedores | Respuestas reales de Codex verificadas; turno remoto real de Claude pendiente; Gemini no instalado/validado aquí |
@@ -61,7 +61,13 @@ se superpone al compositor y Atrás cierra antes paleta o diálogos.
 5. Selecciona un proyecto y abre o reanuda su conversación. Al añadir un
    proyecto por ruta desde Android, introduce una carpeta del **PC**.
 
-[APK publicado 2.0.2-4](https://builds.jacksparrot.com/apps/dev.thingmaker.remote/2.0.2-4.apk).
+[APK publicado 2.0.3-5](https://builds.jacksparrot.com/apps/dev.thingmaker.remote/2.0.3-5.apk).
+La versión 2.0.3 muestra las imágenes de las herramientas en el chat sin volcar
+el base64, se ajusta al ancho del móvil y elimina imágenes duplicadas.
+La recuperación del histórico de Claude requiere el instalador corregido del PC.
+Se conservan la firma y las cuatro versiones anteriores. SHA256 del APK comprobado
+contra el archivo almacenado en SERVER:
+`539fab2da33ddfe5a38bf06749df2b477a35c08ba6a6cd352d6499a3b5b9a93e`.
 La descarga usa el acceso habitual de JackApps; la clave remota de ThingMaker
 sirve para conectar al PC, no para descargar APKs.
 

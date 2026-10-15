@@ -13,9 +13,14 @@ Build the shared desktop renderer first, then package it with Java 17 / SDK 36:
     cd apps/android
     .\gradlew.bat assembleDebug
 
-Package: `dev.thingmaker.remote`, version **2.0.1 (3)**. Internal distribution via
+Package: `dev.thingmaker.remote`, version **2.0.3 (5)**. Internal distribution via
 JackApps; subsequent builds must preserve the signing key and bump versionCode.
-Published APK: [2.0.1-3.apk](https://builds.jacksparrot.com/apps/dev.thingmaker.remote/2.0.1-3.apk).
+Published APK: [2.0.3-5.apk](https://builds.jacksparrot.com/apps/dev.thingmaker.remote/2.0.3-5.apk).
+Version 2.0.3 displays tool-result images instead of base64, fits them to the
+mobile viewport and avoids duplicate image blocks. Claude session recovery
+requires the corrected Windows desktop build. Publication verified the existing
+signing certificate, all four previous releases and the server APK's SHA-256:
+`539fab2da33ddfe5a38bf06749df2b477a35c08ba6a6cd352d6499a3b5b9a93e`.
 Full setup, operations, release history and deployment status:
 [Windows and Android guide](../../docs/windows-android.md).
 

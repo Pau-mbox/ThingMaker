@@ -263,7 +263,7 @@ pub async fn session_open(
             });
         }
         return Err(DesktopError::not_ready(format!(
-            "This {} session never got a prompt, so there is nothing to resume; it has been removed from the list. Start a new session instead.",
+            "The transcript for this {} session could not be found. Its record is retained and will reappear when the transcript is available again.",
             provider.label()
         )));
     }
@@ -796,9 +796,54 @@ pub fn session_records(
     workspace_id: String,
     state: State<'_, AppState>,
 ) -> CommandResult<Vec<SessionRecord>> {
-    state
-        .with_storage(|storage| storage.session_list(&workspace_id))
-        .map_err(storage_error)
+    load_session_records(&state, &workspace_id)
+}
+
+fn load_session_records(state: &AppState, workspace_id: &str) -> CommandResult<Vec<SessionRecord>> {
+    let mut records = state
+        .with_storage(|storage| storage.session_list(workspace_id))
+        .map_err(storage_error)?;
+    let workspace = state.with_storage(|storage| storage.workspace_get(workspace_id)).map_err(storage_error)?;
+    if let Some(workspace) = workspace
+        && state.home.is_some()
+    {
+        // A failed lookup can be temporary (or caused by an older path bug).
+        // Recheck tombstones so an existing transcript cannot stay hidden forever.
+        for record in &mut records {
+            if record.archive_state == ArchiveState::Unavailable
+                && transcript_exists(state, record.provider, Path::new(&workspace.canonical_root), &record.agent_session_id)
+            {
+                state.with_storage(|storage| storage.session_set_archive(&record.id, ArchiveState::Active)).map_err(storage_error)?;
+                record.archive_state = ArchiveState::Active;
+            }
+        }
+    }
+    Ok(records)
+}
+
+#[cfg(test)]
+mod recovery_tests {
+    use super::*;
+
+    #[test]
+    fn listing_recovers_existing_transcripts_but_preserves_archives_and_missing_files() {
+        let temp = tempfile::tempdir().unwrap();
+        let mut state = AppState::initialize(&temp.path().join("data"), None).unwrap();
+        state.home = Some(temp.path().join("home"));
+        let workspace = state.with_storage(|s| s.workspace_upsert(r"\\?\D:\repos\kidgame", r"D:\repos\kidgame", "test")).unwrap();
+        for (id, archive) in [("recover", ArchiveState::Unavailable), ("missing", ArchiveState::Unavailable), ("archived", ArchiveState::Archived)] {
+            let record = state.with_storage(|s| s.session_upsert(&workspace.id, id, SessionOrigin::Desktop, Provider::Claude)).unwrap();
+            state.with_storage(|s| s.session_set_archive(&record.id, archive)).unwrap();
+        }
+        let transcripts = state.home.as_ref().unwrap().join(".claude/projects/D--repos-kidgame");
+        std::fs::create_dir_all(&transcripts).unwrap();
+        for id in ["recover", "archived"] { std::fs::write(transcripts.join(format!("{id}.jsonl")), "{}").unwrap(); }
+        let records = load_session_records(&state, &workspace.id).unwrap();
+        for (id, expected) in [("recover", ArchiveState::Active), ("missing", ArchiveState::Unavailable), ("archived", ArchiveState::Archived)] {
+            assert_eq!(records.iter().find(|r| r.agent_session_id == id).unwrap().archive_state, expected);
+            assert_eq!(state.with_storage(|s| s.session_by_agent_id(&workspace.id, id)).unwrap().unwrap().archive_state, expected);
+        }
+    }
 }
 
 #[derive(Debug, Serialize)]
