@@ -12,7 +12,7 @@ export function ProviderLogo({ provider, size = 40 }: { provider: Provider; size
       className="provider-logo"
       draggable={false}
       height={size}
-      src={`/providers/${provider}.png`}
+      src={`${import.meta.env.BASE_URL}providers/${provider}.png`}
       style={{ borderRadius: Math.round(size * 0.225) }}
       width={size}
     />

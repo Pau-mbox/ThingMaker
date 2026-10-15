@@ -22,7 +22,7 @@ use crate::{
     },
     storage::{
         memory::{MEMORY_KINDS, MemoryWrite},
-        odyssey::{CheckKind, OdysseyRecord, OdysseyState, OnPlanChange},
+        odyssey::{CheckKind, JournalKind, MilestoneState, OdysseyRecord, OdysseyState, OnPlanChange},
     },
 };
 
@@ -86,7 +86,7 @@ fn run_tools() -> Vec<Value> {
         json!({
             "name": "bigthing_report",
             "title": "Report a milestone",
-            "description": "Tells Big Thing a milestone is finished (status `complete`) or cannot be finished (`blocked`, with why). A completion is a claim: the milestone's check decides, and Big Thing reads its exit code from your tool results or runs it. Send it when the work is done, not while you are still working.",
+            "description": "Tells Big Thing a milestone is finished (status `complete`) or cannot be finished (`blocked`, with why). Send it as soon as that milestone's work is done — in the middle of a long turn too, before moving on to the next one: Big Thing records it at once. A completion is a claim: the milestone's check decides, and Big Thing reads its exit code from your tool results or runs it.",
             "inputSchema": object(json!({
                 "milestone": { "type": "integer", "minimum": 1 },
                 "status": { "type": "string", "enum": ["complete", "blocked"] },
@@ -122,7 +122,7 @@ fn run_tools() -> Vec<Value> {
         json!({
             "name": "bigthing_propose_plan",
             "title": "Propose a plan",
-            "description": "Sends the milestones for a goal that has none yet, when Big Thing asked you to plan from a document. Each milestone carries the document's substance in `detail`, a check Big Thing can run when there is one, and three to eight tasks cut so that independent ones can run in parallel. The user reviews the plan before the run starts.",
+            "description": "Sends the milestones for a goal that has none yet, when Big Thing asked you to plan from a document. Each milestone carries the document's substance in `detail`, a check Big Thing can run when there is one, and tasks sized in AI-agent time (about 10–30 minutes of agent work each, never human-effort estimates), cut so that independent ones can run in parallel. The user reviews the plan before the run starts.",
             "inputSchema": object(json!({
                 "milestones": {
                     "type": "array",
@@ -144,7 +144,7 @@ fn run_tools() -> Vec<Value> {
         json!({
             "name": "bigthing_amend",
             "title": "Change the plan",
-            "description": "Changes the plan when it no longer fits what you found. `ops` is a list of operations, each with `op`: `add` (title, after: a milestone number or \"end\", detail, section, checkKind, checkSpec, steps), `revise` (target, title, detail, section, checkKind, checkSpec, steps to add), `drop` (target, reason), `drop_task` (ref {milestone, task}, reason), `revise_task` (ref, title, detail, depends), `split_task` (ref, steps, reason) and `move_task` (ref, after: a task number or \"start\"). Numbers are as the plan shows them now. Verified milestones and done tasks are not rewritten.",
+            "description": "Changes the plan when it no longer fits what you found. `ops` is a list of operations, each with `op`: `add` (title, after: a milestone number or \"end\", detail, section, checkKind, checkSpec, steps), `revise` (target, title, detail, section, checkKind, checkSpec, steps to add), `drop` (target, reason), `drop_task` (ref {milestone, task}, reason), `revise_task` (ref, title, detail, depends), `split_task` (ref, steps, reason) and `move_task` (ref, after: a task number or \"start\"). Numbers are as the plan shows them now. Verified milestones and done tasks are not rewritten. Size new tasks in AI-agent time: about 10–30 minutes of agent work each, never human-effort estimates; split anything bigger.",
             "inputSchema": object(json!({
                 "ops": { "type": "array", "items": { "type": "object", "properties": { "op": { "type": "string", "enum": ["add", "revise", "drop", "drop_task", "revise_task", "split_task", "move_task"] } }, "required": ["op"] } },
                 "reason": { "type": "string" }
@@ -267,12 +267,25 @@ impl Engine {
                     return Err(format!("There is no milestone {milestone}; the plan has {}.", loaded.milestones.len()));
                 };
                 let note = string(arguments, "note").unwrap_or_default();
-                self.with_inbox(&goal.id, |inbox| inbox.report = Some(Report { milestone, status, note }));
+                // Every milestone a turn reports counts, however long the
+                // turn: one entry per milestone, the latest word winning.
+                let report = Report { milestone, status, note: note.clone() };
+                self.with_inbox(&goal.id, |inbox| {
+                    inbox.reports.retain(|earlier| earlier.milestone != milestone);
+                    inbox.reports.push(report);
+                });
+                // A completion shows at once, so it can be verified while the
+                // turn carries on with the next milestone.
+                if status == ReportStatus::Complete && !matches!(record.state, MilestoneState::Verified | MilestoneState::Skipped) {
+                    let _ = self.db(|storage| storage.milestone_record_report(&record.id, &note));
+                    self.journal(&goal.id, JournalKind::Report, Some(&record.id), &format!("Reported milestone {milestone} complete"), Some(&note));
+                    self.changed(&goal.id);
+                }
                 let check = if record.check_kind == CheckKind::Manual { "the user ticks it".to_string() } else { super::prompt::check_label(record.check_kind, record.check_spec.as_deref()) };
                 Ok(json!({
                     "recorded": true,
                     "note": match status {
-                        ReportStatus::Complete => format!("Milestone {milestone} claimed complete. Big Thing records it when this turn ends; it is verified by its {check}."),
+                        ReportStatus::Complete => format!("Milestone {milestone} recorded as complete; it is verified by its {check}. Carry on with the next one."),
                         ReportStatus::Blocked => format!("Milestone {milestone} reported blocked. Big Thing records it when this turn ends."),
                     }
                 }))

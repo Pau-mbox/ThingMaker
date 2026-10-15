@@ -4,7 +4,7 @@ use futures_util::{SinkExt, StreamExt};
 use serde_json::{Value, json};
 use tauri::{Manager, Listener, Emitter};
 use tokio::sync::mpsc;
-use crate::{state::AppState, remote, remote_dispatch, commands};
+use crate::{state::AppState, remote_legacy as remote, remote_dispatch, commands};
 use thingmaker_supervisor::DesktopError;
 
 pub async fn upgrade(State(app): State<tauri::AppHandle>, headers: HeaderMap, ws: WebSocketUpgrade) -> Response {
@@ -32,7 +32,7 @@ async fn serve(socket: WebSocket, app: tauri::AppHandle, headers: HeaderMap) {
     let (tx, mut rx) = mpsc::channel::<Value>(512);
     let overflow = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
     let mut resources = Resources { app: app.clone(), listeners: vec![], streams: Default::default() };
-    for name in ["thingmaker://job", "thingmaker://bigthing", "thingmaker://remote-state-changed"] {
+    for name in ["thingmaker://job", "thingmaker://bigthing", "thingmaker://remote-state-changed", crate::titles::SESSION_TITLE_EVENT] {
         let sender = tx.clone(); let full = overflow.clone();
         resources.listeners.push(app.listen_any(name, move |event| {
             if let Ok(payload) = serde_json::from_str::<Value>(event.payload()) {

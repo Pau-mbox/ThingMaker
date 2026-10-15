@@ -1,6 +1,7 @@
 # Node
 node_modules/
 dist/
+dist-remote/
 *.tsbuildinfo
 .pnpm-store/
 
@@ -33,3 +34,5 @@ apps/android/local.properties
 *.jks
 # Shared Android UI is produced by scripts/shared-ui-android.py.
 apps/android/app/src/main/assets/
+# The Android app's build
+ThingMaker-phone.apk

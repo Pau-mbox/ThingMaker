@@ -3,8 +3,16 @@ import { Channel as TauriChannel, invoke as tauriInvoke } from "@tauri-apps/api/
 import { listen as tauriListen, emit as tauriEmit, type Event, type EventCallback } from "@tauri-apps/api/event";
 import { getCurrentWebview as tauriWebview } from "@tauri-apps/api/webview";
 
-declare global { interface Window { ThingMakerNative?: { postMessage(message: string): void; onmessage?: (event: MessageEvent<string>) => void }; } }
-export const isRemote = typeof window !== "undefined" && !!window.ThingMakerNative;
+declare global {
+  interface ThingMakerNativeBridge {
+    postMessage?(message: string): void;
+    onmessage?: (event: MessageEvent<string>) => void;
+  }
+  interface Window { ThingMakerNative?: ThingMakerNativeBridge; }
+}
+// The installed Remote client uses postMessage. The paired Phone client
+// exposes token/socket methods instead and uses the relay build's Tauri shims.
+export const isRemote = typeof window !== "undefined" && typeof window.ThingMakerNative?.postMessage === "function";
 let connected = false;
 let everConnected = false;
 let sequence = 0;
@@ -16,7 +24,7 @@ const connectionWaiters = new Set<() => void>();
 function emit(name: string, payload: unknown) {
   for (const listener of listeners.get(name) ?? []) listener({ event: name, id: 0, payload });
 }
-function post(frame: unknown) { window.ThingMakerNative!.postMessage(JSON.stringify(frame)); }
+function post(frame: unknown) { window.ThingMakerNative!.postMessage!(JSON.stringify(frame)); }
 function lost(message: string) {
   connected = false;
   for (const entry of pending.values()) { clearTimeout(entry.timer); entry.reject({ code: "OUTCOME_UNKNOWN", message, retry: "after_reconcile" }); }

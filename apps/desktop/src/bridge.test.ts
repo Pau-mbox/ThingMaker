@@ -12,6 +12,25 @@ async function remote() {
   return { bridge, sent, receive };
 }
 describe("shared renderer duplex recovery", () => {
+  it("keeps the paired phone bridge separate from the installed Remote protocol", async () => {
+    const token = vi.fn(() => "paired-phone-token");
+    window.ThingMakerNative = { token };
+    const bridge = await import("./bridge");
+    expect(bridge.isRemote).toBe(false);
+    expect(window.ThingMakerNative.onmessage).toBeUndefined();
+    expect(token).not.toHaveBeenCalled();
+  });
+
+  it("detects the installed Remote bridge and forwards kept session titles", async () => {
+    const { bridge, sent, receive } = await remote();
+    expect(bridge.isRemote).toBe(true);
+    expect(sent[0]).toEqual({ command: "hello" });
+    const titles: unknown[] = [];
+    await bridge.listen("thingmaker://session-title", event => titles.push(event.payload));
+    receive({ event: "thingmaker://session-title", payload: { agentSessionId: "session", title: "Kept title" } });
+    expect(titles).toEqual([{ agentSessionId: "session", title: "Kept title" }]);
+  });
+
   it("receives a live actor channel independently of concurrent command replies", async () => {
     const { bridge, sent, receive } = await remote();
     const events: unknown[] = [];

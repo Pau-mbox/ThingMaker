@@ -13,6 +13,8 @@ holds the tests that protect the decision.
 | [ADR-010](ADR-010-big-thing-engine.md) | Big Thing runs in the supervisor, and speaks through tools | Accepted |
 | [ADR-011](ADR-011-shared-android-remote-ui.md) | Shared Android UI controls the existing local actors over authenticated WebSocket | Accepted in the local adaptation |
 
+| [ADR-011](ADR-011-chill-activity-and-skins.md) | Chill uses neutral activity and replaceable visual skins | Accepted |
+
 The missing numbers belong to records from the runtime ThingMaker started on,
 retired when it moved to Claude Code, Codex and Gemini.
 

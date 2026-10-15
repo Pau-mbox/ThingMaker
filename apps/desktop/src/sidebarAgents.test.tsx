@@ -8,7 +8,7 @@
  * "move to…" and no way back: the desktop had created a state it could not
  * show, which is worse than any single bug in it.
  */
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("@tauri-apps/api/core", () => ({
@@ -75,6 +75,27 @@ describe("the session list comes from the desktop's own records", () => {
     expect(screen.getByTitle("Runs on Codex")).toBeTruthy();
   });
 
+  it("names a closed session by the title it kept, and a rename over that", () => {
+    seed([
+      record({ agentSessionId: "a863adcb-c16c-4a8d-9c87-d1bfbf6ee562", provider: "claude", autoTitle: "Game loading screen with chibi animation" }),
+      record({ agentSessionId: "ff5cd57a-4ebf-4396-a4ba-c7af7a453b49", provider: "claude", autoTitle: "First chapter plot review", titleOverlay: "Chapter 1" }),
+      // Looked for, and the provider had none: the short id is all there is.
+      record({ agentSessionId: "2ce87303-2136-4193-8017-aa127291767f", provider: "claude", autoTitle: "" }),
+    ]);
+    render(<Sidebar />);
+    expect(screen.getByText("Game loading screen with chibi animation")).toBeTruthy();
+    expect(screen.getByText("Chapter 1")).toBeTruthy();
+    expect(screen.queryByText("First chapter plot review")).toBeNull();
+    expect(screen.getByText(/Session 2ce87303/i)).toBeTruthy();
+  });
+
+  it("keeps a kept title when a session's title event arrives", () => {
+    seed([record({ agentSessionId: "a863adcb-c16c-4a8d-9c87-d1bfbf6ee562", provider: "claude" })]);
+    useStore.getState().noteSessionTitle({ agentSessionId: "a863adcb-c16c-4a8d-9c87-d1bfbf6ee562", title: "IAP system investigation" });
+    render(<Sidebar />);
+    expect(screen.getByText("IAP system investigation")).toBeTruthy();
+  });
+
   it("uses the rename overlay over the derived title", () => {
     seed([record({ agentSessionId: "b220f825-b257-41f9-b650-def339b83253", titleOverlay: "Season 2 planning" })]);
     render(<Sidebar />);
@@ -104,5 +125,22 @@ describe("workers under their orchestrator", () => {
     fireEvent.click(screen.getByRole("button", { name: "show 2 finished" }));
     expect(screen.getByText("luna · first job")).toBeTruthy();
     expect(screen.getByText("luna · second job")).toBeTruthy();
+  });
+});
+
+describe("the sidebar's layout outlives a restart", () => {
+  it("keeps a folded workspace folded when the sidebar comes back", () => {
+    localStorage.clear();
+    seed([record({ agentSessionId: "5f1e2d3c-0000-4000-8000-000000000001", provider: "claude" })]);
+    const first = render(<Sidebar />);
+    expect(screen.getByText(/Session 5f1e2d3c/i)).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Collapse" }));
+    expect(screen.queryByText(/Session 5f1e2d3c/i)).toBeNull();
+    first.unmount();
+    render(<Sidebar />);
+    expect(screen.queryByText(/Session 5f1e2d3c/i)).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Expand" }));
+    expect(screen.getByText(/Session 5f1e2d3c/i)).toBeTruthy();
+    localStorage.clear();
   });
 });

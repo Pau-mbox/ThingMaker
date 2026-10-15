@@ -112,7 +112,7 @@ async fn rpc(
         "sessions" => result(session::session_records(
             parse(body["workspaceId"].clone())?,
             state,
-        )),
+        ).await),
         "live" => Ok(Json(
             serde_json::to_value(session::session_list_open(state)).unwrap(),
         )),

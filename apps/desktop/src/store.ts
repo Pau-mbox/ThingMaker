@@ -42,8 +42,10 @@ import type {
   Provider,
   ProviderInfo,
   QuotaSnapshot,
+  QueueOp,
+  ProviderVersion,
 } from "@thingmaker/contracts";
-import { EMPTY_COMBO, JOB_EVENT, ODYSSEY_STATE_NOTE, PROVIDERS, PROVIDER_LABELS, BIGTHING_EVENT, asConfigOptions, isEffortOption, type Combo, type JobView, type ProviderModel, type BigThingEvent, type BigThingRuntime, type TeamPreset } from "@thingmaker/contracts";
+import { EMPTY_COMBO, JOB_EVENT, SESSION_TITLE_EVENT, type SessionTitleChange, ODYSSEY_STATE_NOTE, PROVIDERS, PROVIDER_LABELS, BIGTHING_EVENT, asConfigOptions, isEffortOption, type Combo, type JobView, type ProviderModel, type BigThingEvent, type BigThingRuntime, type TeamPreset } from "@thingmaker/contracts";
 import { handoffBrief, readPresets, upsertJob, upsertPreset } from "./team";
 
 /** Preference keys (scope `ui`) for saved teams. */
@@ -52,7 +54,7 @@ const DEFAULT_PRESET_KEY = "defaultTeamPreset";
 import { api } from "./ipc";
 import { notify, shouldNotify } from "./notifications";
 import { CLAUDE_RETRY_MS, claudeUsageFrom } from "./odysseyClaudeQuota";
-import { applyEvent, emptyProjection, type Projection } from "./projection";
+import { applyEvent, emptyProjection, EMPTY_QUEUE, type Projection } from "./projection";
 
 export const CLOSE_REQUESTED_EVENT = "thingmaker://close-requested";
 
@@ -129,7 +131,7 @@ export type OdysseyRuntime = {
 
 export const SESSION_TABS: SessionTab[] = ["transcript", "agents", "odyssey", "terminal", "files", "changes", "context", "artifacts", "images"];
 
-export const DEFAULT_UI_PREFS: UiPrefs = { enterSends: true, reducedMotion: "system", transcriptPage: 50 };
+export const DEFAULT_UI_PREFS: UiPrefs = { enterSends: true, reducedMotion: "system", transcriptPage: 50, followUp: "queue" };
 
 export type OpenMode = { mode: "new" } | { mode: "resume"; session_id: string };
 
@@ -231,6 +233,8 @@ type State = {
   announcement: string;
   uiPrefs: UiPrefs;
   sidebarCollapsed: boolean;
+  chillMode: boolean;
+  setChillMode: (enabled: boolean) => void;
   /** Model/effort remembered from the last picker change (new sessions). */
   sessionDefaults: SessionDefaults;
   /** Images seen appearing under output/imagegen per session (observed files). */
@@ -254,6 +258,12 @@ type State = {
   applyContextBundle: (sessionId: string, bundle: ContextBundle) => void;
   setPaletteOpen: (open: boolean) => void;
   setSessionTab: (tab: SessionTab) => void;
+  /** A document on its way to a session's Big Thing tab, by absolute path. */
+  bigThingDoc: Record<string, string>;
+  /** Opens Big Thing with this document: a new goal planned from it, or a change to the running one. */
+  sendDocToBigThing: (sessionId: string, path: string) => void;
+  /** The document waiting for this session's Big Thing tab, taken once. */
+  takeBigThingDoc: (sessionId: string) => string | null;
   setTranscriptSearchOpen: (open: boolean) => void;
   announce: (text: string) => void;
   toggleSidebar: () => void;
@@ -276,6 +286,14 @@ type State = {
   inspectWorkspace: (workspaceId: string) => Promise<WorkspaceInspection | null>;
   trust: (workspaceId: string, state: TrustState) => Promise<void>;
   loadProviders: () => Promise<void>;
+  /** A session's kept title changed in the host. */
+  noteSessionTitle: (change: SessionTitleChange) => void;
+  /** Installed and newest version of each provider program; null until asked. */
+  providerVersions: Partial<Record<Provider, ProviderVersion>> | null;
+  /** The provider whose program is updating now, and how the last update of each went. */
+  providerUpdate: { running: Provider | null; results: Partial<Record<Provider, { ok: boolean; text: string }>> };
+  loadProviderVersions: (askLatest?: boolean) => Promise<void>;
+  updateProvider: (provider: Provider) => Promise<void>;
   /**
    * Re-reads one provider's account now. Codex is asked; Claude's refusal is
    * re-read against its clock, because nothing on that side answers the
@@ -379,6 +397,11 @@ type State = {
   setDraft: (sessionId: string, draft: string) => void;
   send: (sessionId: string) => Promise<void>;
   steer: (sessionId: string) => Promise<void>;
+  /** Holds the composer's prompt for after the running turn. */
+  enqueue: (sessionId: string) => Promise<void>;
+  queueOp: (sessionId: string, op: QueueOp) => Promise<void>;
+  /** Takes a queued prompt back into the composer to change it. */
+  editQueued: (sessionId: string, id: string) => Promise<void>;
   cancel: (sessionId: string) => Promise<void>;
   stop: (sessionId: string) => Promise<void>;
   refreshSnapshot: (sessionId: string) => Promise<void>;
@@ -430,9 +453,17 @@ export function basenameOf(path: string): string {
 }
 
 /** A session's name: the desktop's rename (or a worker's job title) first, then the agent's, then its first prompt. */
+/**
+ * What a live session is called: the person's rename, then the title kept in
+ * its record (the provider's own, or its first prompt; it outlives the
+ * session), then what the stream says now. Records default to the store's,
+ * so every caller names a session the same way.
+ */
 export function sessionTitle(session: LiveSession, records?: SessionRecord[]): string {
-  const overlay = session.snapshot.agentSessionId ? records?.find((record) => record.agentSessionId === session.snapshot.agentSessionId)?.titleOverlay : undefined;
-  if (overlay) return overlay;
+  const id = session.snapshot.agentSessionId;
+  const record = id ? (records ?? useStore.getState().records[session.workspaceId])?.find((entry) => entry.agentSessionId === id) : undefined;
+  if (record?.titleOverlay) return record.titleOverlay;
+  if (record?.autoTitle) return record.autoTitle;
   if (session.projection.title) return session.projection.title;
   for (const card of session.projection.cards) {
     if (card.kind === "message" && card.message.role === "user") {
@@ -525,6 +556,7 @@ function projectionFromSnapshot(snapshot: Snapshot): Projection {
   projection.capabilities = snapshot.capabilities;
   projection.foreground = snapshot.foreground;
   projection.configOptions = snapshot.configOptions;
+  projection.queue = snapshot.queue ?? EMPTY_QUEUE;
   for (const [id, patch] of Object.entries(snapshot.toolCalls)) projection.toolCalls.set(id, patch);
   return projection;
 }
@@ -644,6 +676,8 @@ async function attachLive(get: Get, set: Set, handle: SessionHandle, workspaceId
 
 export const useStore = create<State>((set, get) => ({
   providers: null,
+  providerVersions: null,
+  providerUpdate: { running: null, results: {} },
   profiles: [],
   workspaces: [],
   inspections: {},
@@ -685,7 +719,10 @@ export const useStore = create<State>((set, get) => ({
   transcriptSearchOpen: false,
   announcement: "",
   uiPrefs: DEFAULT_UI_PREFS,
+  bigThingDoc: {},
   sidebarCollapsed: isRemote,
+  chillMode: false,
+  setChillMode: (enabled) => set({ chillMode: enabled }),
   sessionDefaults: {},
   observedImages: {},
   seenImageFiles: {},
@@ -697,6 +734,10 @@ export const useStore = create<State>((set, get) => ({
       void get().loadSettings();
       void get().loadUiPrefs();
       void get().loadProviders();
+      // Whether a provider program has fallen behind: once shortly after
+      // start, then twice a day. It asks npm, so it is never on the hot path.
+      setTimeout(() => void get().loadProviderVersions(), 20_000);
+      setInterval(() => void get().loadProviderVersions(), 12 * 60 * 60 * 1000);
       // Inspection never launches an agent; doing it up front lets the sidebar show
       // real trust state instead of "not inspected yet".
       for (const workspace of workspaces) {
@@ -745,6 +786,7 @@ export const useStore = create<State>((set, get) => ({
           for (const id of Object.keys(get().sessions)) void get().refreshSnapshot(id);
         })().catch(() => undefined);
       });
+      void listen<SessionTitleChange>(SESSION_TITLE_EVENT, (event) => get().noteSessionTitle(event.payload));
       void listen(CLOSE_REQUESTED_EVENT, async () => {
         let activity: { id: string; active: boolean; detachedCalls: number }[] = [];
         try {
@@ -889,6 +931,46 @@ export const useStore = create<State>((set, get) => ({
     }
   },
 
+  noteSessionTitle({ agentSessionId, title }) {
+    const records = get().records;
+    for (const [workspaceId, list] of Object.entries(records)) {
+      if (!list.some((record) => record.agentSessionId === agentSessionId)) continue;
+      set({ records: { ...records, [workspaceId]: list.map((record) => (record.agentSessionId === agentSessionId ? { ...record, autoTitle: title } : record)) } });
+      return;
+    }
+  },
+
+  async loadProviderVersions(askLatest = true) {
+    try {
+      const versions = await api.providerVersions(askLatest);
+      set({ providerVersions: Object.fromEntries(versions.map((version) => [version.provider, version])) });
+    } catch {
+      // A version check is advice; failing it must not raise an error banner.
+    }
+  },
+
+  async updateProvider(provider) {
+    if (get().providerUpdate.running) return;
+    const before = get().providerVersions?.[provider]?.installed;
+    set({ providerUpdate: { ...get().providerUpdate, running: provider } });
+    let result: { ok: boolean; text: string };
+    try {
+      const { version } = await api.providerUpdate(provider);
+      set({ providerVersions: { ...get().providerVersions, [provider]: version } });
+      const now = version.installed ?? "the new version";
+      result = {
+        ok: true,
+        text:
+          now === before
+            ? `Already on ${now}.`
+            : `Updated${before ? ` from ${before}` : ""} to ${now}. Sessions already open keep the version they started with; new sessions use ${now}.`,
+      };
+    } catch (error) {
+      result = { ok: false, text: asError(error).message };
+    }
+    set({ providerUpdate: { running: null, results: { ...get().providerUpdate.results, [provider]: result } } });
+  },
+
   async refreshUsage(provider) {
     // Both accounts are asked now: Codex through its app-server, Claude
     // through Claude Code's own `/usage` data. Neither costs a turn.
@@ -910,12 +992,12 @@ export const useStore = create<State>((set, get) => ({
     const quotas = { ...get().quotas, [quota.provider]: quota };
     const snapshot = usageFromQuota(quota);
     const usage = { ...get().usage };
-    // A provider that reports no percentages (Claude before it is spent) says
-    // only "allowed": that is no snapshot at all, which reads as room, and it
-    // clears a refusal recorded earlier — a turn that got an answer is the
-    // positive evidence the refusal was waiting for.
+    // A report with no percentages (what a Claude session says on every turn)
+    // says only "allowed": it clears a refusal recorded earlier — a turn that
+    // got an answer is the positive evidence the refusal was waiting for —
+    // but leaves a measured reading in place, so the sidebar keeps it.
     if (snapshot) usage[quota.provider] = snapshot;
-    else if (quota.status !== "rejected") usage[quota.provider] = null;
+    else if (quota.status !== "rejected" && usage[quota.provider]?.limitReached) usage[quota.provider] = null;
     set({ quotas, usage });
   },
 
@@ -981,7 +1063,8 @@ export const useStore = create<State>((set, get) => ({
    */
   async refreshClaudeUsage() {
     const held = get().usage.claude;
-    if (!held) return null;
+    // Only a refusal's reading is a clock to wait out; a measured one stands.
+    if (!held?.limitReached) return held ?? null;
     const resetAt = held.primary?.resetAtUnix;
     const windowOver = resetAt !== undefined && Date.now() >= resetAt * 1000;
     // Retry well before the reset the refusal named, because that time is
@@ -1195,7 +1278,7 @@ export const useStore = create<State>((set, get) => ({
     if (!view || !milestone) return;
     await get().odysseyAddAmendment(sessionId, {
       odysseyId: view.goal.id,
-      note: `Break milestone ${milestoneIndex + 1} ("${milestone.title}") into three to eight tasks, each one thing a subagent or worker can be given on its own, cut so that independent tasks can run in parallel; put depends: under a task only when it truly cannot start until an earlier one has finished. Send them in a BIGTHING-AMEND block as revise: ${milestoneIndex + 1} with step: lines. Change nothing else about the milestone.`,
+      note: `Break milestone ${milestoneIndex + 1} ("${milestone.title}") into tasks, each one thing a subagent or worker can be given on its own and sized in AI-agent time — about 10–30 minutes of agent work each, not human-effort estimates — cut so that independent tasks can run in parallel; put depends: under a task only when it truly cannot start until an earlier one has finished. Send them in a BIGTHING-AMEND block as revise: ${milestoneIndex + 1} with step: lines. Change nothing else about the milestone.`,
       refs: [],
     });
   },
@@ -1657,6 +1740,19 @@ export const useStore = create<State>((set, get) => ({
 
   setSessionTab(tab) {
     set({ sessionTab: tab });
+  },
+
+  sendDocToBigThing(sessionId, path) {
+    set({ bigThingDoc: { ...get().bigThingDoc, [sessionId]: path }, sessionTab: "odyssey" });
+  },
+
+  takeBigThingDoc(sessionId) {
+    const path = get().bigThingDoc[sessionId] ?? null;
+    if (path) {
+      const { [sessionId]: _taken, ...rest } = get().bigThingDoc;
+      set({ bigThingDoc: rest });
+    }
+    return path;
   },
 
   setTranscriptSearchOpen(open) {
@@ -2121,6 +2217,66 @@ export const useStore = create<State>((set, get) => ({
       const current = get().sessions[sessionId];
       if (current) set({ sessions: { ...get().sessions, [sessionId]: { ...current, steerInFlight: false } } });
     }
+  },
+
+  async enqueue(sessionId) {
+    const session = get().sessions[sessionId];
+    const draft = get().drafts[sessionId] ?? "";
+    const attachments = get().attachments[sessionId] ?? [];
+    const mentions = get().mentions[sessionId] ?? [];
+    if (!session || (!draft.trim() && attachments.length === 0 && mentions.length === 0) || session.inFlightRequestId) return;
+    const requestId = crypto.randomUUID();
+    set({ sessions: { ...get().sessions, [sessionId]: { ...session, inFlightRequestId: requestId } }, error: null });
+    try {
+      // The composer's own state rides along, so taking the prompt back out
+      // to edit restores its chips too, from this window or the phone.
+      await api.sessionEnqueue(session.handle, requestId, draft, attachments.map((a) => a.id), mentions, { attachments, mentions });
+      set({
+        drafts: { ...get().drafts, [sessionId]: "" },
+        attachments: { ...get().attachments, [sessionId]: [] },
+        mentions: { ...get().mentions, [sessionId]: [] },
+      });
+    } catch (error) {
+      set({ error: asError(error) });
+    } finally {
+      const current = get().sessions[sessionId];
+      if (current) set({ sessions: { ...get().sessions, [sessionId]: { ...current, inFlightRequestId: null } } });
+    }
+  },
+
+  async queueOp(sessionId, op) {
+    const session = get().sessions[sessionId];
+    if (!session) return;
+    try {
+      await api.sessionQueue(session.handle, op);
+    } catch (error) {
+      set({ error: asError(error) });
+    }
+  },
+
+  async editQueued(sessionId, id) {
+    const session = get().sessions[sessionId];
+    if (!session) return;
+    let item = session.projection.queue.items.find((entry) => entry.id === id);
+    try {
+      item = (await api.sessionQueue(session.handle, { op: "remove", id })).removed ?? item;
+    } catch (error) {
+      // An agent that exited still lists what was waiting; the text is
+      // here, so it comes back to the composer all the same.
+      if (session.projection.process !== "exited") {
+        set({ error: asError(error) });
+        return;
+      }
+      const queue = { ...session.projection.queue, items: session.projection.queue.items.filter((entry) => entry.id !== id) };
+      const current = get().sessions[sessionId];
+      if (current) set({ sessions: { ...get().sessions, [sessionId]: { ...current, projection: { ...current.projection, queue } } } });
+    }
+    if (!item) return;
+    const draft = get().drafts[sessionId] ?? "";
+    set({ drafts: { ...get().drafts, [sessionId]: draft.trim() ? `${draft}\n\n${item.text}` : item.text } });
+    if (item.restore?.attachments?.length) get().addAttachments(sessionId, item.restore.attachments);
+    for (const mention of item.restore?.mentions ?? []) get().addMention(sessionId, mention);
+    get().focusComposer();
   },
 
   async cancel(sessionId) {

@@ -151,7 +151,7 @@ async fn run(provider: Provider) {
     let socket = DelegationSocket::bind(delegation.clone(), scratch.path().join("mcp.sock")).unwrap();
     let host = Arc::new(RealHost { provider, storage: storage.clone(), root: root.clone(), workspace_id: workspace.id.clone(), delegation: delegation.clone(), socket: socket.path().to_path_buf(), sessions: Mutex::default() });
     let engine = Engine::new(storage.clone(), Arc::new(Host(host.clone())), Some(delegation.clone()), scratch.path().join("data"));
-    delegation.set_extension(Arc::new(engine.clone()));
+    delegation.add_extension(Arc::new(engine.clone()));
     engine.start(Duration::from_secs(2));
 
     let live = host.launch().await.expect("orchestrator attached");

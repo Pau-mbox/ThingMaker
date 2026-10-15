@@ -18,7 +18,20 @@ import { IconBox, IconFolder, IconX } from "./icons";
 /** Largest document inlined into a prompt, matching the native guard. */
 const MAX_DOCUMENT_BYTES = 32 * 1024;
 
-export function AmendDialog({ sessionId, odysseyId, workspaceId, onClose }: { sessionId: string; odysseyId: string; workspaceId: string; onClose: () => void }) {
+export function AmendDialog({
+  sessionId,
+  odysseyId,
+  workspaceId,
+  onClose,
+  initialPaths,
+}: {
+  sessionId: string;
+  odysseyId: string;
+  workspaceId: string;
+  onClose: () => void;
+  /** Files to start with, as if dropped: a document sent from the transcript. */
+  initialPaths?: string[];
+}) {
   const addAmendment = useStore((s) => s.odysseyAddAmendment);
   const setError = useStore((s) => s.setError);
   const [note, setNote] = useState("");
@@ -83,6 +96,13 @@ export function AmendDialog({ sessionId, odysseyId, workspaceId, onClose }: { se
     },
     [workspaceId, addRefs, setError],
   );
+
+  const startWith = initialPaths?.join("\n") ?? "";
+  useEffect(() => {
+    if (startWith) void handleDrop(startWith.split("\n"));
+    // Once, for what the dialog was opened with.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [startWith]);
 
   useEffect(() => {
     let stop: (() => void) | undefined;

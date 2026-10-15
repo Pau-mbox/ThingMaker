@@ -1,6 +1,6 @@
 # ThingMaker en Windows y Android
 
-Guía de la adaptación local, actualizada el **3 de octubre de 2026**.
+Guía de la adaptación local, actualizada el **15 de octubre de 2026**.
 El código original procede de `Pau-mbox/ThingMaker`; los cambios de Windows y
 Android están guardados en este repositorio y no se han enviado al upstream.
 El historial detallado de implementación y pruebas está en [NOTES.md](../NOTES.md).
@@ -9,16 +9,16 @@ El historial detallado de implementación y pruebas está en [NOTES.md](../NOTES
 
 | Parte | Estado al actualizar esta guía |
 | --- | --- |
-| Código | `origin/main` hasta `4326772` integrado mediante `038a0fe`; adaptación anterior guardada en `0114be5` |
-| Respaldo | Rama `backup/windows-android-before-main-20261003` |
-| Windows instalado | Compilación del 2 de octubre, con servidor remoto API v2 |
-| Windows actualizado | Compilación e instalador del 3 de octubre terminados; instalación manual pendiente |
+| Código | `origin/main` hasta `706a473` integrado; cambios locales pendientes guardados en `bb9b0dc` |
+| Respaldo | Rama `backup/before-upstream-20261015` y copia con SHA-256 en `target/integration-backup-20261015/` |
+| Windows instalado | Última comprobación histórica: compilación del 2 de octubre. No se reinstala ni comprueba la app instalada en esta integración |
+| Windows actualizado | Validación de fuentes, pruebas y empaquetado detallada en el informe de integración del 15 de octubre |
 | Android publicado | **2.0.3**, `versionCode` **5**, paquete `dev.thingmaker.remote` (6 de octubre de 2026) |
-| Acceso remoto | `https://thingmaker.jacksparrot.com`; `/health` respondió API v2 en la comprobación de esta actualización |
-| Validación móvil | Emulador Android API 35; no se ha probado todavía en un teléfono físico |
-| Proveedores | Respuestas reales de Codex verificadas; turno remoto real de Claude pendiente; Gemini no instalado/validado aquí |
+| Acceso remoto | `https://thingmaker.jacksparrot.com`; API v2 verificada en la revisión anterior, sin comprobación en vivo en esta integración |
+| Validación móvil | APKs Remote y Phone compilados el 15 de octubre; revisión anterior en emulador API 35; móvil físico pendiente |
+| Proveedores | Esta integración usa proveedores simulados. La revisión anterior verificó Codex real; no se ejecutan pruebas reales nuevas |
 
-La ejecución automática del último instalador de Windows fue rechazada con el
+En la revisión del 3 de octubre, la ejecución automática del instalador de Windows fue rechazada con el
 motivo genérico «bloqueado por política». Compilarlo no equivale a haberlo
 instalado. El APK 2.0.1 funciona con el servidor anterior, pero los nuevos datos
 `commandActions` de Codex requieren instalar también la compilación nueva del PC.
@@ -103,7 +103,7 @@ flowchart LR
 El transporte Android es OkHttp nativo contra `/v2/ws`. La página se carga
 localmente mediante WebViewAssetLoader; solo su origen HTTPS y marco principal
 pueden usar el puente. `bridge.ts` elige IPC de Tauri en el escritorio y el
-puente nativo en Android. El servidor despacha **163 operaciones tipadas**; las
+puente nativo en Android. El servidor despacha **171 operaciones tipadas**; las
 suscripciones se manejan aparte. No es una API de comandos arbitrarios.
 
 Los eventos de conversaciones, terminal y tareas llegan por WebSocket. Al
@@ -185,6 +185,14 @@ en el entorno. Haz un `--dry-run`, revisa versión, notas y URL, publica sin
 `--force` y verifica el SHA256 del APK almacenado en SERVER.
 
 ## Pruebas y evidencias
+
+La integración del 15 de octubre incorpora el remoto hasta `706a473` y
+conserva las adaptaciones locales de Windows, las imágenes de herramientas y
+la recuperación del historial. El cliente remoto original permanece en
+`apps/android`; el nuevo cliente emparejado del remoto está en `apps/phone`.
+Ambos usan la misma interfaz React y mantienen protocolos independientes.
+Consulta el [informe de integración](upstream-integration-2026-10-15.md) para
+las comprobaciones y los límites de validación de esta revisión.
 
 La integración del 3 de octubre pasó **272 pruebas de interfaz/contratos**,
 **3 pruebas del puente Codex**, **4 pruebas nativas de escritorio**, revisión

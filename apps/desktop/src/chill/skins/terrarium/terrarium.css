@@ -1,0 +1,54 @@
+.chill-skin-terrarium {
+  background: radial-gradient(
+    ellipse at 52% 54%,
+    #294b49 0%,
+    #1b3438 40%,
+    #14272e 73%,
+    #112129 100%
+  );
+}
+.chill-skin-terrarium::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0.035;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 160 160' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.75' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Cpath filter='url(%23n)' opacity='.7' d='M0 0h160v160H0z'/%3E%3C/svg%3E");
+  z-index: 8;
+}
+.terrarium-moonlight {
+  background: radial-gradient(
+    ellipse at 52% 54%,
+    #273e52 0%,
+    #192b3d 50%,
+    #111f30 100%
+  );
+}
+.terrarium-sunrise {
+  background: radial-gradient(
+    ellipse at 52% 45%,
+    #536456 0%,
+    #3b4b49 45%,
+    #263b40 100%
+  );
+}
+.terrarium-still-plants {
+  display: flex;
+  gap: 28px;
+  justify-content: center;
+  flex-wrap: wrap;
+}
+.terrarium-still-plants button {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: auto;
+  height: auto;
+}
+.terrarium-project-name {
+  max-width: 150px;
+  overflow-wrap: anywhere;
+  color: #f1e8c9;
+  font: 500 13px/16px system-ui, sans-serif;
+  text-align: center;
+}

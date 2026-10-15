@@ -1247,6 +1247,67 @@ code {
   border-color: rgba(255, 107, 34, 0.4);
 }
 
+/* Plan checklist: the agent's todo list, in the transcript and pinned above
+   the composer. A done step is checked and dimmed, the step in progress is
+   marked in the accent, the rest are empty boxes. */
+.plan-head {
+  margin-bottom: 4px;
+}
+
+.plan-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.plan-item {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  line-height: 18px;
+}
+
+.plan-mark {
+  flex: none;
+  width: 13px;
+  height: 13px;
+  border: 1.5px solid var(--muted);
+  border-radius: 4px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transform: translateY(2px);
+}
+
+.plan-completed .plan-mark {
+  border-color: var(--ok);
+  background: rgba(143, 211, 161, 0.16);
+  color: var(--ok);
+}
+
+.plan-completed .plan-text {
+  color: var(--muted);
+  text-decoration: line-through;
+  text-decoration-color: rgba(255, 255, 255, 0.25);
+}
+
+.plan-in_progress .plan-mark {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.plan-in_progress .plan-text {
+  color: var(--text);
+  font-weight: 600;
+}
+
+.plan-priority {
+  color: var(--warn);
+}
+
 .card-tool {
   padding: 6px 12px;
   font-size: 12.5px;
@@ -1324,6 +1385,138 @@ code {
 .composer > * {
   width: 100%;
   max-width: 880px;
+}
+
+.plan-bar {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--panel);
+  padding: 4px 8px 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.plan-bar-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.plan-bar-head {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: none;
+  border: none;
+  color: var(--text-2);
+  padding: 2px 0;
+  cursor: pointer;
+  font: inherit;
+  font-size: 12.5px;
+  text-align: left;
+}
+
+.plan-bar-count {
+  flex: none;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.plan-bar-current {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.plan-meter {
+  height: 2px;
+  border-radius: 2px;
+  background: var(--panel-3);
+  overflow: hidden;
+}
+
+.plan-meter > span {
+  display: block;
+  height: 100%;
+  background: var(--accent);
+  transition: width 240ms ease;
+}
+
+.plan-bar .plan-list {
+  padding: 2px 2px 2px 20px;
+  font-size: 12.5px;
+}
+
+/* Prompts waiting for the running turn, just above the composer they came
+   from. */
+.queue-strip {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.queue-paused {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--warn);
+  padding: 0 4px;
+}
+
+.queue-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.queue-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border: 1px dashed var(--border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--panel);
+  padding: 4px 6px 4px 10px;
+  font-size: 12.5px;
+}
+
+.queue-index {
+  flex: none;
+  min-width: 10px;
+}
+
+.queue-text {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-2);
+}
+
+.queue-actions {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  opacity: 0.55;
+}
+
+.queue-item:hover .queue-actions,
+.queue-item:focus-within .queue-actions {
+  opacity: 1;
+}
+
+.queue-actions .link:disabled {
+  opacity: 0.35;
+  cursor: default;
 }
 
 .composer-card {
@@ -1408,6 +1601,16 @@ code {
   background: var(--panel-3);
   color: var(--muted);
   cursor: not-allowed;
+}
+
+/* The follow-up that is one modifier away while a turn runs. */
+.send-secondary {
+  background: var(--panel-3);
+  color: var(--text);
+}
+
+.send-secondary:hover {
+  background: var(--border-strong);
 }
 
 .send-round {
@@ -4623,6 +4826,7 @@ html[data-platform="android"] { --traffic-lights: 8px; --titlebar: 52px; height:
 
 /* A run of tool calls, folded into one line with a plain line per step. */
 .tool-group {
+  flex: none;
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   background: var(--panel);
@@ -4771,4 +4975,356 @@ html[data-platform="android"] { --traffic-lights: 8px; --titlebar: 52px; height:
   html[data-platform="android"] .tool-step-line { min-height: 44px; padding-left: 12px; }
   html[data-platform="android"] .tool-step-text { white-space: normal; overflow-wrap: anywhere; }
   html[data-platform="android"] .tool-step-detail { margin-left: 12px; }
+}
+
+/* A Markdown document in the transcript: name, the top of it, actions. */
+.doc-card {
+  /* The transcript is a flex column: without this a card shrinks to nothing. */
+  flex: none;
+  border: 1px solid var(--border);
+  border-left: 2px solid var(--accent);
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+  background: var(--panel);
+  overflow: hidden;
+}
+
+.doc-card-head,
+.doc-viewer-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding: 7px 10px;
+  color: var(--text-2);
+}
+
+.doc-card-head {
+  border-bottom: 1px solid var(--border);
+  background: var(--panel-2);
+}
+
+.doc-card-name {
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--text);
+  font: inherit;
+  font-family: var(--mono);
+  font-size: 12.5px;
+  cursor: pointer;
+}
+
+.doc-card-name:hover span:last-child {
+  text-decoration: underline;
+}
+
+.doc-card-meta {
+  white-space: nowrap;
+}
+
+.doc-actions {
+  display: inline-flex;
+  gap: 2px;
+  margin-left: auto;
+}
+
+.doc-action {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 7px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--muted);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.doc-action:hover {
+  background: var(--panel-3);
+  color: var(--text);
+}
+
+.doc-action-bigthing {
+  color: var(--accent);
+}
+
+.doc-action-bigthing:hover {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.doc-card-preview {
+  position: relative;
+  padding: 8px 14px 4px;
+}
+
+.doc-card-preview .markdown {
+  font-size: 12.5px;
+}
+
+.doc-card-folded {
+  max-height: 220px;
+  overflow: hidden;
+}
+
+.doc-card-folded::after {
+  content: "";
+  position: absolute;
+  inset: auto 0 0;
+  height: 48px;
+  background: linear-gradient(transparent, var(--panel));
+  pointer-events: none;
+}
+
+.doc-card-more {
+  margin: 0 14px 8px;
+}
+
+.modal.doc-viewer {
+  width: min(860px, 92vw);
+  max-width: none;
+  height: 86vh;
+  padding: 0;
+  overflow: hidden;
+}
+
+.doc-viewer-head {
+  border-bottom: 1px solid var(--border);
+}
+
+.doc-viewer-head .doc-actions {
+  margin-left: auto;
+}
+
+.doc-viewer-body {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 18px 28px 28px;
+}
+
+/* Settings → Phone */
+.phone-pairing {
+  display: flex;
+  gap: 18px;
+  align-items: center;
+  margin: 8px 0;
+}
+
+.phone-qr {
+  flex: none;
+  width: 220px;
+  height: 220px;
+  padding: 8px;
+  border-radius: var(--radius-sm);
+  background: #fff;
+}
+
+.phone-qr svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.phone-code {
+  font-size: 22px;
+  letter-spacing: 0.08em;
+  margin: 6px 0;
+}
+
+.phone-devices {
+  list-style: none;
+  margin: 10px 0 0;
+  padding: 0;
+}
+
+.phone-devices li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 0;
+  border-top: 1px solid var(--border);
+}
+
+.phone-devices .link {
+  margin-left: auto;
+}
+
+.phone-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--muted);
+}
+
+.phone-dot-on {
+  background: var(--ok);
+}
+
+/* ---------- The phone's screens (the remote build) ---------- */
+.app-remote {
+  --titlebar: 52px;
+  --traffic-lights: 12px;
+}
+
+.app-remote .remote-hidden {
+  display: none !important;
+}
+
+/* One screen at a time: the sessions, or the session. */
+.app-remote .sidebar {
+  width: 100%;
+  border-right: 0;
+}
+
+.app-remote:not(.remote-view-welcome):not(.remote-view-workspace) .sidebar {
+  display: none;
+}
+
+.app-remote.remote-view-welcome .main,
+.app-remote.remote-view-workspace .main {
+  display: none;
+}
+
+.app-remote .sidebar-top {
+  padding: 0 12px;
+}
+
+.app-remote .topbar {
+  padding: 0 8px;
+  gap: 4px;
+}
+
+.app-remote .remote-back {
+  width: 36px;
+  height: 36px;
+  font-size: 28px;
+  line-height: 1;
+  color: var(--text);
+}
+
+.app-remote .topbar-title {
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0;
+  overflow: hidden;
+}
+
+.app-remote .topbar-name {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.app-remote .branch-chip {
+  display: none;
+}
+
+.app-remote .remote-banner {
+  margin: 0;
+  border-radius: 0;
+  text-align: center;
+}
+
+/* Finger-sized rows and controls. */
+.app-remote .sidebar-sessions button,
+.app-remote .sidebar-session {
+  min-height: 40px;
+}
+
+.app-remote .tab {
+  padding: 10px 12px;
+}
+
+.app-remote .composer textarea {
+  font-size: 16px;
+}
+
+.app-remote .transcript {
+  padding-left: 10px;
+  padding-right: 10px;
+}
+
+.app-remote .modal {
+  width: 100vw;
+  max-width: 100vw;
+  max-height: 100vh;
+  border-radius: 0;
+}
+
+.app-remote .doc-actions {
+  flex-wrap: wrap;
+}
+
+.app-remote .doc-card-meta,
+.app-remote .tool-group-detail {
+  white-space: normal;
+}
+
+.app-remote .work-lane {
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+
+.app-remote .work-lane-task {
+  grid-column: 1 / -1;
+  white-space: normal;
+}
+
+/* Settings → Phone: apps sent to phones */
+.phone-offers {
+  list-style: none;
+  margin: 10px 0 0;
+  padding: 0;
+}
+
+.phone-offers li {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+  padding: 4px 0;
+}
+
+.apk-card .doc-card-head {
+  border-bottom: 0;
+}
+
+.phone-relay-form {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-width: 520px;
+  margin: 8px 0;
+}
+
+.chill-hidden-list {
+  margin: 4px 0 8px;
+  padding-left: 18px;
+}
+
+/* A provider program has a newer release (Providers button). */
+.icon-button:has(.badge-dot) {
+  position: relative;
+}
+
+.badge-dot {
+  position: absolute;
+  top: 3px;
+  right: 3px;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 0 2px var(--sidebar);
+}
+
+.provider-version {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 2px 0 6px;
 }

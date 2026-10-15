@@ -203,15 +203,37 @@ function MilestoneBadge({ milestone, sessionId }: { milestone: MilestoneRecord; 
     );
   }
   if (milestone.state === "skipped") return <span className="odyssey-badge">Skipped</span>;
+  // Every task done and nothing reported: the work may well be finished — an
+  // orchestrator running many milestones in one turn reports late or never —
+  // so it can be checked or verified now rather than waiting on a claim.
+  const tasksDone = milestone.steps.length > 0 && milestone.steps.every((step) => step.state === "done");
+  const verifyNow = tasksDone ? (
+    <button
+      className="button button-small"
+      disabled={busy}
+      onClick={() => void verifyManually(sessionId, milestone.id)}
+      title={milestone.checkKind === "manual" ? "All its tasks are done: confirm it yourself" : "All its tasks are done: accept it without running the check"}
+      type="button"
+    >
+      {milestone.checkKind === "manual" ? "Verify" : "Accept"}
+    </button>
+  ) : null;
   if (milestone.state === "active") {
     return (
       <>
-        <span className="odyssey-badge badge-active">Active</span>
+        <span className="odyssey-badge badge-active">{tasksDone ? "Tasks done" : "Active"}</span>
         {runButton}
+        {verifyNow}
       </>
     );
   }
-  return <span className="odyssey-badge">Planned</span>;
+  return (
+    <>
+      <span className="odyssey-badge">{tasksDone ? "Tasks done" : "Planned"}</span>
+      {tasksDone && runButton}
+      {verifyNow}
+    </>
+  );
 }
 
 function MilestoneRow({
@@ -1075,6 +1097,14 @@ function NewGoalForm({ sessionId, workspaceId, agentSessionId }: { sessionId: st
     [setError],
   );
 
+  // A document sent here from the transcript plans the goal, as a drop would.
+  const sentDoc = useStore((s) => s.bigThingDoc[sessionId]);
+  useEffect(() => {
+    if (!sentDoc) return;
+    const path = useStore.getState().takeBigThingDoc(sessionId);
+    if (path) void readDocument([path]);
+  }, [sentDoc, sessionId, readDocument]);
+
   // Tauri hands the webview file paths rather than File objects, so the drop
   // is read natively and this listener only routes it.
   useEffect(() => {
@@ -1334,6 +1364,18 @@ export function OdysseyPane({ sessionId }: { sessionId: string }) {
   const [editingGoal, setEditingGoal] = useState(false);
   const [briefingOpen, setBriefingOpen] = useState(false);
   const [amendOpen, setAmendOpen] = useState(false);
+  const [amendPaths, setAmendPaths] = useState<string[]>([]);
+  // A document sent from the transcript to a session that already has a
+  // goal is work to add to it.
+  const sentDoc = useStore((s) => s.bigThingDoc[sessionId]);
+  const hasGoal = Boolean(view);
+  useEffect(() => {
+    if (!sentDoc || !hasGoal) return;
+    const path = useStore.getState().takeBigThingDoc(sessionId);
+    if (!path) return;
+    setAmendPaths([path]);
+    setAmendOpen(true);
+  }, [sentDoc, hasGoal, sessionId]);
   const [tab, setTab] = useState<"roadmap" | "inbox" | "documents" | "team" | "history" | "changes" | "settings">("roadmap");
   const inbox = useInboxItems(sessionId, view);
   const [goalTitle, setGoalTitle] = useState("");
@@ -1538,7 +1580,18 @@ export function OdysseyPane({ sessionId }: { sessionId: string }) {
         <span>Saved in this app's database, not in your project.</span>
       </footer>
 
-      {amendOpen && <AmendDialog odysseyId={goal.id} onClose={() => setAmendOpen(false)} sessionId={sessionId} workspaceId={session.workspaceId} />}
+      {amendOpen && (
+        <AmendDialog
+          initialPaths={amendPaths}
+          odysseyId={goal.id}
+          onClose={() => {
+            setAmendOpen(false);
+            setAmendPaths([]);
+          }}
+          sessionId={sessionId}
+          workspaceId={session.workspaceId}
+        />
+      )}
 
       {briefingOpen && (
         <div aria-modal="true" className="modal-backdrop" onClick={() => setBriefingOpen(false)} role="dialog">

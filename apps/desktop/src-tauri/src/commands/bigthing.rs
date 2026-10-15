@@ -41,7 +41,7 @@ pub fn start(app: &AppHandle) {
         state.data_dir.clone(),
     );
     if let Some(delegation) = state.delegation.get() {
-        delegation.set_extension(std::sync::Arc::new(engine.clone()));
+        delegation.add_extension(std::sync::Arc::new(engine.clone()));
     }
     let _ = state.engine.set(engine.clone());
     tauri::async_runtime::spawn(async move { engine.start(TICK_INTERVAL) });

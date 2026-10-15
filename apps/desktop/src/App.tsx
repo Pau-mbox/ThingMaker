@@ -1,4 +1,6 @@
-import { useEffect } from "react";
+import { lazy, Suspense, useEffect } from "react";
+import { IS_REMOTE } from "./remote/mode";
+import { ConnectionBanner } from "./remote/ConnectionBanner";
 import { useStore } from "./store";
 import { TopBar } from "./components/TopBar";
 import { Sidebar } from "./components/Sidebar";
@@ -25,6 +27,8 @@ function RemoteConnection() {
   return <div className={`remote-connection ${status === "connected" ? "" : "remote-offline"}`} role="status"><span>{status === "connected" ? "Conectado al PC" : status === "unauthorized" ? "API key incorrecta o revocada" : status === "update-required" ? "Actualiza ThingMaker en el PC" : "Reconectando con el PC…"}</span><button className="link" onClick={disconnectRemote} type="button">Desconectar</button></div>;
 }
 
+const ChillView = lazy(() => import("./chill/ChillView"));
+
 function Welcome() {
   const addWorkspaceByPicker = useStore((s) => s.addWorkspaceByPicker);
   const setView = useStore((s) => s.setView);
@@ -33,7 +37,7 @@ function Welcome() {
   return (
     <div className="welcome">
       <div className="welcome-card">
-        <img className="welcome-brand-icon" src="/thingmaker-icon.png" alt="" draggable={false} />
+        <img className="welcome-brand-icon" src={`${import.meta.env.BASE_URL}thingmaker-icon.png`} alt="" draggable={false} />
         <h1>ThingMaker</h1>
         <p className="muted">One desktop for Claude Code and Codex on your own subscriptions: sessions you can observe, steer, review and hand between providers.</p>
         <div className="welcome-actions">
@@ -79,6 +83,8 @@ export function App() {
   const announcement = useStore((s) => s.announcement);
   const reducedMotion = useStore((s) => s.uiPrefs.reducedMotion);
   const sidebarCollapsed = useStore((s) => s.sidebarCollapsed);
+  const chillMode = useStore((s) => s.chillMode);
+  const setChillMode = useStore((s) => s.setChillMode);
 
   useEffect(() => {
     void bootstrap();
@@ -101,8 +107,22 @@ export function App() {
 
   useKeyboardShortcuts();
 
+  // On the phone, Android's back gesture steps out of a session to the list.
+  useEffect(() => {
+    if (!IS_REMOTE) return;
+    const back = () => {
+      if (useStore.getState().chillMode) { useStore.getState().setChillMode(false); return true; }
+      const current = useStore.getState().view;
+      if (current.kind === "welcome" || current.kind === "workspace") return false;
+      const workspaceId = current.kind === "session" ? useStore.getState().sessions[current.sessionId]?.workspaceId : undefined;
+      useStore.getState().setView(workspaceId ? { kind: "workspace", workspaceId } : { kind: "welcome" });
+      return true;
+    };
+    (window as unknown as { __thingmakerBack?: () => boolean }).__thingmakerBack = back;
+  }, []);
+
   return (
-    <div className={`app ${sidebarCollapsed ? "sidebar-collapsed" : ""}`} data-reduce-motion={reducedMotion === "reduce" ? "true" : undefined}>
+    <div className={`app ${sidebarCollapsed && !IS_REMOTE ? "sidebar-collapsed" : ""} ${IS_REMOTE ? `app-remote remote-view-${view.kind}` : ""}`} data-reduce-motion={reducedMotion === "reduce" ? "true" : undefined}>
       <div aria-live="polite" className="sr-only" role="status">
         {announcement}
       </div>
@@ -110,9 +130,11 @@ export function App() {
       <CloseRequestDialog />
       <LockedResumeDialog />
       {isRemote && <RemoteConnection />}
-      <div className="shell">
+      {IS_REMOTE && !chillMode && <ConnectionBanner />}
+      {chillMode && <ErrorBoundary label="Chill" onReset={() => setChillMode(false)} fallback={<div className="chill" role="alert" aria-label="Chill rendering unavailable"><button aria-label="Back to work" onClick={() => setChillMode(false)}><svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor"><path d="M9 5H5v14h4M13 8l4 4-4 4M9 12h11" /></svg></button></div>}><Suspense fallback={<div className="chill" aria-label="Opening Chill" />}><ChillView onExit={() => setChillMode(false)} /></Suspense></ErrorBoundary>}
+      <div className="shell" style={chillMode ? { display: "none" } : undefined}>
         {isRemote && !sidebarCollapsed && <button className="mobile-sidebar-backdrop" aria-label="Cerrar menú" onClick={() => useStore.getState().toggleSidebar()} />}
-        {!sidebarCollapsed && (
+        {(!sidebarCollapsed || IS_REMOTE) && (
           <ErrorBoundary label="sidebar">
             <Sidebar />
           </ErrorBoundary>

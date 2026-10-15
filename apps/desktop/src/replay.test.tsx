@@ -32,6 +32,13 @@ import { SessionPanel } from "./components/SessionPanel";
 import { Sidebar } from "./components/Sidebar";
 import { AttentionBanner } from "./components/Attention";
 
+// jsdom has no ResizeObserver; the transcript uses one to follow new output.
+globalThis.ResizeObserver ??= class {
+  observe() {}
+  unobserve() {}
+  disconnect() {}
+} as unknown as typeof ResizeObserver;
+
 const here = dirname(fileURLToPath(import.meta.url));
 const events: EventEnvelope[] = readFileSync(resolve(here, "__fixtures__/events-hey.jsonl"), "utf8")
   .split("\n")
@@ -61,6 +68,7 @@ function seedSession(): LiveSession {
     configOptions: attach.configOptions,
     availableCommands: attach.availableCommands,
     pendingSteers: [],
+    queue: { items: [], paused: null, sending: null },
     lastSequence: "8",
     exit: null,
   };

@@ -115,6 +115,11 @@ pub struct SessionRecord {
     pub agent_session_id: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub title_overlay: Option<String>,
+    /// The title the session had, kept after it closes: the provider's own
+    /// (Claude Code's ai-title, Codex's thread name) or its first prompt.
+    /// `Some("")` means it was looked for and there is none.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub auto_title: Option<String>,
     pub origin: SessionOrigin,
     pub archive_state: ArchiveState,
     pub pinned: bool,
@@ -149,7 +154,7 @@ fn row_to_workspace(row: &rusqlite::Row<'_>) -> rusqlite::Result<WorkspaceRecord
 }
 
 const SESSION_COLUMNS: &str =
-    "id, workspace_id, agent_session_id, title_overlay, origin, archive_state, pinned, last_seen, created_at, provider, parent_session_id";
+    "id, workspace_id, agent_session_id, title_overlay, origin, archive_state, pinned, last_seen, created_at, provider, parent_session_id, auto_title";
 
 fn row_to_session(row: &rusqlite::Row<'_>) -> rusqlite::Result<SessionRecord> {
     let origin: String = row.get(4)?;
@@ -168,6 +173,7 @@ fn row_to_session(row: &rusqlite::Row<'_>) -> rusqlite::Result<SessionRecord> {
         // The CHECK constraint admits only known providers.
         provider: Provider::parse(&row.get::<_, String>(9)?).unwrap_or_default(),
         parent_session_id: row.get(10)?,
+        auto_title: row.get(11)?,
     })
 }
 
@@ -319,6 +325,7 @@ impl Storage {
             workspace_id: workspace_id.into(),
             agent_session_id: agent_session_id.into(),
             title_overlay: None,
+            auto_title: None,
             origin,
             archive_state: ArchiveState::Active,
             pinned: false,
@@ -382,6 +389,25 @@ impl Storage {
             return Err(StorageError::NotFound(format!("session {id} not found")));
         }
         Ok(())
+    }
+
+    /// A session's record by the agent's id for it, in whichever workspace.
+    pub fn session_by_agent_id_anywhere(&self, agent_session_id: &str) -> Result<Option<SessionRecord>, StorageError> {
+        Ok(self
+            .conn()
+            .query_row(&format!("SELECT {SESSION_COLUMNS} FROM sessions WHERE agent_session_id = ?1 LIMIT 1"), params![agent_session_id], row_to_session)
+            .optional()?)
+    }
+
+    /// Keeps the title a session had, by the agent's id for it (the id every
+    /// live attachment and transcript is known by). `""` records that none was
+    /// found. Returns whether anything changed.
+    pub fn session_set_auto_title(&self, agent_session_id: &str, title: &str) -> Result<bool, StorageError> {
+        let changed = self.conn().execute(
+            "UPDATE sessions SET auto_title = ?2 WHERE agent_session_id = ?1 AND auto_title IS NOT ?2",
+            params![agent_session_id, title.trim()],
+        )?;
+        Ok(changed > 0)
     }
 
     /// Sets or clears the desktop's display name for a session. An overlay
@@ -455,6 +481,33 @@ mod tests {
         storage.session_set_pinned(&older.id, false).unwrap();
         assert!(storage.session_list(&workspace.id).unwrap().iter().all(|session| !session.pinned));
         assert!(matches!(storage.session_set_pinned("nope", true), Err(StorageError::NotFound(_))));
+    }
+
+    #[test]
+    fn a_session_keeps_its_title_beside_any_rename() {
+        let storage = Storage::open_in_memory().unwrap();
+        let workspace = storage.workspace_upsert("/p", "/p", "w-1").unwrap();
+        let session = storage.session_upsert(&workspace.id, "s-1", SessionOrigin::Desktop, Provider::Claude).unwrap();
+        assert_eq!(session.auto_title, None, "not looked for yet");
+
+        assert!(storage.session_set_auto_title("s-1", "Fix the loading screen").unwrap());
+        assert!(!storage.session_set_auto_title("s-1", "Fix the loading screen").unwrap(), "the same title again is no change");
+        assert!(storage.session_set_auto_title("s-1", "Game loading screen with chibi animation").unwrap(), "the provider's own title replaces the prompt's");
+        let kept = storage.session_by_agent_id_anywhere("s-1").unwrap().unwrap();
+        assert_eq!(kept.auto_title.as_deref(), Some("Game loading screen with chibi animation"));
+        assert_eq!(kept.id, session.id);
+
+        // A rename is separate and wins; clearing it gives the kept title back.
+        storage.session_set_title_overlay(&session.id, Some("Loading screen")).unwrap();
+        let renamed = storage.session_by_agent_id(&workspace.id, "s-1").unwrap().unwrap();
+        assert_eq!((renamed.title_overlay.as_deref(), renamed.auto_title.as_deref()), (Some("Loading screen"), Some("Game loading screen with chibi animation")));
+
+        // "Looked for, none found" is remembered, and is not "not looked for".
+        let other = storage.session_upsert(&workspace.id, "s-2", SessionOrigin::Desktop, Provider::Claude).unwrap();
+        assert!(storage.session_set_auto_title(&other.agent_session_id, "").unwrap());
+        assert_eq!(storage.session_by_agent_id_anywhere("s-2").unwrap().unwrap().auto_title.as_deref(), Some(""));
+        assert!(!storage.session_set_auto_title("nobody", "x").unwrap(), "no such session changes nothing");
+        assert_eq!(storage.session_by_agent_id_anywhere("nobody").unwrap(), None);
     }
 
     #[test]

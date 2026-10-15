@@ -58,8 +58,10 @@ For this checkout's Windows installation, Android releases, WebSocket transport,
 | 📊 **Live usage** | Five-hour and weekly windows for Claude and Codex in the sidebar, read from each provider's own program at no cost. |
 | 🧭 **Big Thing** | A long-horizon goal runner: drop in a plan document and the agent turns it into milestones and tasks with their dependencies and checks; press Start and it runs to the end on its own — see [Big Thing](#big-thing) below. |
 | 🧠 **Shared memory** | One project memory — decisions, conventions, facts — that the orchestrator, its workers and you read and write (`memory_read`, `memory_write`), plus a live task board. |
+| 🌿 **Chill mode** | A living cyber terrarium shows real agents as cute helpers, projects as plants and touched files as foliage. An observational scene showing only project names when several plants are visible with quiet icon controls, source navigation, attention lanterns and gentle lighting. Enter with **⌘⇧C** or the top-bar **Chill** button; see [Chill mode](docs/chill.md). |
 | 🖼️ **Inline images** | Images agents generate or read show up right in the transcript, including Codex's generated images. |
 | 🔌 **MCP servers in one click** | Install Playwright, Context7, GitHub and others from a catalog, or paste any server's config or `mcp add` command. ThingMaker test-starts it, then writes it through each provider's own `mcp add`, so Claude Code, Codex and Antigravity all have it. Secrets stay in the keychain as `${NAME}` references. |
+| 📱 **On your phone** | An Android app follows and drives the Mac's sessions and Big Things from anywhere, through your own relay on Cloudflare: read transcripts live, send and steer, answer a Big Thing, pause and resume, and get notified when one needs you. Paired by QR code, locked by your fingerprint, revocable per phone — see [On your phone](#4-on-your-phone). |
 | 🔍 **Review and tools** | Diffs and baselines, git staging and commits, worktrees, an integrated terminal, file browsing, artifacts and skills. |
 | 📱 **Android remote UI (local adaptation)** | The same React interface on your phone, with authenticated WebSocket commands and live events. Agents, files and terminals execute on your PC. See [setup and limitations](docs/windows-android.md). |
 | 🧾 **Readable activity** | Consecutive tool calls are grouped into expandable runs, with progress, step counts and raw details. Windows paths and mobile touch controls are adapted in this checkout. |
@@ -212,6 +214,57 @@ picks up the new build when you reopen it.
    document on the form, review the milestones it proposes, and press
    **Start**.
 
+### 4. On your phone
+
+The Android app shows ThingMaker's own screens, served by your Mac, so the
+phone always matches the Mac's version. Phone and Mac meet at a small relay
+you deploy once to your Cloudflare account (a Worker on your free
+workers.dev address, `apps/relay`): the Mac only connects out, nothing on it
+listens to the network, and Cloudflare Access keeps everyone without your
+service token away from the relay.
+
+1. **Deploy the relay.** `pnpm relay:deploy` — Wrangler asks you to sign in to
+   Cloudflare the first time — and note the address it prints,
+   `https://thingmaker-relay.<you>.workers.dev`.
+2. **Put Cloudflare Access in front of it.** In the Cloudflare dashboard:
+   - Zero Trust → Access → Service auth → **Create service token**; copy the
+     Client ID and Client Secret.
+   - Workers & Pages → `thingmaker-relay` → **Access**: protect the
+     workers.dev address with a policy whose action is **Service Auth** and
+     which includes that service token.
+3. **Connect the Mac.** In ThingMaker, **Settings → Phone**: turn on phone
+   access, paste the relay address, the Client ID and the Client Secret, and
+   save. It shows *connected* once the Mac reaches the relay.
+4. **Install the app** with `pnpm phone` (Java 17 and the Android SDK; it
+   installs itself when a phone is plugged in with USB debugging on,
+   otherwise copy `ThingMaker-phone.apk` to the phone).
+5. **Pair.** In **Settings → Phone**, press **Pair a phone** and scan the QR
+   code with the app. The code carries the relay address and the Access
+   token, so the phone needs nothing else.
+
+Traffic is encrypted between each device and Cloudflare, and Cloudflare ends
+TLS at its edge; each phone's own token, checked on the Mac, is the key to
+the bridge itself.
+
+From the phone you can read and follow sessions, send and steer, cancel, start
+sessions, run and answer Big Things and decide their plan changes, and cancel
+or retry worker jobs. Sign-ins, provider settings, workspace trust, the
+terminal, git and file writes stay on the Mac. The app asks for your
+fingerprint or screen lock when it opens, and notifies you when a Big Thing
+needs input, is blocked or is done, or a worker's job fails. Revoke a phone in
+**Settings → Phone**.
+
+**Installing apps without a cable.** **Settings → Phone → Send an app…** puts
+any `.apk` on a connected phone, and an `.apk` an agent names in a session
+gets an **Install on phone** button (on the phone: **Install on this phone**).
+The phone downloads it through the relay, checks its SHA-256, and Android asks
+you to confirm — once, the first time, it also asks you to let ThingMaker
+install apps. That includes updates of the ThingMaker app itself: run
+`pnpm phone` and send `ThingMaker-phone.apk`. Agents can do the same: every
+session has `phone_status` and `phone_install` on its team server, so "build
+it and put it on my phone" ends with the install on the phone, waiting only
+for you to tap Install.
+
 ## Development
 
 ```bash
@@ -236,6 +289,8 @@ Live tests against the real providers are opt-in and spend a few tokens:
 | --- | --- |
 | `apps/desktop` | the Tauri app: React interface (`src/`) and the host's commands (`src-tauri/`) |
 | `apps/android` | Android onboarding, encrypted connection storage and WebView for the shared React renderer |
+| `apps/phone` | Paired Android client for the upstream Cloudflare relay (`pnpm phone`) |
+| `apps/relay` | Cloudflare relay for paired phones |
 | `crates/thingmaker-supervisor` | the engine: transport, ACP client, provider bridges, delegation, Big Thing (`bigthing/`), session actors, storage |
 | `packages/contracts` | the TypeScript types of the desktop API |
 | `packages/test-fixtures` | mock providers, captured from the real programs |

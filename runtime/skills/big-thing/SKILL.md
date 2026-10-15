@@ -57,7 +57,7 @@ milestone: <title>
 detail: <one line, optional>
 section: <the heading or line range of the document this milestone comes from, optional>
 check: <manual | command <cmd> | tests_pass <cmd> | files_exist <paths>>
-step: <task title, repeatable — three to eight per milestone, in order>
+step: <task title, repeatable — each about 10–30 minutes of AI-agent work, in order>
 depends: <numbers of earlier tasks in this milestone the one above waits for, optional>
 capability: <what the task needs from a worker, e.g. image or review, optional>
 END-BIGTHING-PLAN
@@ -73,8 +73,12 @@ above them; `depends:` and `capability:` attach to the `step:` above it.
 - `section:` says where in the document it came from — a heading, or a line
   range — so that later you, and every subagent you raise, read those two
   pages rather than the whole file.
-- `step:` lines are the milestone's **tasks**: three to eight, each one thing
-  a subagent or worker can be given on its own. `depends: 1, 2` under a task
+- `step:` lines are the milestone's **tasks**, each one thing a subagent or
+  worker can be given on its own. **Size them in AI-agent time, not human
+  time**: about 10–30 minutes of agent work each. Agents work roughly 20 times
+  faster than estimates written for people, so a "half a day to two days"
+  ticket is about one task; never reason in human hours, and split anything
+  an agent would need more than ~30 minutes for. `depends: 1, 2` under a task
   says it waits for tasks 1 and 2 of the same milestone. The run tracks
   tasks — who ran each and when — so make them units of work, not headings.
 - **Plan for parallel work.** Tasks with no `depends:` can run at the same

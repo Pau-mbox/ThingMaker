@@ -150,6 +150,15 @@ describe("dropping a Markdown plan on the goal form", () => {
     expect(screen.queryByText("Audit existing flow")).toBeNull();
   });
 
+  it("takes a document sent from the transcript as if it had been dropped", async () => {
+    useStore.getState().sendDocToBigThing(SESSION, "/w/app/Docs/onboarding.md");
+    render(<OdysseyPane sessionId={SESSION} />);
+    await waitFor(() => expect(screen.getByText("onboarding.md")).toBeTruthy());
+    expect(calls.find((entry) => entry.command === "odyssey_read_plan")?.args).toEqual({ request: { path: "/w/app/Docs/onboarding.md" } });
+    expect(screen.getByLabelText<HTMLInputElement>("Goal title").value).toBe("Ship onboarding v2");
+    expect(useStore.getState().bigThingDoc).toEqual({});
+  });
+
   it("suggests the document's heading as the goal name, and nothing else", async () => {
     render(<OdysseyPane sessionId={SESSION} />);
     await drop(["/plans/onboarding.md"]);

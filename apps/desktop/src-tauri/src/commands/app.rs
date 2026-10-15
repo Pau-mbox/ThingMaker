@@ -49,6 +49,11 @@ pub struct NotificationSettings {
     pub claude_orchestrator_model: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub claude_orchestrator_effort: Option<String>,
+    /// Hold off idle sleep while sessions, Big Things or team jobs work.
+    pub keep_awake: bool,
+    /// ...and on battery too. Off by default: an overnight run on battery
+    /// is a flat battery in the morning.
+    pub keep_awake_on_battery: bool,
 }
 
 impl Default for NotificationSettings {
@@ -66,6 +71,8 @@ impl Default for NotificationSettings {
             odyssey_token_budget: None,
             claude_orchestrator_model: None,
             claude_orchestrator_effort: None,
+            keep_awake: true,
+            keep_awake_on_battery: false,
         }
     }
 }
@@ -275,6 +282,7 @@ mod tests {
         assert!(defaults.enabled && defaults.close_behavior == CloseBehavior::Ask);
         let parsed: NotificationSettings = serde_json::from_str("{\"enabled\": false}").unwrap();
         assert!(!parsed.enabled && parsed.notify_failed);
+        assert!(parsed.keep_awake && !parsed.keep_awake_on_battery, "settings saved before keep-awake existed turn it on, on mains power only");
     }
 }
 

@@ -10,9 +10,12 @@
 //! tray, the app quits after stopping agents, or the renderer asks.
 
 pub mod commands;
-mod remote;
+mod remote_legacy;
 mod remote_dispatch;
 mod remote_ws;
+pub mod keep_awake;
+pub mod titles;
+pub mod remote;
 pub mod state;
 
 use tauri::{
@@ -134,7 +137,8 @@ pub fn run() {
             let state = state::AppState::initialize(&data_dir, resource_dir.as_deref())
                 .map_err(|error| format!("could not initialize desktop state: {error}"))?;
             app.manage(state);
-            remote::start(app.handle());
+            remote_legacy::start(app.handle());
+            titles::set_app(app.handle());
             // Delegation is an addition, not a precondition: without its
             // socket, sessions open as plain ones.
             if let Err(error) = commands::delegation::start(app.handle()) {
@@ -142,6 +146,10 @@ pub fn run() {
             }
             // Big Thing runs in the host, whether or not a window is open.
             commands::bigthing::start(app.handle());
+            // Holds off idle sleep while anything above is working.
+            keep_awake::start(app.handle());
+            // Phone access through the Cloudflare relay; off until turned on in Settings.
+            remote::start(app.handle(), data_dir.clone());
 
             let show = MenuItem::with_id(app, "show", "Show ThingMaker", true, None::<&str>)?;
             let quit =
@@ -195,8 +203,8 @@ pub fn run() {
             }
         })
         .invoke_handler(tauri::generate_handler![
-            remote::remote_key_get,
-            remote::remote_key_rotate,
+            remote_legacy::remote_key_get,
+            remote_legacy::remote_key_rotate,
             commands::workspace::execution_profiles,
             commands::workspace::workspace_inspect,
             commands::workspace::workspace_trust,
@@ -204,11 +212,27 @@ pub fn run() {
             commands::workspace::workspace_remove,
             commands::workspace::workspace_pick,
             commands::workspace::reveal_in_finder,
+            commands::activity::activity_snapshot,
+            commands::activity::activity_clear,
+            remote::remote_status,
+            remote::remote_set_enabled,
+            remote::remote_pair_start,
+            remote::remote_pair_cancel,
+            remote::remote_device_revoke,
+            remote::remote_pick_apk,
+            remote::remote_send_apk,
+            remote::remote_set_relay,
             commands::session::session_open,
             commands::session::session_subscribe,
             commands::session::session_snapshot,
             commands::session::session_submit,
             commands::session::session_steer,
+            commands::session::session_enqueue,
+            keep_awake::keep_awake_status,
+            commands::providers::provider_versions,
+            commands::providers::provider_update,
+            keep_awake::keep_awake_refresh,
+            commands::session::session_queue,
             commands::session::session_cancel,
             commands::session::session_set_config_option,
             commands::session::session_stop,

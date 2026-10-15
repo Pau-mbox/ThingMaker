@@ -1,4 +1,4 @@
-import { memo, useCallback, useEffect, useMemo, useRef, useState, type ClipboardEvent, type KeyboardEvent, type ReactElement } from "react";
+import { Fragment, memo, useCallback, useEffect, useMemo, useRef, useState, type ClipboardEvent, type KeyboardEvent, type ReactElement } from "react";
 import { getCurrentWebview } from "../bridge";
 import type { ContentBlock, Mention, Provider, ToolPatch } from "@thingmaker/contracts";
 import { PROVIDER_LABELS } from "@thingmaker/contracts";
@@ -15,6 +15,10 @@ import { ArtifactsPane } from "./ArtifactsPane";
 import { ActivityBar } from "./ActivityBar";
 import { ToolGroup } from "./ToolGroup";
 import { ToolPayloads } from "./ToolPayloads";
+import { IS_REMOTE } from "../remote/mode";
+import { DocCard } from "./DocCard";
+import { ApkCard, apksNamedIn } from "./ApkCard";
+import { docsNamedIn, docsWrittenBy } from "../markdownDocs";
 import { ImagesPane } from "./ImagesPane";
 import { OdysseyPane } from "./OdysseyPane";
 import { AttachmentThumb, BlockImage, InlineImage, workspaceImageRenderer } from "./InlineImage";
@@ -23,6 +27,8 @@ import type { Card } from "../projection";
 import { assignImages, keyOf, type ImageRef } from "../transcriptImages";
 import { detectTestRun, editedFilesIn, shellResultsOf } from "../toolSummary";
 import { CodeChangesCard, EditedFilesList, TestsCard } from "./ChangeCards";
+import { PlanBar, PlanCard, planText } from "./PlanChecklist";
+import { QueueStrip } from "./QueueStrip";
 import { IconAgents, IconArrowUp, IconAt, IconBox, IconBranch, IconCheck, IconChevron, IconDots, IconFolder, IconImage, IconPaperclip, IconSquare, IconTerminal } from "./icons";
 
 const EMPTY_LIST: never[] = [];
@@ -200,7 +206,7 @@ function CardBody({ card, sessionId }: { card: Card; sessionId: string }) {
         </div>
       );
     case "plan":
-      return <div className="card card-plan">Plan: {card.summary}</div>;
+      return <PlanCard plan={card.plan} />;
     case "permission":
       // Answered by the workspace's trust: an allowed request is routine
       // and not worth a line; a refused one is shown, since it changed what
@@ -244,7 +250,7 @@ function cardText(card: Card, tools: Map<string, ToolPatch>): string {
     case "notice":
       return `${card.title} ${card.description ?? ""}`;
     case "plan":
-      return card.summary;
+      return planText(card.plan);
     case "unknown":
       return card.label;
     case "permission":
@@ -278,6 +284,38 @@ export function groupCards(cards: Card[]): CardGroup[] {
     else out.push({ kind: "single", card });
   }
   return out.map((group) => (group.kind === "runtime" && group.cards.length === 1 ? { kind: "single", card: group.cards[0] as Card } : group));
+}
+
+type PlacedDoc = { path: string; version: string; verb: "wrote" | "named" };
+
+/**
+ * Where each Markdown document goes in the transcript: under the last run
+ * that wrote it, so its card shows the file as it is now; or, when nothing
+ * shown wrote it, under the last agent message that names it. Once each.
+ */
+export function placeDocs(groups: CardGroup[], tools: Map<string, ToolPatch>, roots: string[]): Map<number, PlacedDoc[]> {
+  const written = new Map<string, { index: number; version: string }>();
+  const named = new Map<string, number>();
+  groups.forEach((group, index) => {
+    if (group.kind === "work") {
+      for (const card of group.cards) {
+        if (card.kind !== "tool") continue;
+        const patch = tools.get(card.toolCallId);
+        if (!patch) continue;
+        for (const path of docsWrittenBy(patch, roots)) {
+          const before = written.get(path);
+          written.set(path, { index, version: `${before?.index === index ? before.version : ""}${card.toolCallId}:${patch.status ?? ""};` });
+        }
+      }
+    } else if (group.kind === "single" && group.card.kind === "message" && group.card.message.role === "agent") {
+      for (const path of docsNamedIn(messageText(group.card), roots)) named.set(path, index);
+    }
+  });
+  const placed = new Map<number, PlacedDoc[]>();
+  const put = (index: number, doc: PlacedDoc) => placed.set(index, [...(placed.get(index) ?? []), doc]);
+  for (const [path, at] of written) put(at.index, { path, version: at.version, verb: "wrote" });
+  for (const [path, index] of named) if (!written.has(path)) put(index, { path, version: "", verb: "named" });
+  return placed;
 }
 
 function bytesLabel(n: number): string {
@@ -394,6 +432,7 @@ export function SessionPanel({ sessionId }: { sessionId: string }) {
   const setDraft = useStore((s) => s.setDraft);
   const send = useStore((s) => s.send);
   const steer = useStore((s) => s.steer);
+  const enqueue = useStore((s) => s.enqueue);
   const cancel = useStore((s) => s.cancel);
   const stop = useStore((s) => s.stop);
   const refreshSnapshot = useStore((s) => s.refreshSnapshot);
@@ -420,10 +459,57 @@ export function SessionPanel({ sessionId }: { sessionId: string }) {
   const [dropping, setDropping] = useState(false);
   const [mention, setMention] = useState<{ token: string; matches: string[]; index: number; truncated: boolean; copy: boolean } | null>(null);
 
+  // The transcript follows new output only while it is scrolled to the
+  // bottom: scrolling up to read stops it, scrolling back down resumes it.
+  // It opens at the bottom and stays there while images and cards that load
+  // after the first paint grow it.
+  const followRef = useRef(true);
+  const hasSession = !!session;
   useEffect(() => {
     const element = transcriptRef.current;
-    if (element && !query) element.scrollTop = element.scrollHeight;
-  }, [session?.projection.eventCount, query, tab]);
+    if (!element || tab !== "transcript") return;
+    followRef.current = !query;
+    const pin = () => {
+      if (followRef.current) element.scrollTop = element.scrollHeight;
+    };
+    // Only a move up is the reader leaving the bottom: output arriving after
+    // the view's own jump down makes it look far from the bottom without
+    // anyone having scrolled.
+    let lastTop = element.scrollTop;
+    const onScroll = () => {
+      const top = element.scrollTop;
+      if (top < lastTop - 2) followRef.current = false;
+      if (!query && element.scrollHeight - top - element.clientHeight < 48) followRef.current = true;
+      lastTop = top;
+    };
+    const resize = new ResizeObserver(pin);
+    const watch = () => {
+      resize.disconnect();
+      resize.observe(element);
+      for (const child of element.children) resize.observe(child);
+    };
+    const added = new MutationObserver(() => {
+      watch();
+      pin();
+    });
+    element.addEventListener("scroll", onScroll, { passive: true });
+    added.observe(element, { childList: true });
+    watch();
+    pin();
+    return () => {
+      element.removeEventListener("scroll", onScroll);
+      added.disconnect();
+      resize.disconnect();
+    };
+  }, [hasSession, query, tab]);
+
+  /** Sending a prompt goes back to the bottom to follow the reply. */
+  const sendAndFollow = () => {
+    followRef.current = true;
+    const element = transcriptRef.current;
+    if (element) element.scrollTop = element.scrollHeight;
+    void send(sessionId);
+  };
 
   // Images appearing under output/imagegen while a turn runs show up inline as
   // observed files (the agent or a background subagent may have produced them).
@@ -458,7 +544,8 @@ export function SessionPanel({ sessionId }: { sessionId: string }) {
   }, [sessionId, session?.workspaceId, activeForPoll, settledMarker, noteImageFiles]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
-    composerRef.current?.focus();
+    // On a phone, focusing the box raises the keyboard over what you came to read.
+    if (!IS_REMOTE) composerRef.current?.focus();
   }, [focusToken, sessionId]);
 
   useEffect(() => {
@@ -570,6 +657,7 @@ export function SessionPanel({ sessionId }: { sessionId: string }) {
   // Images the agents made or looked at, each under the card where it first
   // appears. Recomputed when the stream moves, not on every render.
   const workspaceRoot = useStore((s) => s.workspaces.find((w) => w.id === s.sessions[sessionId]?.workspaceId)?.canonicalRoot ?? "");
+  const workspaceDisplay = useStore((s) => s.workspaces.find((w) => w.id === s.sessions[sessionId]?.workspaceId)?.displayPath ?? "");
   const lastSequence = session?.projection.lastSequence;
   const sessionJobs = useStore((s) => s.jobs[sessionId] ?? EMPTY_LIST);
   // A worker does a task for its orchestrator; a Big Thing is led from the
@@ -600,12 +688,17 @@ export function SessionPanel({ sessionId }: { sessionId: string }) {
   const busy = useStore.getState().busy;
   const active = projection.foreground === "running" || projection.foreground === "awaiting_user" || projection.foreground === "cancelling";
   const canSteer = active && !!projection.capabilities?.supportsSteering;
+  const followUp = uiPrefs.followUp ?? "queue";
+  const steerFirst = followUp === "steer" && canSteer;
+  const sendKey = uiPrefs.enterSends ? "Enter" : "Shift+Enter";
   const hasInput = !!draft.trim() || attachments.length > 0 || mentions.length > 0;
   const canSend = !inFlightRequestId && projection.attachment === "attached" && projection.process !== "exited";
   const lastSubmission = [...projection.submissions.entries()].at(-1);
   const mediaOk = { image: projection.capabilities?.promptImage ?? false, audio: projection.capabilities?.promptAudio ?? false };
   const windowStart = Math.max(0, filteredCards.length - visible);
   const shownCards = filteredCards.slice(windowStart);
+  const transcriptGroups = groupCards(shownCards);
+  const docPlaces = placeDocs(transcriptGroups, projection.toolCalls, [workspaceRoot, workspaceDisplay].filter(Boolean));
 
   const onKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
     if (mention && mention.matches.length > 0) {
@@ -634,8 +727,16 @@ export function SessionPanel({ sessionId }: { sessionId: string }) {
       const sends = uiPrefs.enterSends ? !event.shiftKey : event.shiftKey;
       if (!sends) return;
       event.preventDefault();
-      if (canSteer) void steer(sessionId);
-      else if (canSend && hasInput) void send(sessionId);
+      if (!active) {
+        if (canSend && hasInput) sendAndFollow();
+        return;
+      }
+      // While a turn runs the send key does the preferred follow-up, and
+      // with ⌘ (Ctrl) held, the other one.
+      const alternate = event.metaKey || event.ctrlKey;
+      const wantsSteer = (followUp === "steer") !== alternate;
+      if (wantsSteer && canSteer) void steer(sessionId);
+      else if (canSend && hasInput) void enqueue(sessionId);
     }
   };
 
@@ -726,14 +827,14 @@ export function SessionPanel({ sessionId }: { sessionId: string }) {
         <button
           aria-label="Terminal"
           aria-pressed={tab === "terminal"}
-          className={`icon-button icon-button-xs tab-icon ${tab === "terminal" ? "on" : ""}`}
+          className={`icon-button icon-button-xs tab-icon remote-hidden ${tab === "terminal" ? "on" : ""}`}
           onClick={() => setTab("terminal")}
           title="Terminal"
           type="button"
         >
           <IconTerminal size={15} />
         </button>
-        <ViewsMenu onPick={setTab} tab={tab} />
+        {!IS_REMOTE && <ViewsMenu onPick={setTab} tab={tab} />}
       </div>
       {active && <div aria-hidden="true" className="progress-line" />}
       {tab === "transcript" && (
@@ -773,18 +874,27 @@ export function SessionPanel({ sessionId }: { sessionId: string }) {
             </div>
           )}
           <div aria-busy={active} className="transcript" ref={transcriptRef}>
-            {groupCards(shownCards).map((group, index, groups) =>
-              group.kind === "single" ? (
+            {transcriptGroups.map((group, index, groups) => (
+              <Fragment key={group.kind === "single" ? group.card.key : group.key}>
+              {group.kind === "single" ? (
                 <CardView card={group.card} images={cardImages.get(group.card.key)} key={group.card.key} sessionId={sessionId} />
               ) : group.kind === "work" ? (
-                <ToolGroup
-                  cards={group.cards}
-                  key={group.key}
-                  live={active && index === groups.length - 1}
-                  renderCard={(card) => <CardView card={card} images={cardImages.get(card.key)} key={card.key} sessionId={sessionId} />}
-                  renderDetail={(patch) => <ToolDetail patch={patch} provider={session.snapshot.provider} workspaceId={session.workspaceId} />}
-                  sessionId={sessionId}
-                />
+                <>
+                  <ToolGroup
+                    cards={group.cards}
+                    key={group.key}
+                    live={active && index === groups.length - 1}
+                    renderCard={(card) => <CardView card={card} key={card.key} sessionId={sessionId} />}
+                    renderDetail={(patch) => <ToolDetail patch={patch} provider={session.snapshot.provider} workspaceId={session.workspaceId} />}
+                    sessionId={sessionId}
+                  />
+                  {/* Images the folded tools made or looked at stay in view
+                      under the run, not hidden inside it. */}
+                  {(() => {
+                    const images = group.cards.flatMap((card) => cardImages.get(card.key) ?? []);
+                    return images.length > 0 ? <CardImages images={images} workspaceId={session.workspaceId} /> : null;
+                  })()}
+                </>
               ) : (
                 <details className="runtime-group" key={group.key}>
                   <summary className="small muted">
@@ -794,8 +904,16 @@ export function SessionPanel({ sessionId }: { sessionId: string }) {
                     <CardView card={card} key={card.key} sessionId={sessionId} />
                   ))}
                 </details>
-              ),
-            )}
+              )}
+              {group.kind === "single" &&
+                group.card.kind === "message" &&
+                group.card.message.role === "agent" &&
+                apksNamedIn(messageText(group.card), workspaceRoot).map((path) => <ApkCard key={`apk|${path}`} path={path} />)}
+              {docPlaces.get(index)?.map((doc) => (
+                <DocCard key={`doc|${doc.path}`} relative={doc.path} sessionId={sessionId} verb={doc.verb} version={doc.version} workspaceId={session.workspaceId} />
+              ))}
+              </Fragment>
+            ))}
             {/* What this session has changed on disk, at the end of the
                 reading order so it is the last thing before the composer. */}
             {projection.cards.length > 0 && <CodeChangesCard refreshKey={projection.cards.length} sessionId={sessionId} workspaceId={session.workspaceId} />}
@@ -837,11 +955,13 @@ export function SessionPanel({ sessionId }: { sessionId: string }) {
         {/* Between the transcript and the prompt, so anything still running
             stays visible however far the transcript has scrolled. */}
         <ActivityBar onOpenAgents={() => setTab("agents")} sessionId={sessionId} />
+        {projection.plan && <PlanBar active={active} key={projection.plan.content.id} plan={projection.plan.content} />}
         {/* The Big Thing view has no use for a prompt box: the run submits its
             own turns. The activity strip above stays, because background work
             outliving a turn is exactly what it is for. */}
         {tab !== "odyssey" && (
         <>
+        <QueueStrip active={active} canSteer={canSteer} queue={projection.queue} sessionId={sessionId} />
         <div className="composer-card">
         {(attachments.length > 0 || mentions.length > 0) && (
           <div className="attachment-strip">
@@ -917,8 +1037,12 @@ export function SessionPanel({ sessionId }: { sessionId: string }) {
             onKeyDown={onKeyDown}
             onPaste={onPaste}
             placeholder={
-              canSteer
-                ? `Steer the current turn (${uiPrefs.enterSends ? "Enter" : "Shift+Enter"} to steer). Type @ to mention a file.`
+              active
+                ? canSteer
+                  ? steerFirst
+                    ? `Steer this turn (${sendKey}), or queue for the next (⌘${sendKey}). Type @ to mention a file.`
+                    : `Queue for the next turn (${sendKey}), or steer this one (⌘${sendKey}). Type @ to mention a file.`
+                  : `Queue for the next turn (${sendKey}). Type @ to mention a file.`
                 : `Prompt (${uiPrefs.enterSends ? "Enter to send, Shift+Enter for newline" : "Shift+Enter to send, Enter for newline"}). Type @ to mention a file; drop or paste images to attach.`
             }
             ref={composerRef}
@@ -929,7 +1053,7 @@ export function SessionPanel({ sessionId }: { sessionId: string }) {
         <div className="composer-row">
           <button
             aria-label="Attach media"
-            className="icon-button"
+            className="icon-button remote-hidden"
             disabled={!canSend}
             onClick={() =>
               api
@@ -946,18 +1070,36 @@ export function SessionPanel({ sessionId }: { sessionId: string }) {
           {!configOptions && <span className="chip small">the account's default model</span>}
           <TeamChip disabled={projection.process === "exited"} sessionId={sessionId} />
           <span className="composer-spacer" />
-          {active && !projection.capabilities?.supportsSteering && <span className="small muted">steering not advertised</span>}
           {active && (
             <button aria-label="Cancel turn" className="icon-button" onClick={() => void cancel(sessionId)} title="Cancel the current turn" type="button">
               <IconSquare />
             </button>
           )}
-          {canSteer ? (
-            <button className="send-button" disabled={steerInFlight || !draft.trim()} onClick={() => void steer(sessionId)} title="Steer the current turn" type="button">
-              Steer <IconArrowUp size={14} />
-            </button>
+          {active ? (
+            <>
+              {canSteer && (
+                <button
+                  className={`send-button ${steerFirst ? "" : "send-secondary"}`}
+                  disabled={steerInFlight || !draft.trim()}
+                  onClick={() => void steer(sessionId)}
+                  title={`Send into the running turn now${steerFirst ? ` (${sendKey})` : ` (⌘${sendKey})`}`}
+                  type="button"
+                >
+                  Steer
+                </button>
+              )}
+              <button
+                className={`send-button ${steerFirst ? "send-secondary" : ""}`}
+                disabled={!canSend || !hasInput}
+                onClick={() => void enqueue(sessionId)}
+                title={`Send when the running turn is over${steerFirst ? ` (⌘${sendKey})` : ` (${sendKey})`}`}
+                type="button"
+              >
+                Queue <IconArrowUp size={14} />
+              </button>
+            </>
           ) : (
-            <button aria-label="Send" className="send-button send-round" disabled={!canSend || !hasInput} onClick={() => void send(sessionId)} title="Send" type="button">
+            <button aria-label="Send" className="send-button send-round" disabled={!canSend || !hasInput} onClick={sendAndFollow} title="Send" type="button">
               <IconArrowUp size={16} />
             </button>
           )}

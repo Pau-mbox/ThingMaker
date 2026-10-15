@@ -18,6 +18,8 @@ import type {
   ToolPatch,
   TurnPhase,
   CapabilitySnapshot,
+  PlanContent,
+  QueueView,
   QuotaSnapshot,
 } from "@thingmaker/contracts";
 
@@ -36,7 +38,7 @@ export type Card =
   | { kind: "message"; key: string; message: Message }
   | { kind: "tool"; key: string; toolCallId: string }
   | { kind: "notice"; key: string; severity: string | null; title: string; description?: string }
-  | { kind: "plan"; key: string; summary: string }
+  | { kind: "plan"; key: string; plan: PlanContent }
   | { kind: "unknown"; key: string; label: string; raw: unknown; truncated: boolean }
   | { kind: "permission"; key: string; requestId: string; title: string | null; decision: string }
   | { kind: "runtime"; key: string; text: string }
@@ -96,7 +98,15 @@ export type Projection = {
    *  anything keyed to "a turn just finished" still fires. */
   settledTurns: number;
   inspector: Inspector;
+  /** Prompts waiting for the running turn, as the actor last published them. */
+  queue: QueueView;
+  /** The agent's latest plan, for the checklist pinned above the composer. */
+  plan: { key: string; content: PlanContent } | null;
+  /** The card each plan id was last drawn in, and the turn it belongs to. */
+  planCards: Map<string, { key: string; turn: number }>;
 };
+
+export const EMPTY_QUEUE: QueueView = { items: [], paused: null, sending: null };
 
 export function emptyInspector(): Inspector {
   return { agents: new Map() };
@@ -126,6 +136,9 @@ export function emptyProjection(): Projection {
     eventCount: 0,
     settledTurns: 0,
     inspector: emptyInspector(),
+    queue: EMPTY_QUEUE,
+    plan: null,
+    planCards: new Map(),
   };
 }
 
@@ -328,6 +341,11 @@ export function applyEvent(projection: Projection, envelope: EventEnvelope): Pro
     case "steer":
       projection.steers.set(payload.messageId, payload.state);
       break;
+    case "queue": {
+      const { type: _type, ...queue } = payload;
+      projection.queue = queue;
+      break;
+    }
     case "detached_call":
       projection.detached.set(payload.callId, payload.state);
       break;
@@ -387,20 +405,24 @@ function applyUpdate(projection: Projection, update: Extract<SessionEvent, { typ
       );
       break;
     case "plan": {
-      const summary =
-        update.planType === "items"
-          ? `${update.entries.length} step(s): ${update.entries.map((e) => `${e.content}${e.status ? ` [${e.status}]` : ""}`).join("; ")}`
-          : update.planType === "markdown"
-            ? update.content
-            : update.planType === "file"
-              ? `plan file ${update.uri}`
-              : `unknown plan type ${update.originalType}`;
-      replaceCard(projection, `plan|${update.id}`, { kind: "plan", key: `plan|${update.id}`, summary });
+      const { kind: _kind, ...content } = update;
+      // Within one turn the agent revises its plan in place. A later turn's
+      // plan is a card of its own in that turn's flow, so the transcript
+      // reads in order rather than rewriting a card far above.
+      const known = projection.planCards.get(content.id);
+      const key = known && known.turn === projection.settledTurns ? known.key : `plan|${content.id}|${projection.settledTurns}`;
+      projection.planCards.set(content.id, { key, turn: projection.settledTurns });
+      replaceCard(projection, key, { kind: "plan", key, plan: content });
+      projection.plan = { key, content };
       break;
     }
-    case "plan_removed":
-      projection.cards = projection.cards.filter((c) => c.key !== `plan|${update.id}`);
+    case "plan_removed": {
+      const known = projection.planCards.get(update.id);
+      if (known) projection.cards = projection.cards.filter((c) => c.key !== known.key);
+      projection.planCards.delete(update.id);
+      if (projection.plan?.content.id === update.id) projection.plan = null;
       break;
+    }
     case "usage":
       projection.usage = { used: update.used, size: update.size };
       break;

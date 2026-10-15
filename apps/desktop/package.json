@@ -5,19 +5,21 @@
   "type": "module",
   "scripts": {
     "dev:vite": "vite",
-    "build:vite": "tsc --noEmit -p tsconfig.json && vite build",
+    "build:vite": "tsc --noEmit -p tsconfig.json && vite build && vite build --mode remote",
+    "build:remote": "vite build --mode remote",
     "tauri": "tauri",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "test": "vitest run",
     "preview": "vite preview"
   },
   "dependencies": {
-    "@thingmaker/contracts": "workspace:*",
     "@tauri-apps/api": "2.11.1",
     "@tauri-apps/plugin-notification": "2.4.0",
+    "@thingmaker/contracts": "workspace:*",
     "@xterm/addon-fit": "0.11.0",
     "@xterm/xterm": "6.0.0",
     "monaco-editor": "0.56.0",
+    "pixi.js": "8.22.0",
     "react": "19.2.8",
     "react-dom": "19.2.8",
     "zustand": "5.0.15"

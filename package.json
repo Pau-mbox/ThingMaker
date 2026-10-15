@@ -16,6 +16,9 @@
     "dev": "pnpm --filter @thingmaker/desktop run tauri dev --config src-tauri/tauri.dev.conf.json",
     "rust:test": "cargo test --workspace --exclude thingmaker-desktop",
     "rust:clippy": "cargo clippy --workspace --all-targets -- -D warnings",
-    "app": "node scripts/install-app.mjs"
+    "app": "node scripts/install-app.mjs",
+    "phone": "bash scripts/phone.sh",
+    "relay:deploy": "pnpm --filter @thingmaker/relay run deploy",
+    "relay:dev": "pnpm --filter @thingmaker/relay run dev"
   }
 }

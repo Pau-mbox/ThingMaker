@@ -10,7 +10,7 @@ use serde::{Deserialize, Serialize};
 
 use super::protocol::{ASK_GRAMMAR, PLAN_GRAMMAR, REPORT_GRAMMAR, TASK_GRAMMAR, task_lines_for};
 use crate::agents::Provider;
-use crate::delegation::Combo;
+use crate::delegation::{Combo, jobs::BRIEF_PATH};
 use crate::odyssey_notes::{AGENT_NOTES_DIR, STATE_NOTE_PATH, WorkspaceNotes};
 use crate::storage::odyssey::{CheckKind, MilestoneRecord, MilestoneState, OdysseyRecord, OnPlanChange, StopCondition};
 
@@ -238,13 +238,14 @@ fn delegation_lines(options: &BriefingOptions<'_>) -> Vec<String> {
         if options.runner_dispatch {
             lines.push(format!("- You lead a team: {roster}. Big Thing hands the milestone's ready tasks to these workers itself, in parallel, and tells you when they are done; you plan, read their results, verify and report. Do not delegate a task Big Thing has already given a worker. Use `delegate` only for follow-up work the plan does not list."));
         } else {
-            lines.push(format!("- You lead a team: {roster}. Hand routine implementation to its workers with the `team` tools — `delegate` by worker name or capability, then `await_jobs` for their reports; call `list_workers` if the team may have changed. Delegate independent tasks together."));
+            lines.push(format!("- You lead a team: {roster}. Hand routine implementation to its workers with the `team` tools — `delegate` by worker name or capability, then `await_jobs` for their reports; call `list_workers` if the team may have changed. Delegate independent tasks together and keep every worker busy: `await_jobs` returns when any one job finishes, so give that worker the next ready task straight away, across milestones when the current one has nothing ready, rather than waiting for the whole batch."));
         }
+        lines.push(format!("- Before your first delegation, write `{BRIEF_PATH}` and keep it current: what the project is, its layout and key files, conventions, how to build and how to run one targeted test — under 80 lines. ThingMaker attaches it to every task a worker gets, so workers start without re-reading the codebase. Workers check their own change narrowly; the full build, test suite and smoke tests are the milestone's check, run once."));
         lines.push(format!("- A worker sees only the task it is given. Start each task with its plan number and a short name (`6.3-pricing: …`), include the milestone's spec reference and the handoff note's path, and tell it to write its result to {notes} before it finishes."));
         lines.push(if native { "- You may also raise your own subagents for work inside this session.".into() } else { "- Your own subagent tool is turned off for this run: every delegated task goes to a worker.".into() });
     }
     if native {
-        lines.push(format!("- Every subagent you raise writes its result to {notes} before it returns, and gets the handoff note and the milestone's spec reference in its prompt."));
+        lines.push(format!("- Every subagent you raise writes its result to {notes} before it returns, gets the handoff note, `{BRIEF_PATH}` and the milestone's spec reference in its prompt, and checks its own change narrowly rather than running the full build or test suite."));
         if options.agent == Some(Provider::Claude) {
             lines.push(format!("- Raise every subagent with `subagent_type: {DELEGATE_NAME}`, which this project defines. It pins the model the run is meant to delegate on; the default subagent type does not."));
         }
@@ -320,7 +321,7 @@ pub fn build_continuation(input: &ContinuationInput<'_>) -> String {
         lines.push(if input.tools { "Move tasks with `bigthing_task`.".into() } else { format!("Report task moves with: {TASK_GRAMMAR}") });
         let ready = super::protocol::ready_tasks(&milestone.steps).len();
         if ready >= 2 && !input.runner_dispatch {
-            lines.push(format!("{ready} tasks are ready and wait on nothing: hand them to subagents or workers at the same time rather than one after another."));
+            lines.push(format!("{ready} tasks are ready and wait on nothing: hand them to subagents or workers at the same time rather than one after another, and as each one finishes give its worker the next ready task."));
         }
     }
     if input.full && milestone.check_kind != CheckKind::Manual {
@@ -364,7 +365,8 @@ pub fn build_planning_prompt(goal: &OdysseyRecord, document: &str, source: Optio
         "- One reviewable outcome, in the order it has to happen. Between 3 and 12 is usual.".into(),
         "- **Carry the document's substance across, do not summarise it.** A milestone's `detail:` is the working specification for that milestone, and for most of the run it is all anyone sees — the document itself is not re-sent every turn. Move the relevant section into it: the specific names, numbers, formats, ordering rules and constraints, in the document's own words where they are precise. Aim for a few hundred words per milestone rather than a sentence.".into(),
         "- Use several `detail:` lines to keep that structure; they are joined as separate lines.".into(),
-        "- Break each milestone into three to eight `step:` tasks, each one thing a subagent or worker can be given on its own, and `capability:` when a task needs a particular kind of worker (`image`, `review`, `fast`). The run tracks these tasks — who ran each, and when — so they should be real units of work, not headings.".into(),
+        "- Break each milestone into `step:` tasks, each one thing a subagent or worker can be given on its own, and `capability:` when a task needs a particular kind of worker (`image`, `review`, `fast`). The run tracks these tasks — who ran each, and when — so they should be real units of work, not headings.".into(),
+        "- **Size every task in AI-agent time, not human time.** A task should take one AI agent about 10–30 minutes of work. Agents write and check code roughly 20 times faster than estimates written for people, so a task a developer would put at half a day to two days is about one task, and anything a developer would call a week is several. Do not think in human hours or days at all; split any task an agent would need more than about 30 minutes for, because one long task holds up everything that waits on it, and the team runs many short tasks side by side.".into(),
         "- **Plan for parallel work.** Tasks without `depends:` can run at the same time, on different subagents or workers, so cut the work along lines that do not touch each other — separate files, modules, screens, assets — rather than as one sequence. Add `depends:` (the numbers of earlier tasks in the same milestone) only when a task truly cannot start until another has finished: it needs that task's output, file or decision. The order you list tasks in is not a dependency, and a task that only *reads* what another touches can usually go in parallel. A final integration, verification or review task is the usual one that depends on the others.".into(),
         "- Name where each milestone came from with `section:` — the document's heading, or a line range — so the agent can read that part of the file rather than all of it.".into(),
         check_rule,
@@ -442,6 +444,8 @@ mod tests {
         };
         let text = build_briefing(&goal(), &plan(), &BriefingOptions { team: Some(&team), agent: Some(Provider::Claude), tools: true, ..Default::default() });
         assert!(text.contains("You lead a team: luna (Codex · gpt-6-luna; image)"));
+        assert!(text.contains("keep every worker busy") && text.contains("rather than waiting for the whole batch"), "a finished worker gets the next task at once");
+        assert!(text.contains("write `docs/big-thing/BRIEF.md`") && text.contains("the milestone's check, run once"));
         assert!(text.contains("turned off for this run"));
         assert!(!text.contains(DELEGATE_NAME), "no subagents to name");
         let dispatched = build_briefing(&goal(), &plan(), &BriefingOptions { team: Some(&team), runner_dispatch: true, tools: true, ..Default::default() });
@@ -512,6 +516,8 @@ mod tests {
         assert!(text.contains("`bigthing_propose_plan`"));
         assert!(text.contains(PLAN_GRAMMAR));
         assert!(text.contains("**Plan for parallel work.**") && text.contains("only when a task truly cannot start"), "the planner is told to keep dependencies to what is real");
+        assert!(text.contains("**Size every task in AI-agent time, not human time.**") && text.contains("10–30 minutes") && text.contains("Do not think in human hours"), "tasks are sized for agents, not people");
+        assert!(!text.contains("three to eight"), "the count follows from the size, not a quota");
         assert!(text.ends_with("--- end of roadmap.md ---"));
     }
 }

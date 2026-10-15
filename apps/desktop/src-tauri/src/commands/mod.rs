@@ -3,6 +3,7 @@
 //! Every command returns a result or a `DesktopError` exactly once. Inputs are
 //! validated in Rust even though the TypeScript client is typed.
 
+pub mod activity;
 pub mod app;
 pub mod artifacts;
 pub mod attachments;

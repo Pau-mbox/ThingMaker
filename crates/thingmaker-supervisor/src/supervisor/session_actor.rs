@@ -17,12 +17,12 @@
 //! acceptance.
 
 use std::{
-    collections::{BTreeMap, BTreeSet},
+    collections::{BTreeMap, BTreeSet, VecDeque},
     sync::Arc,
     time::Duration,
 };
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use tokio::{
     sync::{broadcast, mpsc, oneshot},
@@ -33,7 +33,7 @@ use super::{
     events::{EventEnvelope, EventSubscription, SessionEvent, SteerState},
     state::{
         AttachmentState, DetachedCallState, ProcessState, SessionReducer, SubmissionState,
-        TurnEffect, TurnInput, TurnPhase,
+        TurnEffect, TurnInput, TurnKind, TurnPhase,
     },
 };
 use crate::{
@@ -132,6 +132,105 @@ pub enum SteerOutcome {
     OutcomeUnknown { error: DesktopError },
 }
 
+/// Prompts one session holds at most, waiting for the running turn.
+pub const QUEUE_LIMIT: usize = 20;
+
+/// The bytes of composer state a queued prompt may carry back for editing.
+pub const QUEUE_RESTORE_LIMIT_BYTES: usize = 16 * 1024;
+
+/// A prompt held until the running turn is over.
+///
+/// The blocks are built exactly as a submit builds them; the queue only
+/// decides *when* they go. `restore` is the client's own description of the
+/// composer the prompt came from (its attachments and mentions), carried
+/// verbatim and handed back when the prompt is taken out to be edited, so
+/// editing works from any window or from the phone.
+#[derive(Debug, Clone)]
+pub struct QueuedPrompt {
+    pub id: String,
+    pub text: String,
+    pub blocks: Vec<Value>,
+    pub restore: Value,
+}
+
+impl QueuedPrompt {
+    fn view(&self) -> QueuedPromptView {
+        let typed = usize::from(!self.text.trim().is_empty());
+        QueuedPromptView {
+            id: self.id.clone(),
+            text: self.text.clone(),
+            extras: self.blocks.len().saturating_sub(typed),
+            restore: self.restore.clone(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct QueuedPromptView {
+    pub id: String,
+    pub text: String,
+    /// Blocks besides the typed text: mentioned files and media.
+    pub extras: usize,
+    #[serde(skip_serializing_if = "Value::is_null")]
+    pub restore: Value,
+}
+
+/// The queue as the interface shows it. Published whole on every change: it
+/// is at most [`QUEUE_LIMIT`] short entries.
+#[derive(Debug, Clone, PartialEq, Serialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct QueueView {
+    pub items: Vec<QueuedPromptView>,
+    /// Why the queue stopped sending by itself: the turn before did not
+    /// finish well, and the next prompt was probably written for a turn that
+    /// did. `None` while it flows.
+    pub paused: Option<String>,
+    /// The queued prompt on its way to the agent now.
+    pub sending: Option<String>,
+}
+
+impl QueueView {
+    /// Whether the queue is about to start a turn of its own: something is
+    /// on its way, or waiting with nothing to stop it. Anyone else who would
+    /// prompt the session waits while this holds.
+    pub fn holds_next_turn(&self) -> bool {
+        self.sending.is_some() || (!self.items.is_empty() && self.paused.is_none())
+    }
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(tag = "op", rename_all = "snake_case", rename_all_fields = "camelCase")]
+pub enum QueueOp {
+    /// Takes a prompt out, to drop it or to edit it.
+    Remove { id: String },
+    Move { id: String, index: usize },
+    /// Into the running turn when the agent can steer; otherwise the turn is
+    /// cancelled and this prompt goes next, whatever the turn ended as.
+    SendNow { id: String },
+    /// Lets a paused queue flow again, starting now if the session is idle.
+    Resume,
+    Clear,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct QueueReply {
+    /// The prompt a `Remove` took out, with its `restore`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub removed: Option<QueuedPromptView>,
+    pub queue: QueueView,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(tag = "outcome", rename_all = "snake_case", rename_all_fields = "camelCase")]
+pub enum EnqueueOutcome {
+    /// Held for after the running turn, at this position (1-based).
+    Queued { position: usize },
+    /// Nothing was running, so it went straight to the agent.
+    Sent,
+}
+
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Snapshot {
@@ -151,6 +250,7 @@ pub struct Snapshot {
     pub config_options: Value,
     pub available_commands: Vec<AvailableCommand>,
     pub pending_steers: Vec<String>,
+    pub queue: QueueView,
     pub last_sequence: DecimalId,
     /// Sequence of the oldest retained event; events before it are gone.
     pub history_start: DecimalId,
@@ -169,6 +269,14 @@ enum Command {
     Steer {
         blocks: Vec<Value>,
         reply: Reply<SteerOutcome>,
+    },
+    Enqueue {
+        prompt: QueuedPrompt,
+        reply: Reply<EnqueueOutcome>,
+    },
+    Queue {
+        op: QueueOp,
+        reply: Reply<QueueReply>,
     },
     Cancel {
         reply: Reply<()>,
@@ -204,7 +312,7 @@ enum Internal {
     SteerResult {
         message_id: String,
         result: Result<Value, TransportError>,
-        reply: Reply<SteerOutcome>,
+        reply: Option<Reply<SteerOutcome>>,
     },
     SetConfigResult {
         result: Result<Value, TransportError>,
@@ -279,6 +387,11 @@ impl SessionActor {
             message_run: None,
             message_serial: 0,
             pending_submits: BTreeMap::new(),
+            queue: VecDeque::new(),
+            queue_paused: None,
+            queue_sending: None,
+            queue_jump: false,
+            queue_steers: BTreeMap::new(),
             pending_chunk: None,
             chunk_deadline: None,
             last_progress: Instant::now(),
@@ -354,6 +467,22 @@ impl SessionActor {
 
     pub async fn steer_text(&self, text: &str) -> Result<SteerOutcome, DesktopError> {
         self.steer(vec![json!({ "type": "text", "text": text })]).await
+    }
+
+    /// Holds a prompt for after the running turn, or sends it at once when
+    /// nothing is running. The queue sends by itself when a turn succeeds and
+    /// pauses when one does not.
+    pub async fn enqueue(&self, prompt: QueuedPrompt) -> Result<EnqueueOutcome, DesktopError> {
+        self.send(|reply| Command::Enqueue { prompt, reply }).await
+    }
+
+    pub async fn enqueue_text(&self, id: impl Into<String>, text: &str) -> Result<EnqueueOutcome, DesktopError> {
+        let prompt = QueuedPrompt { id: id.into(), text: text.to_string(), blocks: vec![text_block(text)], restore: Value::Null };
+        self.enqueue(prompt).await
+    }
+
+    pub async fn queue(&self, op: QueueOp) -> Result<QueueReply, DesktopError> {
+        self.send(|reply| Command::Queue { op, reply }).await
     }
 
     pub async fn cancel(&self) -> Result<(), DesktopError> {
@@ -438,10 +567,23 @@ struct ActorState {
     /// either side of a tool call becomes two messages, as it reads.
     message_run: Option<(&'static str, String)>,
     message_serial: u64,
-    /// Callers waiting on a submission, by request id. Answered when the
-    /// prompt reaches the agent's input, or with the failure if it never
+    /// Prompts on their way to the agent's input, by request id, with the
+    /// caller waiting on each (none for one the queue sent). Answered when
+    /// the prompt reaches the agent's input, or with the failure if it never
     /// does.
-    pending_submits: BTreeMap<String, Reply<SubmissionOutcome>>,
+    pending_submits: BTreeMap<String, Option<Reply<SubmissionOutcome>>>,
+    /// Prompts waiting for the running turn, in sending order.
+    queue: VecDeque<QueuedPrompt>,
+    queue_paused: Option<String>,
+    /// The queued prompt being written now, kept until the agent has it so
+    /// a refusal puts it back rather than losing it.
+    queue_sending: Option<QueuedPrompt>,
+    /// "Send now" on an agent that cannot steer cancelled the turn: the
+    /// front of the queue goes next whatever that turn ends as.
+    queue_jump: bool,
+    /// Queued prompts sent into the running turn by "send now", until the
+    /// steer is answered; a refused one goes back to the front.
+    queue_steers: BTreeMap<String, QueuedPrompt>,
     pending_chunk: Option<SessionUpdate>,
     chunk_deadline: Option<Instant>,
     last_progress: Instant,
@@ -526,6 +668,15 @@ impl ActorState {
     fn apply_turn(&mut self, input: TurnInput<'_>) {
         let generation = self.generation();
         let effects = self.reducer.apply(generation, input);
+        let settled = effects.iter().find_map(|effect| match effect {
+            TurnEffect::Settled { kind: TurnKind::Foreground, phase, .. } => Some(*phase),
+            _ => None,
+        });
+        // The queue moves before the settle is published. Whoever else
+        // prompts this session (Big Thing) reads the stream in order, and has
+        // to see the next prompt on its way in the same breath as the turn
+        // ending, or it takes the gap for an idle session and prompts into it.
+        let next = settled.and_then(|phase| self.queue_after_turn(phase));
         for effect in effects {
             if matches!(effect, TurnEffect::Ignored { .. }) {
                 tracing::debug!(?effect, "turn input ignored");
@@ -533,6 +684,168 @@ impl ActorState {
             }
             self.emit(SessionEvent::Turn(effect));
         }
+        if let Some(prompt) = next {
+            self.send_queued(prompt);
+        }
+    }
+
+    fn queue_view(&self) -> QueueView {
+        QueueView {
+            items: self.queue.iter().map(QueuedPrompt::view).collect(),
+            paused: self.queue_paused.clone(),
+            sending: self.queue_sending.as_ref().map(|prompt| prompt.id.clone()),
+        }
+    }
+
+    fn emit_queue(&mut self) {
+        let view = self.queue_view();
+        self.emit(SessionEvent::Queue(view));
+    }
+
+    /// Nothing is running or on its way, and the agent can take a prompt.
+    fn can_prompt_now(&self) -> bool {
+        !self.reducer.foreground().is_active()
+            && self.pending_submits.is_empty()
+            && self.queue_sending.is_none()
+            && self.attachment == AttachmentState::Attached
+            && self.process != ProcessState::Exited
+            && !self.stopping
+    }
+
+    /// What the queue does when a foreground turn settles: send the next
+    /// prompt after a turn that succeeded, pause after one that did not. A
+    /// prompt typed while a turn ran was written for that turn finishing,
+    /// so a cancelled or failed one leaves the decision to the person.
+    fn queue_after_turn(&mut self, phase: TurnPhase) -> Option<QueuedPrompt> {
+        let jump = std::mem::take(&mut self.queue_jump);
+        if self.queue.is_empty() {
+            return None;
+        }
+        let flows = jump || (phase == TurnPhase::Succeeded && self.queue_paused.is_none());
+        if flows && self.can_prompt_now() {
+            self.queue_paused = None;
+            return self.take_next();
+        }
+        if !flows && self.queue_paused.is_none() {
+            let reason = match phase {
+                TurnPhase::Cancelled => "the turn was cancelled",
+                TurnPhase::Failed => "the turn failed",
+                TurnPhase::Unknown => "the agent stopped answering",
+                _ => "the turn did not finish",
+            };
+            self.queue_paused = Some(reason.to_string());
+            self.emit_queue();
+        }
+        None
+    }
+
+    /// Marks the front of the queue as on its way, and publishes that.
+    fn take_next(&mut self) -> Option<QueuedPrompt> {
+        let prompt = self.queue.pop_front()?;
+        self.queue_sending = Some(prompt.clone());
+        self.emit_queue();
+        Some(prompt)
+    }
+
+    fn send_queued(&mut self, prompt: QueuedPrompt) {
+        match self.require_ready() {
+            Ok(session_id) => self.start_prompt(session_id, prompt.id, prompt.blocks, None),
+            Err(error) => self.return_to_queue(&prompt.id, &error.message),
+        }
+    }
+
+    /// A queued prompt that could not be sent goes back to the front, and
+    /// the queue waits for the person.
+    fn return_to_queue(&mut self, request_id: &str, why: &str) {
+        let Some(prompt) = self.queue_sending.take_if(|prompt| prompt.id == request_id) else { return };
+        self.queue.push_front(prompt);
+        self.queue_paused = Some(format!("could not send: {why}"));
+        self.emit_queue();
+    }
+
+    fn handle_enqueue(&mut self, prompt: QueuedPrompt) -> Result<EnqueueOutcome, DesktopError> {
+        self.require_ready()?;
+        if self.queue.len() >= QUEUE_LIMIT {
+            return Err(DesktopError::limit_exceeded(format!("the queue already holds {QUEUE_LIMIT} prompts")));
+        }
+        if self.queue.iter().any(|queued| queued.id == prompt.id) || self.pending_submits.contains_key(&prompt.id) {
+            return Err(DesktopError::conflict("this prompt is already queued"));
+        }
+        if self.queue.is_empty() && self.queue_paused.is_none() && self.can_prompt_now() {
+            // The turn ended between the click and here: no reason to wait.
+            self.queue.push_back(prompt);
+            if let Some(next) = self.take_next() {
+                self.send_queued(next);
+            }
+            return Ok(EnqueueOutcome::Sent);
+        }
+        self.queue.push_back(prompt);
+        self.emit_queue();
+        Ok(EnqueueOutcome::Queued { position: self.queue.len() })
+    }
+
+    fn handle_queue_op(&mut self, op: QueueOp) -> Result<QueueReply, DesktopError> {
+        let position = |queue: &VecDeque<QueuedPrompt>, id: &str| {
+            queue.iter().position(|prompt| prompt.id == id).ok_or_else(|| DesktopError::conflict("that prompt is no longer queued"))
+        };
+        let mut removed = None;
+        match op {
+            QueueOp::Remove { id } => {
+                let index = position(&self.queue, &id)?;
+                removed = self.queue.remove(index).map(|prompt| prompt.view());
+            }
+            QueueOp::Move { id, index } => {
+                let from = position(&self.queue, &id)?;
+                if let Some(prompt) = self.queue.remove(from) {
+                    self.queue.insert(index.min(self.queue.len()), prompt);
+                }
+            }
+            QueueOp::Clear => self.queue.clear(),
+            QueueOp::Resume => {
+                self.queue_paused = None;
+                if self.can_prompt_now()
+                    && let Some(next) = self.take_next()
+                {
+                    self.send_queued(next);
+                    return Ok(QueueReply { removed: None, queue: self.queue_view() });
+                }
+            }
+            QueueOp::SendNow { id } => {
+                let index = position(&self.queue, &id)?;
+                if let Some(prompt) = self.queue.remove(index) {
+                    self.queue.push_front(prompt);
+                }
+                let steerable = self.capabilities.as_ref().is_some_and(|caps| caps.supports_steering);
+                if self.reducer.foreground().is_active() {
+                    let session_id = self.require_ready()?;
+                    if steerable {
+                        if let Some(prompt) = self.queue.pop_front() {
+                            let message_id = self.start_steer(session_id, prompt.blocks.clone(), None);
+                            self.queue_steers.insert(message_id, prompt);
+                        }
+                    } else {
+                        self.queue_jump = true;
+                        self.queue_paused = None;
+                        self.request_cancel(session_id);
+                        // `request_cancel` is fire-and-forget on the wire;
+                        // the settle sends the prompt.
+                    }
+                } else {
+                    self.queue_paused = None;
+                    if self.can_prompt_now()
+                        && let Some(next) = self.take_next()
+                    {
+                        self.send_queued(next);
+                        return Ok(QueueReply { removed: None, queue: self.queue_view() });
+                    }
+                }
+            }
+        }
+        if self.queue.is_empty() {
+            self.queue_paused = None;
+        }
+        self.emit_queue();
+        Ok(QueueReply { removed, queue: self.queue_view() })
     }
 
     fn set_detached(&mut self, call_id: &str, state: DetachedCallState) {
@@ -783,6 +1096,15 @@ impl ActorState {
                 state: SteerState::OutcomeUnknown,
             });
         }
+        // Whatever was waiting stays listed, so nothing typed is lost; the
+        // interface offers it back for editing.
+        if let Some(prompt) = self.queue_sending.take() {
+            self.queue.push_front(prompt);
+        }
+        if !self.queue.is_empty() {
+            self.queue_paused = Some("the agent exited".into());
+            self.emit_queue();
+        }
         self.set_attachment(AttachmentState::Detached);
         if !self.exited_emitted {
             self.exited_emitted = true;
@@ -824,8 +1146,8 @@ impl ActorState {
         // than the subscription, so it runs out on its own schedule while the
         // account is otherwise fine. Landing on the fallback is a working run
         // on a cheaper model; refusing to land is no run at all.
-        if let Some(model) = self.launch.deferred_model().map(str::to_string) {
-            let fallback = self.launch.deferred_model_fallback().map(str::to_string);
+        if let Some(model) = self.launch.deferred_model().map(|model| self.offered_model(model)) {
+            let fallback = self.launch.deferred_model_fallback().map(|model| self.offered_model(model));
             if !self.select_config_option("model", &model, timeout, &session_id).await
                 && let Some(fallback) = fallback
                 && fallback != model
@@ -903,6 +1225,33 @@ impl ActorState {
         }
     }
 
+    /// The values one advertised select option offers, grouped or flat.
+    fn offered_values(&self, id: &str) -> Vec<String> {
+        let Some(option) = self.config_options.as_array().and_then(|options| options.iter().find(|option| option.get("id").and_then(Value::as_str) == Some(id))) else {
+            return Vec::new();
+        };
+        let mut values = Vec::new();
+        for choice in option.get("options").and_then(Value::as_array).into_iter().flatten() {
+            match choice.get("options").and_then(Value::as_array) {
+                Some(group) => values.extend(group.iter().filter_map(|inner| inner.get("value").and_then(Value::as_str)).map(str::to_string)),
+                None => values.extend(choice.get("value").and_then(Value::as_str).map(str::to_string)),
+            }
+        }
+        values
+    }
+
+    /// The model id to ask this adapter for. Adapters rename ids between
+    /// releases (claude-agent-acp 0.89 lists Fable as `fable`, 0.84 as
+    /// `claude-fable-5-1`), and a choice saved under one must select the
+    /// same model under the other rather than silently falling back.
+    fn offered_model(&self, wanted: &str) -> String {
+        let offered = self.offered_values("model");
+        match self.launch.provider() {
+            Provider::Claude => claude::launch::offered_model(wanted, &offered).unwrap_or_else(|| wanted.to_string()),
+            _ => wanted.to_string(),
+        }
+    }
+
     /// The current value of one advertised config option.
     fn current_config_value(&self, id: &str) -> Option<String> {
         self.config_options
@@ -948,6 +1297,87 @@ impl ActorState {
         });
     }
 
+    /// Writes `session/prompt`. `reply` is the caller waiting on acceptance;
+    /// the queue sends with none.
+    fn start_prompt(&mut self, session_id: String, request_id: String, blocks: Vec<Value>, reply: Option<Reply<SubmissionOutcome>>) {
+        self.flush_chunk();
+        // The provider can emit tool updates before PromptWritten is handled.
+        // Reset before dispatch so accepting the prompt cannot erase live tools.
+        self.open_tools.clear();
+        self.last_progress = Instant::now();
+        self.submitted_prompts.insert(request_id.clone(), blocks.clone());
+        self.emit(SessionEvent::Submission {
+            request_id: request_id.clone(),
+            state: SubmissionState::Queued,
+            message: None,
+        });
+        let (written_tx, written_rx) = oneshot::channel();
+        let internal = self.internal.clone();
+        let written_id = request_id.clone();
+        let acceptance = tokio::spawn(async move {
+            if written_rx.await.is_ok() {
+                let _ = internal
+                    .send(Internal::PromptWritten {
+                        request_id: written_id,
+                    })
+                    .await;
+            }
+        });
+        // `session/prompt` answers with the finished turn, so it cannot be
+        // held to an acceptance deadline: the answer is minutes away by
+        // design. The prompt reaching the agent's input is the acceptance
+        // (`PromptWritten`), and the request itself gets a turn-length
+        // ceiling.
+        let timeout = self.config.timeouts.turn;
+        self.pending_submits.insert(request_id.clone(), reply);
+        let transport = self.transport.clone();
+        let internal = self.internal.clone();
+        tokio::spawn(async move {
+            let result = transport.request_observed(
+                "session/prompt",
+                json!({ "sessionId": session_id, "prompt": blocks }),
+                timeout,
+                Some(written_tx),
+            ).await;
+            // A fast provider can answer before the write observer is scheduled.
+            // Deliver acceptance first so even an immediate refusal settles a turn.
+            let _ = acceptance.await;
+            let _ = internal.send(Internal::PromptResult { request_id, result }).await;
+        });
+    }
+
+    /// Sends input into the running turn, and returns the id the desktop
+    /// tracks it by: the steering request answers with nothing to name the
+    /// input by.
+    fn start_steer(&mut self, session_id: String, blocks: Vec<Value>, reply: Option<Reply<SteerOutcome>>) -> String {
+        self.flush_chunk();
+        let message_id = format!("steer-{}", uuid::Uuid::new_v4().simple());
+        self.pending_steers.insert(message_id.clone());
+        self.emit(SessionEvent::Steer {
+            message_id: message_id.clone(),
+            state: SteerState::Pending,
+        });
+        let timeout = self.config.timeouts.control;
+        let id = message_id.clone();
+        self.spawn_request(
+            capabilities::STEER_METHOD,
+            json!({ "sessionId": session_id, "prompt": blocks }),
+            timeout,
+            None,
+            move |result| Internal::SteerResult { message_id: id, result, reply },
+        );
+        message_id
+    }
+
+    /// Asks the agent to end the running turn without waiting on the wire.
+    fn request_cancel(&mut self, session_id: String) {
+        self.apply_turn(TurnInput::CancelRequested);
+        let transport = self.transport.clone();
+        tokio::spawn(async move {
+            let _ = transport.notify("session/cancel", json!({ "sessionId": session_id })).await;
+        });
+    }
+
     async fn handle_command(&mut self, command: Command) -> bool {
         match command {
             Command::Submit {
@@ -962,39 +1392,7 @@ impl ActorState {
                         return true;
                     }
                 };
-                self.flush_chunk();
-                self.submitted_prompts.insert(request_id.clone(), blocks.clone());
-                self.emit(SessionEvent::Submission {
-                    request_id: request_id.clone(),
-                    state: SubmissionState::Queued,
-                    message: None,
-                });
-                let (written_tx, written_rx) = oneshot::channel();
-                let internal = self.internal.clone();
-                let written_id = request_id.clone();
-                tokio::spawn(async move {
-                    if written_rx.await.is_ok() {
-                        let _ = internal
-                            .send(Internal::PromptWritten {
-                                request_id: written_id,
-                            })
-                            .await;
-                    }
-                });
-                // `session/prompt` answers with the finished turn, so it
-                // cannot be held to an acceptance deadline: the answer is
-                // minutes away by design. The prompt reaching the agent's
-                // input is the acceptance (`PromptWritten`), and the request
-                // itself gets a turn-length ceiling.
-                let timeout = self.config.timeouts.turn;
-                self.pending_submits.insert(request_id.clone(), reply);
-                self.spawn_request(
-                    "session/prompt",
-                    json!({ "sessionId": session_id, "prompt": blocks }),
-                    timeout,
-                    Some(written_tx),
-                    move |result| Internal::PromptResult { request_id, result },
-                );
+                self.start_prompt(session_id, request_id, blocks, Some(reply));
             }
             Command::Steer { blocks, reply } => {
                 let session_id = match self.require_ready() {
@@ -1014,23 +1412,15 @@ impl ActorState {
                     )));
                     return true;
                 }
+                self.start_steer(session_id, blocks, Some(reply));
+            }
+            Command::Enqueue { prompt, reply } => {
                 self.flush_chunk();
-                // The steering request answers with nothing to name the
-                // input by, so the desktop names it and tracks that.
-                let message_id = format!("steer-{}", uuid::Uuid::new_v4().simple());
-                self.pending_steers.insert(message_id.clone());
-                self.emit(SessionEvent::Steer {
-                    message_id: message_id.clone(),
-                    state: SteerState::Pending,
-                });
-                let timeout = self.config.timeouts.control;
-                self.spawn_request(
-                    capabilities::STEER_METHOD,
-                    json!({ "sessionId": session_id, "prompt": blocks }),
-                    timeout,
-                    None,
-                    move |result| Internal::SteerResult { message_id, result, reply },
-                );
+                let _ = reply.send(self.handle_enqueue(prompt));
+            }
+            Command::Queue { op, reply } => {
+                self.flush_chunk();
+                let _ = reply.send(self.handle_queue_op(op));
             }
             Command::Cancel { reply } => {
                 let session_id = match self.require_ready() {
@@ -1149,6 +1539,7 @@ impl ActorState {
             config_options: self.config_options.clone(),
             available_commands: self.available_commands.clone(),
             pending_steers: self.pending_steers.iter().cloned().collect(),
+            queue: self.queue_view(),
             last_sequence: self.sequence,
             history_start: self.history.front().map(|e| e.sequence).unwrap_or(DecimalId(0)),
             history_dropped: self.history_dropped,
@@ -1291,15 +1682,21 @@ impl ActorState {
                 // turn. The response still arrives; it is read as the turn's
                 // outcome instead (see `PromptResult`).
                 if let Some(reply) = self.pending_submits.remove(&request_id) {
-                    self.open_tools.clear();
                     self.last_progress = Instant::now();
                     self.apply_turn(TurnInput::PromptAccepted);
                     self.emit(SessionEvent::Submission {
-                        request_id,
+                        request_id: request_id.clone(),
                         state: SubmissionState::Accepted,
                         message: None,
                     });
-                    let _ = reply.send(Ok(SubmissionOutcome::Accepted));
+                    if let Some(reply) = reply {
+                        let _ = reply.send(Ok(SubmissionOutcome::Accepted));
+                    }
+                    // The queued prompt is the running turn now; the turn's
+                    // own start went out above, so nothing reads a gap.
+                    if self.queue_sending.take_if(|prompt| prompt.id == request_id).is_some() {
+                        self.emit_queue();
+                    }
                 }
             }
             Internal::PromptResult { request_id, result } => {
@@ -1343,7 +1740,7 @@ impl ActorState {
                     Ok(_) => {
                         self.apply_turn(TurnInput::PromptAccepted);
                         self.emit(SessionEvent::Submission {
-                            request_id,
+                            request_id: request_id.clone(),
                             state: SubmissionState::Accepted,
                             message: None,
                         });
@@ -1352,7 +1749,7 @@ impl ActorState {
                     Err(TransportError::Remote(rpc)) => {
                         let error = errors::map_rpc(&rpc);
                         self.emit(SessionEvent::Submission {
-                            request_id,
+                            request_id: request_id.clone(),
                             state: SubmissionState::Rejected,
                             message: Some(error.message.clone()),
                         });
@@ -1361,14 +1758,29 @@ impl ActorState {
                     Err(other) => {
                         let error = errors::map_transport_error(other);
                         self.emit(SessionEvent::Submission {
-                            request_id,
+                            request_id: request_id.clone(),
                             state: SubmissionState::OutcomeUnknown,
                             message: Some(error.message.clone()),
                         });
                         SubmissionOutcome::OutcomeUnknown { error }
                     }
                 };
-                let _ = reply.send(Ok(outcome));
+                // A queued prompt the agent never took goes back to the
+                // front rather than being lost with the reply nobody reads.
+                match &outcome {
+                    SubmissionOutcome::Rejected { error } | SubmissionOutcome::OutcomeUnknown { error } => {
+                        let message = error.message.clone();
+                        self.return_to_queue(&request_id, &message);
+                    }
+                    SubmissionOutcome::Accepted => {
+                        if self.queue_sending.take_if(|prompt| prompt.id == request_id).is_some() {
+                            self.emit_queue();
+                        }
+                    }
+                }
+                if let Some(reply) = reply {
+                    let _ = reply.send(Ok(outcome));
+                }
             }
             Internal::SteerResult { message_id, result, reply } => {
                 self.flush_chunk();
@@ -1383,8 +1795,18 @@ impl ActorState {
                         SteerState::OutcomeUnknown,
                     ),
                 };
+                // "Send now" steered a queued prompt in. If the agent would
+                // not take it, it goes back to the front of the queue.
+                if let Some(prompt) = self.queue_steers.remove(&message_id)
+                    && state == SteerState::Rejected
+                {
+                    self.queue.push_front(prompt);
+                    self.emit_queue();
+                }
                 self.emit(SessionEvent::Steer { message_id, state });
-                let _ = reply.send(Ok(outcome));
+                if let Some(reply) = reply {
+                    let _ = reply.send(Ok(outcome));
+                }
             }
             Internal::SetConfigResult { result, reply } => {
                 let outcome = match result {

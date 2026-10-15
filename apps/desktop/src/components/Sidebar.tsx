@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
+import { IS_REMOTE } from "../remote/mode";
 import type { Provider } from "@thingmaker/contracts";
 import { PROVIDERS, PROVIDER_LABELS } from "@thingmaker/contracts";
 import { useStore, sessionTitle, basenameOf as basename } from "../store";
@@ -17,7 +18,6 @@ import {
   IconPinFilled,
   IconPlus,
   IconRefresh,
-  IconShield,
   IconSidebar,
   IconX,
 } from "./icons";
@@ -267,6 +267,24 @@ function RowMenu({ row, at, onClose, onRename }: { row: Row; at: { x: number; y:
   );
 }
 
+/** A sidebar layout choice remembered on this machine; a convenience, so failures are ignored. */
+function remembered<T>(key: string, fallback: T): T {
+  try {
+    const stored = localStorage.getItem(key);
+    return stored === null ? fallback : (JSON.parse(stored) as T);
+  } catch {
+    return fallback;
+  }
+}
+
+function remember(key: string, value: unknown) {
+  try {
+    localStorage.setItem(key, JSON.stringify(value));
+  } catch {
+    // Remembering is a convenience.
+  }
+}
+
 export function Sidebar() {
   const workspaces = useStore((s) => s.workspaces);
   const inspections = useStore((s) => s.inspections);
@@ -283,11 +301,13 @@ export function Sidebar() {
   const toggleSidebar = useStore((s) => s.toggleSidebar);
   const setView = useStore((s) => s.setView);
   const loadProviders = useStore((s) => s.loadProviders);
+  const updatesOut = useStore((s) => Object.values(s.providerVersions ?? {}).filter((version) => version?.updateAvailable).length);
   const loadSettings = useStore((s) => s.loadSettings);
   const providers = useStore((s) => s.providers);
   const usage = useStore((s) => s.usage);
-  const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
-  const [pinnedCollapsed, setPinnedCollapsed] = useState(false);
+  // Folded workspaces, and the Pinned group, stay folded across restarts.
+  const [collapsed, setCollapsed] = useState<Record<string, boolean>>(() => remembered("thingmaker.sidebar.collapsed", {}));
+  const [pinnedCollapsed, setPinnedCollapsed] = useState(() => remembered("thingmaker.sidebar.pinnedCollapsed", false));
   const [menu, setMenu] = useState<{ row: Row; at: { x: number; y: number } } | null>(null);
   /** Agent session id of the row being renamed inline. */
   const [renaming, setRenaming] = useState<string | null>(null);
@@ -296,21 +316,11 @@ export function Sidebar() {
   // this machine.
   // Finished workers inside an open team, folded unless asked for.
   const [openFinished, setOpenFinished] = useState<Record<string, boolean>>({});
-  const [openTeams, setOpenTeams] = useState<Record<string, boolean>>(() => {
-    try {
-      return JSON.parse(localStorage.getItem("thingmaker.sidebar.openTeams") ?? "{}") as Record<string, boolean>;
-    } catch {
-      return {};
-    }
-  });
+  const [openTeams, setOpenTeams] = useState<Record<string, boolean>>(() => remembered("thingmaker.sidebar.openTeams", {}));
   const toggleTeam = (id: string) => {
     const next = { ...openTeams, [id]: !openTeams[id] };
     setOpenTeams(next);
-    try {
-      localStorage.setItem("thingmaker.sidebar.openTeams", JSON.stringify(next));
-    } catch {
-      // Remembering is a convenience.
-    }
+    remember("thingmaker.sidebar.openTeams", next);
   };
   const renameSession = useStore((s) => s.renameSession);
   const removeWorkspace = useStore((s) => s.removeWorkspace);
@@ -338,7 +348,7 @@ export function Sidebar() {
       project,
       id: session.snapshot.agentSessionId,
       provider: session.snapshot.provider,
-      label: (session.snapshot.agentSessionId && overlay.get(session.snapshot.agentSessionId)) || sessionTitle(session),
+      label: (session.snapshot.agentSessionId && overlay.get(session.snapshot.agentSessionId)) || sessionTitle(session, workspaceRecords),
       liveId: session.handle.id,
       attention: session.attention,
       running: session.projection.foreground === "running" || session.projection.foreground === "cancelling" || session.projection.foreground === "awaiting_user",
@@ -362,7 +372,8 @@ export function Sidebar() {
         project,
         id: record.agentSessionId,
         provider: record.provider,
-        label: overlay.get(record.agentSessionId) ?? storedLabel(record.agentSessionId, undefined),
+        // The rename, else the title the session kept after it closed.
+        label: overlay.get(record.agentSessionId) ?? storedLabel(record.agentSessionId, record.autoTitle || undefined),
         liveId: null,
         attention: "none",
         running: false,
@@ -394,14 +405,14 @@ export function Sidebar() {
   return (
     <nav aria-label="Workspaces and sessions" className="sidebar">
       <div className="sidebar-top" data-tauri-drag-region>
-        <button aria-label="Hide sidebar (⌘B)" className="icon-button" onClick={toggleSidebar} title="Hide sidebar (⌘B)" type="button">
+        <button aria-label="Hide sidebar (⌘B)" className="icon-button remote-hidden" onClick={toggleSidebar} title="Hide sidebar (⌘B)" type="button">
           <IconSidebar />
         </button>
         <span className="sidebar-brand" data-tauri-drag-region>
-          <img className="brand-icon" src="/thingmaker-icon.png" alt="" draggable={false} />
+          <img className="brand-icon" src={`${import.meta.env.BASE_URL}thingmaker-icon.png`} alt="" draggable={false} />
           ThingMaker
         </span>
-        <button aria-label="Add workspace (⌘O)" className="icon-button" onClick={() => void addWorkspaceByPicker()} title="Add workspace (⌘O)" type="button">
+        <button aria-label="Add workspace (⌘O)" className="icon-button remote-hidden" onClick={() => void addWorkspaceByPicker()} title="Add workspace (⌘O)" type="button">
           <IconPlus />
         </button>
       </div>
@@ -421,7 +432,10 @@ export function Sidebar() {
         {allPinned.length > 0 && (
           <section className="ws-group pinned-group">
             <div className="group-header">
-              <button aria-label={pinnedCollapsed ? "Expand" : "Collapse"} className="icon-button icon-button-xs" onClick={() => setPinnedCollapsed(!pinnedCollapsed)} type="button">
+              <button aria-label={pinnedCollapsed ? "Expand" : "Collapse"} className="icon-button icon-button-xs" onClick={() => {
+                  setPinnedCollapsed(!pinnedCollapsed);
+                  remember("thingmaker.sidebar.pinnedCollapsed", !pinnedCollapsed);
+                }} type="button">
                 <IconChevron open={!pinnedCollapsed} size={14} />
               </button>
               <span className="group-label">
@@ -455,7 +469,11 @@ export function Sidebar() {
           return (
             <section className="ws-group" key={workspace.id}>
               <div className={`ws-header ${selected ? "selected" : ""}`}>
-                <button aria-label={isCollapsed ? "Expand" : "Collapse"} className="icon-button icon-button-xs" onClick={() => setCollapsed({ ...collapsed, [workspace.id]: !isCollapsed })} type="button">
+                <button aria-label={isCollapsed ? "Expand" : "Collapse"} className="icon-button icon-button-xs" onClick={() => {
+                    const next = { ...collapsed, [workspace.id]: !isCollapsed };
+                    setCollapsed(next);
+                    remember("thingmaker.sidebar.collapsed", next);
+                  }} type="button">
                   <IconChevron open={!isCollapsed} size={14} />
                 </button>
                 <button aria-current={selected ? "page" : undefined} className="ws-name" onClick={() => void selectWorkspace(workspace.id)} title={workspace.displayPath} type="button">
@@ -487,7 +505,7 @@ export function Sidebar() {
                   </button>
                   <button
                     aria-label="Remove workspace from the list"
-                    className="icon-button icon-button-xs"
+                    className="icon-button icon-button-xs remote-hidden"
                     onClick={() => setRemoving({ id: workspace.id, name: project, live: liveCount })}
                     title="Remove from ThingMaker (files and agent transcripts stay on disk)"
                     type="button"
@@ -601,13 +619,6 @@ export function Sidebar() {
       )}
 
       <div className="sidebar-footer">
-        <div className="status-line" title={(providers ?? []).map((info) => `${info.label}: ${info.resolved ? info.resolved.program : info.problem ?? "not found"}`).join("\n")}>
-          <IconShield size={13} />
-          <span className="small">Trusted local · host access</span>
-          <span className="small muted">
-            {providers ? `${providers.filter((info) => info.resolved && info.auth?.loggedIn).length}/${providers.length} signed in` : "checking…"}
-          </span>
-        </div>
         {PROVIDERS.map((provider) => {
           const snapshot = usage[provider];
           if (!snapshot?.primary) return null;
@@ -619,17 +630,29 @@ export function Sidebar() {
             </div>
           );
         })}
-        <div className="row">
+        {IS_REMOTE && window.ThingMakerNative?.unpair && (
+          <button
+            className="link small"
+            onClick={() => {
+              if (window.confirm("Unpair this phone? You can pair it again from the Mac's Settings → Phone.")) window.ThingMakerNative?.unpair?.();
+            }}
+            type="button"
+          >
+            Unpair this phone
+          </button>
+        )}
+        <div className="row remote-hidden">
           <button
             className={`icon-button ${view.kind === "signin" ? "on" : ""}`}
             onClick={() => {
               setView({ kind: "signin" });
               void loadProviders();
             }}
-            title="Providers (⌘,)"
+            title={updatesOut > 0 ? `Providers (⌘,): ${updatesOut} update${updatesOut === 1 ? "" : "s"} available` : "Providers (⌘,)"}
             type="button"
           >
             <IconKey />
+            {updatesOut > 0 && <span aria-label="update available" className="badge-dot" />}
           </button>
           <button
             className={`icon-button ${view.kind === "teams" ? "on" : ""}`}
