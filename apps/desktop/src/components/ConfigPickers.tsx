@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type PointerEvent } from "react";
-import { asConfigOptions, isConfigOptionGroup, isEffortOption, type ConfigOptionChoice, type SessionConfigOption } from "@thingmaker/contracts";
+import { asConfigOptions, isConfigOptionGroup, isEffortOption, PROVIDER_LABELS, PROVIDERS, type ConfigOptionChoice, type Provider, type SessionConfigOption } from "@thingmaker/contracts";
 import { useStore } from "../store";
-import { IconBolt, IconCheck, IconChevron, IconUndo } from "./icons";
+import { presetMatches } from "../team";
+import { IconBolt, IconCheck, IconChevron } from "./icons";
 
 function choices(option: SessionConfigOption): { group: string | null; choice: ConfigOptionChoice }[] {
   const out: { group: string | null; choice: ConfigOptionChoice }[] = [];
@@ -24,12 +25,63 @@ function fastOn(option: SessionConfigOption): boolean {
   return option.currentValue === true || option.currentValue === "on";
 }
 
-/** The effort an agent picks for itself; reset returns to it, and the slider leaves it out. */
+/** The effort an agent picks for itself; the slider leaves it out. */
 const DEFAULT_EFFORT = "default";
 /** Above this many models the list gets a filter. */
 const FILTER_FROM = 12;
 
-function ModelList({ option, onPick }: { option: SessionConfigOption; onPick: (value: string) => void }) {
+/**
+ * The other providers, one click away. A session belongs to its provider's
+ * program, so switching continues the work in a new session there, briefed
+ * from this one (the same hand-off the team editor uses). A session on a
+ * saved team preset keeps the preset's lead; the team decides that.
+ */
+function ProviderSwitch({ sessionId, onSwitched }: { sessionId: string; onSwitched: () => void }) {
+  const provider = useStore((s) => s.sessions[sessionId]?.snapshot.provider);
+  const running = useStore((s) => {
+    const foreground = s.sessions[sessionId]?.projection.foreground;
+    return foreground === "running" || foreground === "cancelling";
+  });
+  const team = useStore((s) => s.teams[sessionId]);
+  const presets = useStore((s) => s.teamPresets);
+  const providers = useStore((s) => s.providers);
+  const handOff = useStore((s) => s.handOff);
+  if (!provider) return null;
+  const preset = presets.find((candidate) => presetMatches(candidate, provider, team));
+  const why = (other: Provider): string | null => {
+    if (preset) return `This session runs the team preset “${preset.name}”, led by ${PROVIDER_LABELS[provider]}. Change the team to switch.`;
+    if (running) return "Wait for the running turn to finish.";
+    const info = providers?.find((candidate) => candidate.provider === other);
+    if (info && (!info.resolved || info.auth?.loggedIn === false)) return `${PROVIDER_LABELS[other]} is ${info.resolved ? "not signed in" : "not installed"}.`;
+    return null;
+  };
+  return (
+    <div className="model-menu-providers" role="group" aria-label="Provider">
+      {PROVIDERS.map((other) => {
+        const blocked = other === provider ? null : why(other);
+        return (
+          <button
+            aria-pressed={other === provider}
+            className={`model-menu-provider ${other === provider ? "model-menu-provider-on" : ""}`}
+            disabled={other !== provider && blocked !== null}
+            key={other}
+            onClick={() => {
+              if (other === provider) return;
+              onSwitched();
+              void handOff(sessionId, other);
+            }}
+            title={other === provider ? `This session runs on ${PROVIDER_LABELS[other]}` : (blocked ?? `Continue in a new ${PROVIDER_LABELS[other]} session, briefed from this one`)}
+            type="button"
+          >
+            {PROVIDER_LABELS[other]}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+function ModelList({ option, onPick, sessionId, onSwitched }: { option: SessionConfigOption; onPick: (value: string) => void; sessionId: string; onSwitched: () => void }) {
   const [filter, setFilter] = useState("");
   const all = useMemo(() => choices(option), [option]);
   const value = typeof option.currentValue === "string" ? option.currentValue : "";
@@ -47,6 +99,7 @@ function ModelList({ option, onPick }: { option: SessionConfigOption; onPick: (v
 
   return (
     <div className="model-menu-list">
+      <ProviderSwitch onSwitched={onSwitched} sessionId={sessionId} />
       <div className="model-menu-caption">Select model</div>
       {all.length > FILTER_FROM && (
         <input aria-label="Filter models" autoFocus className="input model-menu-filter" onChange={(e) => setFilter(e.target.value)} placeholder={`Filter ${all.length} models…`} value={filter} />
@@ -179,7 +232,6 @@ export function ModelMenu({
   const modelNow = current(model);
   const effortNow = current(effort);
   const levels = effort ? choices(effort).map((c) => c.choice).filter((c) => c.value !== DEFAULT_EFFORT) : [];
-  const hasDefault = effort ? choices(effort).some((c) => c.choice.value === DEFAULT_EFFORT) : false;
   const effortIndex = levels.findIndex((level) => level.value === effortNow?.choice.value);
   const fastEnabled = fast ? fastOn(fast) : false;
   const set = (option: SessionConfigOption | undefined, value: string) => {
@@ -214,7 +266,9 @@ export function ModelMenu({
                 if (effort || fast) setView("main");
                 else setOpen(false);
               }}
+              onSwitched={() => setOpen(false)}
               option={model}
+              sessionId={sessionId}
             />
           ) : (
             <>
@@ -242,13 +296,7 @@ export function ModelMenu({
                     </button>
                   )}
                 </div>
-                {hasDefault && effortNow?.choice.value !== DEFAULT_EFFORT ? (
-                  <button aria-label="Reset effort" className="model-menu-icon" onClick={() => set(effort, DEFAULT_EFFORT)} title="Back to the default effort" type="button">
-                    <IconUndo size={15} />
-                  </button>
-                ) : (
-                  <span className="model-menu-icon-slot" />
-                )}
+                <span className="model-menu-icon-slot" />
               </div>
               {effort && levels.length > 0 && <EffortSlider disabled={disabled} index={effortIndex} levels={levels} onPick={(value) => set(effort, value)} />}
             </>
@@ -272,6 +320,9 @@ export function ConfigPickers({ sessionId, configOptions, disabled }: { sessionI
       {(model || effort || fast) && <ModelMenu disabled={disabled} effort={effort} fast={fast} model={model} sessionId={sessionId} />}
       {options.map((option) => {
         if (option === model || option === effort || option === fast) return null;
+        // The adapter's own agent profiles (Claude's `agent`): ThingMaker's
+        // teams are the way to shape who works, so the picker is not shown.
+        if (option.configId === "agent") return null;
         // The permission mode is the workspace's trust, decided at launch; it is
         // shown, not offered, so a click cannot step around that decision.
         if (option.configId === "mode") {

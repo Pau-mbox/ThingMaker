@@ -63,15 +63,14 @@ describe("model menu", () => {
     expect(screen.queryByText(/Fast mode/)).toBeNull();
   });
 
-  it("toggles Fast mode, steps the effort and resets it", () => {
+  it("toggles Fast mode and steps the effort, with no reset button", () => {
     render(<ConfigPickers configOptions={OPTIONS} disabled={false} sessionId="s1" />);
     fireEvent.click(screen.getByRole("button", { name: /GPT-6.1 Sol/ }));
     fireEvent.click(screen.getByRole("button", { name: "Fast mode" }));
     expect(setConfigOption).toHaveBeenLastCalledWith("s1", "fast", "on");
     fireEvent.keyDown(screen.getByRole("slider", { name: "Reasoning effort" }), { key: "ArrowLeft" });
     expect(setConfigOption).toHaveBeenLastCalledWith("s1", "reasoning_effort", "medium");
-    fireEvent.click(screen.getByRole("button", { name: "Reset effort" }));
-    expect(setConfigOption).toHaveBeenLastCalledWith("s1", "reasoning_effort", "default");
+    expect(screen.queryByRole("button", { name: "Reset effort" })).toBeNull();
   });
 
   it("opens the model list from the menu and switches model", () => {

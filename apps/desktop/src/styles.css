@@ -5556,3 +5556,40 @@ button.odyssey-task-title svg {
   gap: 4px;
   margin: 2px 0 6px;
 }
+
+/* The provider row on top of the model list: the current one, and a hand-off to the others. */
+.model-menu-providers {
+  display: flex;
+  gap: 2px;
+  margin: 0 4px 4px;
+  padding: 2px;
+  border-radius: 9px;
+  background: var(--panel-3);
+}
+
+.model-menu-provider {
+  flex: 1;
+  padding: 5px 8px;
+  border: 0;
+  border-radius: 7px;
+  background: none;
+  color: var(--muted);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.model-menu-provider:hover:not(:disabled) {
+  color: var(--text);
+}
+
+.model-menu-provider-on {
+  background: var(--panel);
+  color: var(--text);
+  cursor: default;
+}
+
+.model-menu-provider:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
