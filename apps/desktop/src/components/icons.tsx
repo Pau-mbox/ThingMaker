@@ -218,3 +218,14 @@ export const IconExternal = (p: IconProps) => (
     <path d="M14 4h6v6M20 4l-9 9M18 14v4a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4" />
   </Svg>
 );
+export const IconBolt = (p: IconProps) => (
+  <Svg {...p}>
+    <path d="M13 3 5 13.5h6L10 21l8-10.5h-6L13 3Z" />
+  </Svg>
+);
+export const IconUndo = (p: IconProps) => (
+  <Svg {...p}>
+    <path d="M4 12a8 8 0 1 0 2.34-5.66" />
+    <path d="M4 4v5h5" />
+  </Svg>
+);

@@ -28,6 +28,7 @@ import { detectTestRun, editedFilesIn, shellResultsOf } from "../toolSummary";
 import { CodeChangesCard, EditedFilesList, TestsCard } from "./ChangeCards";
 import { PlanBar, PlanCard, planText } from "./PlanChecklist";
 import { QueueStrip } from "./QueueStrip";
+import { ProviderMark } from "./ProviderMark";
 import { IconAgents, IconArrowUp, IconAt, IconBox, IconBranch, IconCheck, IconChevron, IconDots, IconFolder, IconImage, IconPaperclip, IconSquare, IconTerminal } from "./icons";
 
 const EMPTY_LIST: never[] = [];
@@ -197,6 +198,26 @@ function CardBody({ card, sessionId }: { card: Card; sessionId: string }) {
   const onLink = (url: string) => void openUrl(url);
   switch (card.kind) {
     case "message":
+      // An answer is marked by its provider's logo in the gutter rather than
+      // a name line above it.
+      if (card.message.role === "agent" && provider) {
+        return (
+          <article className="card card-agent card-agent-marked">
+            <span className="card-author" title={`${PROVIDER_LABELS[provider]} · ${card.message.messageId}`}>
+              <ProviderMark provider={provider} size={15} />
+            </span>
+            <div className="card-content">
+              {card.message.contentUnknown && <span className="chip chip-warn small">content not supplied</span>}
+              <Blocks blocks={card.message.blocks} markdown onLink={onLink} workspaceId={workspaceId} />
+            </div>
+            <span className="card-actions card-actions-float">
+              <button className="link small" onClick={() => copyText(messageText(card))} type="button">
+                copy
+              </button>
+            </span>
+          </article>
+        );
+      }
       return (
         <article className={`card card-${card.message.role}`}>
           <header className="small muted" title={card.message.messageId}>

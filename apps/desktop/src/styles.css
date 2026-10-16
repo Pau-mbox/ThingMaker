@@ -1230,6 +1230,37 @@ code {
   padding: 2px 4px;
 }
 
+.card-agent-marked {
+  position: relative;
+  display: grid;
+  grid-template-columns: 15px minmax(0, 1fr);
+  column-gap: 10px;
+}
+
+.card-author {
+  display: flex;
+  padding-top: 3px;
+  opacity: 0.9;
+}
+
+.card-content {
+  min-width: 0;
+}
+
+.card-content > :first-child,
+.card-content > :first-child > :first-child {
+  margin-top: 0;
+}
+
+.card-actions-float {
+  position: absolute;
+  top: -2px;
+  right: 4px;
+  padding: 0 4px;
+  border-radius: var(--radius-sm);
+  background: var(--bg);
+}
+
 .card-thought {
   opacity: 0.75;
   border-style: dashed;
@@ -1725,6 +1756,253 @@ code {
 .seg:disabled {
   cursor: not-allowed;
   opacity: 0.5;
+}
+
+/* Model, effort and Fast mode in one small menu over the composer. */
+.model-menu-anchor {
+  position: relative;
+  display: inline-flex;
+}
+
+.model-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 26px;
+  padding: 0 9px 0 10px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--panel-2);
+  color: var(--text);
+  font: inherit;
+  font-size: 12.5px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.model-chip:hover {
+  background: var(--panel-3);
+}
+
+.model-chip:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.model-chip-model {
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.model-chip-effort {
+  color: var(--muted);
+}
+
+.model-chip-bolt {
+  color: var(--accent);
+}
+
+.model-chip svg:last-child {
+  color: var(--muted);
+}
+
+.model-menu {
+  position: absolute;
+  bottom: calc(100% + 8px);
+  left: 0;
+  z-index: 20;
+  width: 300px;
+  max-width: calc(100vw - 32px);
+  padding: 12px;
+  border: 1px solid var(--border-strong);
+  border-radius: 16px;
+  background: var(--panel-2);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.45);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.model-menu-head {
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr) 28px;
+  align-items: start;
+}
+
+.model-menu-icon,
+.model-menu-icon-slot {
+  width: 28px;
+  height: 28px;
+}
+
+.model-menu-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-radius: 8px;
+  background: none;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.model-menu-icon:hover {
+  background: var(--panel-3);
+  color: var(--text);
+}
+
+.model-menu-icon-on,
+.model-menu-icon-on:hover {
+  color: var(--accent);
+}
+
+.model-menu-title {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  min-width: 0;
+}
+
+.model-menu-effort {
+  color: var(--accent);
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.model-menu-model {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  max-width: 100%;
+  padding: 1px 6px;
+  border: 0;
+  border-radius: 6px;
+  background: none;
+  color: var(--muted);
+  font: inherit;
+  font-size: 12.5px;
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.model-menu-model:hover {
+  color: var(--text);
+  background: var(--panel-3);
+}
+
+.effort-slider {
+  padding: 2px 0;
+  outline: none;
+  cursor: pointer;
+  touch-action: none;
+}
+
+.effort-slider[aria-disabled="true"] {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.effort-slider-rail {
+  position: relative;
+  height: 28px;
+  border-radius: 999px;
+  background: var(--panel-3);
+}
+
+.effort-slider-fill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  border-radius: 999px;
+  background: var(--accent);
+}
+
+.effort-slider-dot {
+  position: absolute;
+  top: 50%;
+  width: 4px;
+  height: 4px;
+  margin: -2px 0 0 -2px;
+  border-radius: 50%;
+  background: var(--muted);
+}
+
+.effort-slider-dot-on {
+  background: rgba(255, 255, 255, 0.55);
+}
+
+.effort-slider-thumb {
+  position: absolute;
+  top: 50%;
+  width: 24px;
+  height: 24px;
+  margin: -12px 0 0 -12px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.35);
+}
+
+.effort-slider:focus-visible .effort-slider-thumb {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.model-menu-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: -4px;
+}
+
+.model-menu-caption,
+.model-menu-group {
+  padding: 4px 8px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.model-menu-filter {
+  margin: 0 4px 2px;
+}
+
+.model-menu-scroll {
+  max-height: 320px;
+  overflow-y: auto;
+}
+
+.model-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 6px 8px;
+  border: 0;
+  border-radius: 8px;
+  background: none;
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.model-menu-item:hover {
+  background: var(--panel-3);
+}
+
+.model-menu-item-text {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+}
+
+.model-menu-item-note {
+  color: var(--muted);
+  font-size: 11.5px;
 }
 
 .composer-config {
@@ -2447,13 +2725,15 @@ code {
 }
 
 .inline-image-button {
+  align-self: flex-start;
+  width: fit-content;
+  max-width: 360px;
   background: none;
-  border: 1px solid var(--border);
+  border: 0;
   border-radius: var(--radius-sm);
   padding: 0;
   cursor: zoom-in;
   overflow: hidden;
-  max-width: 360px;
 }
 
 .inline-image-button img {
@@ -2461,7 +2741,6 @@ code {
   max-width: 360px;
   max-height: 260px;
   object-fit: contain;
-  background: #0f0f0f;
 }
 
 .inline-images {
@@ -4773,65 +5052,76 @@ button.odyssey-task-title svg {
   }
 }
 
-/* A run of tool calls, folded into one line with a plain line per step. */
+/* A run of tool calls, folded into one quiet line with a plain line per
+   step. No box: it reads as a note between the agent's messages. */
 .tool-group {
   flex: none;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  background: var(--panel);
   font-size: 12.5px;
 }
 
 .tool-group-head {
-  display: flex;
+  display: inline-flex;
   align-items: center;
   gap: 6px;
-  width: 100%;
+  max-width: 100%;
   min-width: 0;
-  padding: 6px 10px;
+  padding: 1px 4px;
   border: 0;
+  border-radius: var(--radius-sm);
   background: none;
-  color: var(--text-2);
+  color: var(--muted);
   font: inherit;
   text-align: left;
   cursor: pointer;
 }
 
 .tool-group-head:hover {
-  color: var(--text);
+  color: var(--text-2);
 }
 
 .tool-group-title {
-  color: var(--text);
+  color: var(--text-2);
   font-weight: 500;
   white-space: nowrap;
+}
+
+.tool-group-head:hover .tool-group-title {
+  color: var(--text);
 }
 
 .tool-group-detail {
   min-width: 0;
   overflow: hidden;
-  color: var(--muted);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .tool-group-count {
-  margin-left: auto;
-  padding-left: 8px;
-  color: var(--muted);
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
 
-.tool-step-list {
-  list-style: none;
-  margin: 0;
-  padding: 2px 0 4px;
-  border-top: 1px solid var(--border);
+.tool-group-count::before {
+  content: "· ";
 }
 
-.tool-step-list-folded {
-  border-top-style: dashed;
+.tool-group-chevron {
+  flex: none;
+  opacity: 0;
+  transition: opacity 120ms;
+}
+
+.tool-group-head:hover .tool-group-chevron,
+.tool-group-head[aria-expanded="true"] .tool-group-chevron,
+.tool-group-head:focus-visible .tool-group-chevron {
+  opacity: 1;
+}
+
+.tool-step-list {
+  list-style: none;
+  margin: 2px 0 4px 10px;
+  padding: 0;
+  border-left: 1px solid var(--border);
 }
 
 .tool-step-line {
@@ -4840,8 +5130,9 @@ button.odyssey-task-title svg {
   gap: 8px;
   width: 100%;
   min-width: 0;
-  padding: 3px 10px 3px 28px;
+  padding: 2px 10px 2px 12px;
   border: 0;
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
   background: none;
   color: var(--text-2);
   font: inherit;
@@ -4850,7 +5141,7 @@ button.odyssey-task-title svg {
 }
 
 .tool-step-line:hover {
-  background: var(--panel-2);
+  background: var(--panel);
 }
 
 .tool-step-glyph {
@@ -4893,10 +5184,10 @@ button.odyssey-task-title svg {
 }
 
 .tool-step-detail {
-  margin: 2px 10px 6px 28px;
+  margin: 2px 10px 6px 12px;
   padding: 6px 10px;
   border-radius: var(--radius-sm);
-  background: var(--panel-2);
+  background: var(--panel);
   font-size: 12px;
   overflow-x: auto;
 }
@@ -4907,15 +5198,11 @@ button.odyssey-task-title svg {
 }
 
 .tool-step-other {
-  padding: 1px 10px 1px 28px;
+  padding: 1px 10px 1px 12px;
 }
 
 .tool-step-more {
-  padding: 3px 10px 3px 52px;
-}
-
-.tool-group-live {
-  border-color: var(--border-strong);
+  padding: 2px 10px 2px 36px;
 }
 
 /* A Markdown document in the transcript: name, the top of it, actions. */

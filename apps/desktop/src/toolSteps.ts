@@ -356,7 +356,8 @@ export function stepDoing(step: Step): string {
   return [VERB_ING[part.verb], part.target === "." ? "the project" : part.target].filter(Boolean).join(" ");
 }
 
-/** "Explored · read 6 files, searched 9 times" for a run of steps. */
+/** "Explored · read 6 files, searched 9 times" for a run of steps. A run
+ *  that did more than look has no title word: what it did is the line. */
 export function summarize(steps: Step[]): { title: string; detail: string } {
   const tally: Record<StepVerb, number> = { read: 0, search: 0, list: 0, run: 0, edit: 0, fetch: 0, agent: 0, other: 0 };
   for (const step of steps) {
@@ -375,5 +376,5 @@ export function summarize(steps: Step[]): { title: string; detail: string } {
   ].filter(Boolean) as string[];
   const exploring = tally.edit + tally.run + tally.fetch + tally.agent + tally.other === 0;
   if (tally.edit > 0 && phrases.length === 1) return { title: `Edited ${plural(tally.edit, "file", "files")}`, detail: "" };
-  return { title: exploring ? "Explored" : "Worked", detail: phrases.join(", ") };
+  return { title: exploring ? "Explored" : "", detail: phrases.join(", ") };
 }

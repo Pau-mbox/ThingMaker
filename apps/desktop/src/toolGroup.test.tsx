@@ -48,8 +48,9 @@ afterEach(cleanup);
 describe("a folded run of tool calls", () => {
   it("is one line with what it did, and keeps failures and edits in view", () => {
     renderGroup();
-    expect(screen.getByText("Worked")).toBeTruthy();
-    expect(screen.getByText("· edited 1 file, read 1 file, searched 1 time, ran 1 command")).toBeTruthy();
+    // No title word for a run that did more than look: what it did is the line.
+    expect(screen.queryByText("Worked")).toBeNull();
+    expect(screen.getByText("edited 1 file, read 1 file, searched 1 time, ran 1 command")).toBeTruthy();
     expect(screen.getByText("4 steps")).toBeTruthy();
     expect(screen.getByText("1 failed")).toBeTruthy();
     // Folded: the failure and the edit are shown, the read and the search are not.
@@ -60,7 +61,7 @@ describe("a folded run of tool calls", () => {
 
   it("opens on every step, and a step on its raw call", () => {
     renderGroup();
-    fireEvent.click(screen.getByRole("button", { name: /Worked/ }));
+    fireEvent.click(screen.getByRole("button", { name: /ran 1 command/ }));
     expect(screen.getByText("Read Docs/GAME.md")).toBeTruthy();
     expect(screen.getByText("Assets")).toBeTruthy();
     expect(screen.getByText("for “tooltip”")).toBeTruthy();

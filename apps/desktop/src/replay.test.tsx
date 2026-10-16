@@ -7,7 +7,7 @@
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, resolve } from "node:path";
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { EventEnvelope, Snapshot } from "@thingmaker/contracts";
 
@@ -121,8 +121,9 @@ describe("real turn replay", () => {
     render(<SessionPanel sessionId={id} />);
     expect(screen.getByText(/Hey! How can I help\?/)).toBeTruthy();
     expect(screen.getByText(/last submission harness-: accepted/)).toBeTruthy();
-    expect(screen.getByText(/model: gpt-5.6-sol · OpenAI subscription/)).toBeTruthy();
-    expect(screen.getByRole("radio", { name: "Default" })).toBeTruthy();
+    const chip = screen.getByTitle("gpt-5.6-sol · OpenAI subscription");
+    fireEvent.click(chip);
+    expect(screen.getByRole("slider", { name: "Reasoning effort" })).toBeTruthy();
     expect(useStore.getState().sessions[id]!.projection.foreground).toBe("succeeded");
   });
 });

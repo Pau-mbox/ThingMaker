@@ -57,7 +57,7 @@ describe("other tools", () => {
     ];
     expect(summarize(steps)).toEqual({ title: "Explored", detail: "read 2 files, searched 1 time" });
     expect(summarize([stepOf(patch({ toolKind: "edit", title: "Edit 2 files", locations: [{ path: "a" }, { path: "b" }] }), [ROOT])])).toEqual({ title: "Edited 2 files", detail: "" });
-    expect(summarize([...steps, shell("pnpm test")]).title).toBe("Worked");
+    expect(summarize([...steps, shell("pnpm test")])).toEqual({ title: "", detail: "read 2 files, searched 1 time, ran 1 command" });
   });
 
   it("names MCP tools in words, ThingMaker's own team tools most plainly", () => {

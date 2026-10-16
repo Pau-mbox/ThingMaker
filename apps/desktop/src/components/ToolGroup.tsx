@@ -4,7 +4,8 @@
  * line per step, and a step opens on the raw call. A step that failed or
  * edited a file stays in view while the run is folded, and while the turn is
  * still going the line says what is happening now rather than piling up
- * boxes.
+ * boxes. The line is plain muted text, not a box, so a long turn reads as
+ * the agent's messages with quiet notes between them.
  */
 import { useState, type ReactNode } from "react";
 import type { ToolPatch } from "@thingmaker/contracts";
@@ -89,7 +90,6 @@ export function ToolGroup({
   return (
     <section className={`tool-group ${live ? "tool-group-live" : ""}`}>
       <button aria-expanded={open} className="tool-group-head" onClick={() => setOpen(!open)} type="button">
-        <IconChevron open={open} size={12} />
         {live ? (
           <>
             <span aria-label="working" className="spinner spinner-xs" />
@@ -98,14 +98,15 @@ export function ToolGroup({
           </>
         ) : (
           <>
-            <span className="tool-group-title">{title}</span>
-            {detail && <span className="tool-group-detail">· {detail}</span>}
+            {title && <span className="tool-group-title">{title}</span>}
+            {detail && <span className="tool-group-detail">{title ? "· " : ""}{detail}</span>}
           </>
         )}
         {failures > 0 && <span className="tool-step-flag">{failures} failed</span>}
         <span className="tool-group-count">
           {steps.length} step{steps.length === 1 ? "" : "s"}
         </span>
+        <IconChevron className="tool-group-chevron" open={open} size={11} />
       </button>
       {open && (
         <ol className="tool-step-list">
