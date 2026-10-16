@@ -32,6 +32,7 @@ Flags:
   --refuse-first   the first prompt's turn ends in a refusal
   --echo           each turn starts by saying `got: <prompt text>`
   --no-steer       steering is not advertised
+  --echo-steer     a steer is echoed back as a user message, as some agents do
   --legacy-ids     answers as 0.84.0 did, listing Fable as `claude-fable-5-1`
                    (0.89 calls it `fable`)
   --follow-plan    plays a Big Thing orchestrator: answers a planning prompt
@@ -54,6 +55,7 @@ FOLLOW = "--follow-plan" in sys.argv
 REFUSE_FIRST = "--refuse-first" in sys.argv
 ECHO = "--echo" in sys.argv
 NO_STEER = "--no-steer" in sys.argv
+ECHO_STEER = "--echo-steer" in sys.argv
 LEGACY = "--legacy-ids" in sys.argv
 FABLE = "claude-fable-5-1" if LEGACY else "fable"
 prompts = {"count": 0}
@@ -319,6 +321,8 @@ for line in sys.stdin:
             send({"jsonrpc": "2.0", "id": request, "error": {"code": -32602, "message": "steer params require a non-empty prompt array"}})
         else:
             send({"jsonrpc": "2.0", "id": request, "result": {}})
+            if ECHO_STEER:
+                update(params.get("sessionId"), {"sessionUpdate": "user_message_chunk", "content": {"type": "text", "text": prompt_text(params)}})
     elif method == "session/cancel":
         sys.stderr.write("cancel received\n")
         sys.stderr.flush()

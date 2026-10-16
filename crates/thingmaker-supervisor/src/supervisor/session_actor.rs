@@ -384,6 +384,8 @@ impl SessionActor {
             open_tools: BTreeSet::new(),
             submitted_prompts: BTreeMap::new(),
             echo: None,
+            steer_echoes: BTreeMap::new(),
+            steer_blocks: BTreeMap::new(),
             message_run: None,
             message_serial: 0,
             pending_submits: BTreeMap::new(),
@@ -561,7 +563,14 @@ struct ActorState {
     submitted_prompts: BTreeMap<String, Vec<Value>>,
     /// The agent's own echo of the last prompt, which the transcript already
     /// shows (see [`EchoFilter`]).
+    /// The agent's late echo of the prompt, swallowed because the transcript
+    /// already shows it.
     echo: Option<EchoFilter>,
+    /// The same for each steer, from the moment it is sent: an agent may
+    /// echo a steer before its reply to the steer arrives.
+    steer_echoes: BTreeMap<String, EchoFilter>,
+    /// What each steer in flight says, shown once the agent takes it.
+    steer_blocks: BTreeMap<String, Vec<Value>>,
     /// The role of the message the agent is streaming without an id of its
     /// own, and the id it was given. Any other update ends the run, so text
     /// either side of a tool call becomes two messages, as it reads.
@@ -973,7 +982,7 @@ impl ActorState {
                         Some(Ok(update)) => {
                             if let SessionUpdate::UserMessage(message) = &update
                                 && self.attachment != AttachmentState::Replaying
-                                && self.echo.as_mut().is_some_and(|echo| echo.swallows(message))
+                                && swallow_echo(self.echo.iter_mut().chain(self.steer_echoes.values_mut()), message)
                             {
                                 return;
                             }
@@ -1090,6 +1099,8 @@ impl ActorState {
             self.set_detached(&id, DetachedCallState::Unknown);
         }
         let steers: Vec<String> = std::mem::take(&mut self.pending_steers).into_iter().collect();
+        self.steer_blocks.clear();
+        self.steer_echoes.clear();
         for message_id in steers {
             self.emit(SessionEvent::Steer {
                 message_id,
@@ -1342,6 +1353,9 @@ impl ActorState {
         self.flush_chunk();
         let message_id = format!("steer-{}", uuid::Uuid::new_v4().simple());
         self.pending_steers.insert(message_id.clone());
+        let content: Vec<ContentBlock> = blocks.iter().filter_map(|block| ContentBlock::from_value(block).ok()).collect();
+        self.steer_echoes.insert(message_id.clone(), EchoFilter::new(&content));
+        self.steer_blocks.insert(message_id.clone(), blocks.clone());
         self.emit(SessionEvent::Steer {
             message_id: message_id.clone(),
             state: SteerState::Pending,
@@ -1656,6 +1670,7 @@ impl ActorState {
                 if let Some(blocks) = self.submitted_prompts.remove(&request_id) {
                     let content: Vec<ContentBlock> = blocks.iter().filter_map(|block| ContentBlock::from_value(block).ok()).collect();
                     self.echo = Some(EchoFilter::new(&content));
+                    self.steer_echoes.clear();
                     self.flush_chunk();
                     self.message_run = None;
                     self.enqueue_update(SessionUpdate::UserMessage(MessageUpdate {
@@ -1774,7 +1789,10 @@ impl ActorState {
             }
             Internal::SteerResult { message_id, result, reply } => {
                 self.flush_chunk();
-                self.pending_steers.remove(&message_id);
+                // An agent that echoed the steer under its own id has put it
+                // in the transcript already.
+                let echoed = !self.pending_steers.remove(&message_id);
+                let blocks = self.steer_blocks.remove(&message_id);
                 let (outcome, state) = match result {
                     // The agent injects the input into the running turn as it
                     // answers, so an answer is delivery.
@@ -1787,6 +1805,26 @@ impl ActorState {
                 };
                 // "Send now" steered a queued prompt in. If the agent would
                 // not take it, it goes back to the front of the queue.
+                // A steer the agent took is in the transcript where it went
+                // in, as a prompt is; its echo is swallowed. One it did not
+                // take was never said, so nothing of it is swallowed either.
+                if state != SteerState::Delivered {
+                    self.steer_echoes.remove(&message_id);
+                }
+                if state == SteerState::Delivered
+                    && !echoed
+                    && let Some(blocks) = blocks
+                {
+                    let content: Vec<ContentBlock> = blocks.iter().filter_map(|block| ContentBlock::from_value(block).ok()).collect();
+                    self.message_run = None;
+                    self.enqueue_update(SessionUpdate::UserMessage(MessageUpdate {
+                        message_id: message_id.clone(),
+                        content,
+                        replace: true,
+                        has_content: true,
+                    }));
+                    self.flush_chunk();
+                }
                 if let Some(prompt) = self.queue_steers.remove(&message_id)
                     && state == SteerState::Rejected
                 {
@@ -1906,23 +1944,38 @@ impl EchoFilter {
         Self { expected: collapse(&text), seen: String::new(), active: true }
     }
 
-    fn swallows(&mut self, message: &MessageUpdate) -> bool {
+    /// What the echo has said so far, with this message, if it is still
+    /// this filter's echo; `None` when it is something else.
+    fn continues(&self, message: &MessageUpdate) -> Option<String> {
         if !self.active {
-            return false;
+            return None;
         }
         let text: String = message.content.iter().filter_map(|block| if let ContentBlock::Text { text } = block { Some(text.as_str()) } else { None }).collect();
-        let candidate = if message.replace { collapse(&text) } else { collapse(&format!("{}{text}", self.seen)) };
+        let seen = if message.replace { text } else { format!("{}{text}", self.seen) };
+        let candidate = collapse(&seen);
         if candidate.is_empty() && message.content.iter().all(|block| !matches!(block, ContentBlock::Text { .. })) {
             // Images or resources only: part of the prompt's own blocks.
-            return true;
+            return Some(self.seen.clone());
         }
-        if !candidate.is_empty() && self.expected.contains(&candidate) {
-            self.seen = if message.replace { text } else { format!("{}{text}", self.seen) };
-            return true;
-        }
-        self.active = false;
-        false
+        (!candidate.is_empty() && self.expected.contains(&candidate)).then_some(seen)
     }
+}
+
+/// Whether a user message is the late echo of something already shown. The
+/// first filter it continues takes it; one that matches none ends them all,
+/// so a real message from the person is never swallowed afterwards.
+fn swallow_echo<'a>(echoes: impl Iterator<Item = &'a mut EchoFilter>, message: &MessageUpdate) -> bool {
+    let mut echoes: Vec<&mut EchoFilter> = echoes.collect();
+    for echo in echoes.iter_mut() {
+        if let Some(seen) = echo.continues(message) {
+            echo.seen = seen;
+            return true;
+        }
+    }
+    for echo in echoes {
+        echo.active = false;
+    }
+    false
 }
 
 /// The option id to answer a permission request with, when the policy is to

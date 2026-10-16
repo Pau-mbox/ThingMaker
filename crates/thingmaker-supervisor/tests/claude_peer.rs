@@ -412,6 +412,40 @@ async fn a_running_turn_is_steered_through_the_adapters_extension() {
     let _ = actor.stop().await;
 }
 
+/// A steer shows in the transcript as the person's message, where it went
+/// in, as a prompt does; an agent that echoes it back does not show it twice.
+#[tokio::test]
+async fn a_steer_is_in_the_transcript_once_even_when_the_agent_echoes_it() {
+    for args in [&["--hang-in-tool"][..], &["--hang-in-tool", "--echo-steer"][..]] {
+        let Some(config) = config(args, None, PermissionStance::AcceptEdits, &std::env::temp_dir()) else {
+            eprintln!("python is not available; skipping");
+            return;
+        };
+        let actor = SessionActor::open(config).await.expect("attached");
+        actor.submit_text("r1", "first").await.expect("submitted");
+        let outcome = actor.steer_text("also update the changelog").await.expect("a reply");
+        let SteerOutcome::Accepted { message_id } = outcome else { panic!("{outcome:?}") };
+        // Time for an echo to arrive, if the agent sends one.
+        tokio::time::sleep(Duration::from_millis(800)).await;
+        let history = actor.history(0, 1000).await.expect("history");
+        let said: Vec<(String, String)> = history
+            .iter()
+            .filter_map(|event| match &event.payload {
+                SessionEvent::Update(SessionUpdate::UserMessage(message)) => Some((
+                    message.message_id.clone(),
+                    message.content.iter().filter_map(|block| if let ContentBlock::Text { text } = block { Some(text.as_str()) } else { None }).collect(),
+                )),
+                _ => None,
+            })
+            .collect();
+        let steers: Vec<_> = said.iter().filter(|(_, text)| text.contains("changelog")).collect();
+        assert_eq!(steers.len(), 1, "{args:?}: {said:?}");
+        assert_eq!(steers[0].0, message_id, "{args:?}: shown under the steer's own id");
+        let _ = actor.cancel().await;
+        let _ = actor.stop().await;
+    }
+}
+
 #[tokio::test]
 async fn an_orchestrator_that_may_not_start_subagents_says_so_to_the_sdk() {
     let Some(mut config) = config(&[], None, PermissionStance::AcceptEdits, &std::env::temp_dir()) else {
