@@ -89,6 +89,19 @@ else
   [ -x "$LSREGISTER" ] && "$LSREGISTER" -u "$BUILT" >/dev/null 2>&1 || true
 fi
 [ -x "$LSREGISTER" ] && "$LSREGISTER" -f "$DEST" >/dev/null 2>&1 || true
+# Any other ThingMaker bundled inside the checkout (a preview or a hand-made
+# build in output/ or target/) goes to the Bin: Spotlight offers every copy,
+# and an old one opening the same data folder fails on its newer database.
+mdfind -onlyin "$ROOT" "kMDItemCFBundleIdentifier == '$APP_ID*'" 2>/dev/null | while IFS= read -r stray; do
+  case "$stray" in *.app) ;; *) continue ;; esac
+  [ -d "$stray" ] || continue
+  if pgrep -f "$stray/Contents/MacOS/" >/dev/null 2>&1; then
+    echo "Note: $stray is running; quit it so it can be retired."
+    continue
+  fi
+  [ -x "$LSREGISTER" ] && "$LSREGISTER" -u "$stray" >/dev/null 2>&1 || true
+  mkdir -p "$HOME/.Trash" && mv "$stray" "$HOME/.Trash/$(basename "$stray" .app) (stray build $(date +%s)).app" && echo "Moved a stray $stray to the Bin."
+done
 printf '%s %s\n' "$(git rev-parse --short HEAD)" "$(date '+%Y-%m-%d %H:%M')" > "$ROOT/target/installed-build.txt"
 echo "Installed $DEST ($(cat "$ROOT/target/installed-build.txt"))."
 
