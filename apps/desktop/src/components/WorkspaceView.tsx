@@ -3,6 +3,7 @@ import { PROVIDERS, PROVIDER_LABELS } from "@thingmaker/contracts";
 import { useStore } from "../store";
 import { WorktreesSection } from "./WorktreesSection";
 import { OutboxPanel } from "./OutboxPanel";
+import { t } from "../i18n";
 
 function formatBytes(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
@@ -32,7 +33,7 @@ export function WorkspaceView({ workspaceId }: { workspaceId: string }) {
   if (!inspection) {
     return (
       <div className="panel">
-        <p className="muted">Inspecting workspace…</p>
+        <p className="muted">{t("Inspecting workspace…")}</p>
       </div>
     );
   }
@@ -41,21 +42,26 @@ export function WorkspaceView({ workspaceId }: { workspaceId: string }) {
   // Workers a delegation opened belong to their orchestrator: they are under
   // it in the sidebar and in its Agents tab, not in the workspace's list.
   const listed = (records ?? []).filter((record) => record.archiveState !== "unavailable" && !record.parentSessionId);
-  const sessionLabel = (id: string, title?: string) => (title && title !== id ? title : `Session ${id.replace(/^(cx|tm)-/, "").slice(0, 8)}`);
+  const sessionLabel = (id: string, title?: string) => (title && title !== id ? title : t("Session {id}", { id: id.replace(/^(cx|tm)-/, "").slice(0, 8) }));
 
   return (
     <div className="panel workspace-view">
       <section>
-        <h3>Identity</h3>
+        <h3>{t("Identity")}</h3>
         <dl className="facts">
-          <dt>Canonical root</dt>
+          <dt>{t("Canonical root")}</dt>
           <dd className="mono">{inspection.identity.canonicalRoot}</dd>
-          <dt>Workspace id</dt>
+          <dt>{t("Workspace id")}</dt>
           <dd className="mono">{inspection.identity.workspaceHash.slice(0, 18)}</dd>
-          <dt>Kind</dt>
+          <dt>{t("Kind")}</dt>
           <dd>
-            {inspection.isGitRepository ? "Git repository" : "Folder (non-Git)"}
-            {inspection.isUnityProject ? ", Unity project" : ""}
+            {inspection.isGitRepository
+              ? inspection.isUnityProject
+                ? t("Git repository, Unity project")
+                : t("Git repository")
+              : inspection.isUnityProject
+                ? t("Folder (non-Git), Unity project")
+                : t("Folder (non-Git)")}
           </dd>
         </dl>
       </section>
@@ -63,8 +69,8 @@ export function WorkspaceView({ workspaceId }: { workspaceId: string }) {
       <OutboxPanel workspaceId={workspaceId} />
 
       <section>
-        <h3>Agent configuration in this workspace</h3>
-        <p className="small muted">What an agent started here reads and may run. Agents run with your user account's authority.</p>
+        <h3>{t("Agent configuration in this workspace")}</h3>
+        <p className="small muted">{t("What an agent started here reads and may run. Agents run with your user account's authority.")}</p>
         <ul className="sources">
           {inspection.sources.map((source) => (
             <li className={source.present ? "" : "muted"} key={source.path}>
@@ -72,7 +78,7 @@ export function WorkspaceView({ workspaceId }: { workspaceId: string }) {
               {source.present ? (
                 <>
                   <span className="small">({formatBytes(source.bytes)})</span>
-                  {source.executable && <span className="chip chip-warn small">runs when an agent starts</span>}
+                  {source.executable && <span className="chip chip-warn small">{t("runs when an agent starts")}</span>}
                   {source.summary.length > 0 && (
                     <ul className="small">
                       {source.summary.map((line) => (
@@ -82,17 +88,17 @@ export function WorkspaceView({ workspaceId }: { workspaceId: string }) {
                   )}
                 </>
               ) : (
-                <span className="small">absent</span>
+                <span className="small">{t("absent")}</span>
               )}
             </li>
           ))}
         </ul>
-        <p className="small muted mono">fingerprint {inspection.trustDigest.slice(0, 16)}</p>
+        <p className="small muted mono">{t("fingerprint {digest}", { digest: inspection.trustDigest.slice(0, 16) })}</p>
       </section>
 
 
       <section>
-        <h3>Sessions</h3>
+        <h3>{t("Sessions")}</h3>
         <div className="row wrap">
           {PROVIDERS.map((provider) => {
             const info = providers?.find((entry) => entry.provider === provider);
@@ -103,19 +109,19 @@ export function WorkspaceView({ workspaceId }: { workspaceId: string }) {
                 disabled={!trusted || !available}
                 key={provider}
                 onClick={() => void openSession(workspaceId, { mode: "new" }, provider)}
-                title={available ? `Start a ${PROVIDER_LABELS[provider]} session` : (info?.problem ?? `${PROVIDER_LABELS[provider]} is not set up; see Providers`)}
+                title={available ? t("Start a {provider} session", { provider: PROVIDER_LABELS[provider] }) : (info?.problem ?? t("{provider} is not set up; see Providers", { provider: PROVIDER_LABELS[provider] }))}
                 type="button"
               >
-                New {PROVIDER_LABELS[provider]} session
+                {t("New {provider} session", { provider: PROVIDER_LABELS[provider] })}
               </button>
             );
           })}
           <button className="button" onClick={() => void loadRecords(workspaceId)} type="button">
-            Refresh
+            {t("Refresh")}
           </button>
         </div>
         <div className="row wrap">
-          <span className="small muted">Start with a team:</span>
+          <span className="small muted">{t("Start with a team:")}</span>
           {presets.map((preset) => {
             const available = !!providers?.find((entry) => entry.provider === preset.orchestrator.provider)?.resolved;
             return (
@@ -124,16 +130,19 @@ export function WorkspaceView({ workspaceId }: { workspaceId: string }) {
                 disabled={!trusted || !available}
                 key={preset.id}
                 onClick={() => void openSessionWithPreset(workspaceId, preset)}
-                title={`${PROVIDER_LABELS[preset.orchestrator.provider]}${preset.orchestrator.model ? ` · ${preset.orchestrator.model}` : ""} leads; ${preset.combo.workers.map((worker) => worker.name).join(", ") || "no workers"}`}
+                title={t("{lead} leads; {workers}", {
+                  lead: `${PROVIDER_LABELS[preset.orchestrator.provider]}${preset.orchestrator.model ? ` · ${preset.orchestrator.model}` : ""}`,
+                  workers: preset.combo.workers.map((worker) => worker.name).join(", ") || t("no workers"),
+                })}
                 type="button"
               >
                 {preset.name}
-                {preset.id === defaultPresetId ? " (default)" : ""}
+                {preset.id === defaultPresetId ? ` ${t("(default)")}` : ""}
               </button>
             );
           })}
           <button className="link small" onClick={() => setView({ kind: "teams" })} type="button">
-            {presets.length === 0 ? "Make a team preset…" : "Edit teams…"}
+            {presets.length === 0 ? t("Make a team preset…") : t("Edit teams…")}
           </button>
         </div>
         {listed.length > 0 ? (
@@ -147,20 +156,20 @@ export function WorkspaceView({ workspaceId }: { workspaceId: string }) {
                   {record.agentSessionId.slice(0, 14)}…
                 </span>
                 <button className="button button-small" disabled={!trusted} onClick={() => void openSession(workspaceId, { mode: "resume", session_id: record.agentSessionId })} type="button">
-                  Resume
+                  {t("Resume")}
                 </button>
               </li>
             ))}
           </ul>
         ) : (
-          <p className="small muted">No sessions in this workspace yet.</p>
+          <p className="small muted">{t("No sessions in this workspace yet.")}</p>
         )}
       </section>
 
       {inspection.isGitRepository && trusted && <WorktreesSection workspaceId={workspaceId} />}
 
       <section>
-        <h3>Add another workspace by path</h3>
+        <h3>{t("Add another workspace by path")}</h3>
         <form
           className="row"
           onSubmit={(event) => {
@@ -169,9 +178,9 @@ export function WorkspaceView({ workspaceId }: { workspaceId: string }) {
             setManualPath("");
           }}
         >
-          <input aria-label="Workspace path" className="input" onChange={(e) => setManualPath(e.target.value)} placeholder="/path/to/project" value={manualPath} />
+          <input aria-label={t("Workspace path")} className="input" onChange={(e) => setManualPath(e.target.value)} placeholder="/path/to/project" value={manualPath} />
           <button className="button" type="submit">
-            Inspect
+            {t("Inspect")}
           </button>
         </form>
       </section>

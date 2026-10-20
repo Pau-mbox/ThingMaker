@@ -8,22 +8,23 @@
  * module only says on screen what happened to it.
  */
 import type { AmendmentRecord } from "@thingmaker/contracts";
+import { t } from "./i18n";
 
 /** Tellings before it stops asking and hands the amendment back to the user. */
 export const MAX_TELLS = 3;
 
 /** How an amendment reads on screen, in the words of what actually happened. */
 export function amendmentStatus(record: Pick<AmendmentRecord, "state" | "tellCount" | "kind">): string {
-  if (record.kind === "note" && record.state === "applied") return "delivered";
+  if (record.kind === "note" && record.state === "applied") return t("delivered");
   switch (record.state) {
     case "pending":
-      return "queued for the next prompt";
+      return t("queued for the next prompt");
     case "told":
-      if (record.tellCount >= MAX_TELLS) return `the agent was told ${record.tellCount} times and has not folded it in — it is yours now`;
-      return record.tellCount > 1 ? `with the agent · told ${record.tellCount} times` : "with the agent";
+      if (record.tellCount >= MAX_TELLS) return t("the agent was told {count} times and has not folded it in — it is yours now", { count: record.tellCount });
+      return record.tellCount > 1 ? t("with the agent · told {count} times", { count: record.tellCount }) : t("with the agent");
     case "applied":
-      return "folded into the plan";
+      return t("folded into the plan");
     case "discarded":
-      return "discarded";
+      return t("discarded");
   }
 }

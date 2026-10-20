@@ -4,6 +4,7 @@ import { useStore } from "../store";
 import { IS_REMOTE } from "../remote/mode";
 import { DEFAULT_PREFS, readPrefs, type ChillPrefs } from "./preferences";
 import { resolveSkin, SKINS, skinOptions } from "./skins/registry";
+import { t } from "../i18n";
 
 /** Text belongs in the regular settings screen; Chill itself stays observational. */
 export default function ChillPreferences() {
@@ -56,14 +57,14 @@ export default function ChillPreferences() {
     <section>
       <h3>Chill</h3>
       <p className="small muted">
-        An observational view of your live workspace. Only its title is written
-        on screen; quiet icons control scenery, sound and returning to work.
-        Escape returns to the whole scene before leaving.
+        {t(
+          "An observational view of your live workspace. Only its title is written on screen; quiet icons control scenery, sound and returning to work. Escape returns to the whole scene before leaving.",
+        )}
       </p>
       <fieldset disabled={!ready} style={{ border: 0, padding: 0 }}>
         {SKINS.length > 1 && (
           <label className="small">
-            Visual skin{" "}
+            {t("Visual skin")}{" "}
             <select
               className="select"
               value={skin.id}
@@ -101,7 +102,7 @@ export default function ChillPreferences() {
           </label>
         ))}
         <label className="small">
-          Recent file foliage{" "}
+          {t("Recent file foliage")}{" "}
           <select
             className="select"
             value={prefs.retention}
@@ -109,7 +110,7 @@ export default function ChillPreferences() {
           >
             {[1, 6, 24, 72].map((h) => (
               <option key={h} value={h}>
-                {h} {h === 1 ? "hour" : "hours"}
+                {h === 1 ? t("1 hour") : t("{n} hours", { n: h })}
               </option>
             ))}
           </select>
@@ -120,10 +121,10 @@ export default function ChillPreferences() {
             checked={prefs.economy}
             onChange={(e) => void update({ economy: e.target.checked })}
           />
-          Economy rendering (30 fps)
+          {t("Economy rendering (30 fps)")}
         </label>
         <label className="small">
-          Ambience volume{" "}
+          {t("Ambience volume")}{" "}
           <input
             type="range"
             min="0"
@@ -135,17 +136,17 @@ export default function ChillPreferences() {
         </label>
         {prefs.hidden.length > 0 && (
           <div className="small">
-            Hidden from Chill (their failures still raise the attention icon):
+            {t("Hidden from Chill (their failures still raise the attention icon):")}
             <ul className="chill-hidden-list">
               {prefs.hidden.map((id) => {
                 const workspace = workspaces.find((w) => w.id === id);
                 return (
                   <li key={id}>
                     <span className="mono" title={workspace?.displayPath}>
-                      {workspace ? (workspace.displayPath.replace(/[\\/]$/, "").split(/[\\/]/).pop() ?? workspace.displayPath) : "removed workspace"}
+                      {workspace ? (workspace.displayPath.replace(/[\\/]$/, "").split(/[\\/]/).pop() ?? workspace.displayPath) : t("removed workspace")}
                     </span>{" "}
                     <button className="link small" onClick={() => void update({ hidden: prefs.hidden.filter((h) => h !== id) })} type="button">
-                      Show
+                      {t("Show")}
                     </button>
                   </li>
                 );
@@ -154,10 +155,9 @@ export default function ChillPreferences() {
           </div>
         )}
         <p className="small muted">
-          Hide a project from the scene with the crossed-out eye after selecting
-          it there. Sound starts muted. Active and pinned files stay prominent. Confirmed
-          file metadata is retained for seven days; source files and transcripts
-          are separate.
+          {t(
+            "Hide a project from the scene with the crossed-out eye after selecting it there. Sound starts muted. Active and pinned files stay prominent. Confirmed file metadata is retained for seven days; source files and transcripts are separate.",
+          )}
         </p>
         <div className="row wrap">
           {prefs.pins.length > 0 && (
@@ -165,7 +165,7 @@ export default function ChillPreferences() {
               className="button"
               onClick={() => void update({ pins: [] })}
             >
-              Unpin all foliage
+              {t("Unpin all foliage")}
             </button>
           )}
           {!IS_REMOTE && (
@@ -174,7 +174,7 @@ export default function ChillPreferences() {
               disabled={clearing}
               onClick={() => void clear()}
             >
-              {clearing ? "Clearing…" : "Clear recent activity"}
+              {clearing ? t("Clearing…") : t("Clear recent activity")}
             </button>
           )}
         </div>

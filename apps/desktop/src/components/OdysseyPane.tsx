@@ -12,7 +12,7 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
-import { ODYSSEY_STATE_NOTE, ORCHESTRATOR_PROVIDERS, PROVIDER_LABELS, type AdoptedPlan, type Orchestrator, type OnPlanChange, type OnReport, type CheckKind, type MilestoneRecord, type OdysseyView, type OnUsageReset, type Provider, type StopCondition } from "@thingmaker/contracts";
+import { ODYSSEY_STATE_NOTE, ORCHESTRATOR_PROVIDERS, PROVIDER_LABELS, type AdoptedPlan, type Orchestrator, type OnPlanChange, type OnReport, type CheckKind, type MilestoneRecord, type OdysseyView, type OnUsageReset, type Provider, type StopCondition, type TeamPreset } from "@thingmaker/contracts";
 import { PLAN_REQUESTED, useStore } from "../store";
 import { checkLabel } from "../odysseyPrompt";
 import { countdown, exhaustedCeiling, hasRunnableCheck, stallDuration, stallNotice, usageVerdict, waitingUntil } from "../odysseyRunner";
@@ -22,73 +22,76 @@ import { TaskTable } from "./OdysseyTasks";
 import { InboxPanel, useInboxItems } from "./OdysseyInbox";
 import { taskProgress } from "../odysseyTasks";
 import { AmendDialog, AmendmentList } from "./OdysseyAmend";
-import { MemoryPanel, RunOptions, Timeline, WorktreeCard } from "./BigThingTeam";
+import { MemoryPanel, RunOptions, Timeline, WorktreeCard, fill } from "./BigThingTeam";
 import { WorkLanes } from "./WorkLanes";
 import { isPlanDocument, fileNameOf, summarize, type DocumentSummary } from "../odysseyDocument";
 import { planSummary, allManual } from "../odysseyPlan";
 import { api } from "../ipc";
 import { IconAlertCircle, IconCheckCircle, IconChevron, IconCode, IconDots, IconPlus, IconX } from "./icons";
+import { t } from "../i18n";
 
 const STOP_LABEL: Record<StopCondition, string> = {
-  goal_complete: "All milestones",
-  milestone_complete: "After each milestone",
-  manual: "When I stop it",
+  goal_complete: t("All milestones"),
+  milestone_complete: t("After each milestone"),
+  manual: t("When I stop it"),
 };
 
 const STOP_HINT: Record<StopCondition, string> = {
-  goal_complete: "Big Thing works through every milestone in order.",
-  milestone_complete: "Big Thing stops after each milestone and waits for you.",
-  manual: "Big Thing keeps going until you stop it.",
+  goal_complete: t("Big Thing works through every milestone in order."),
+  milestone_complete: t("Big Thing stops after each milestone and waits for you."),
+  manual: t("Big Thing keeps going until you stop it."),
 };
 
 const RESET_LABEL: Record<OnUsageReset, string> = {
-  continue_automatically: "Continue automatically",
-  notify_only: "Notify me",
-  stop: "Stop",
+  continue_automatically: t("Continue automatically"),
+  notify_only: t("Notify me"),
+  stop: t("Stop"),
 };
 
 const RESET_HINT: Record<OnUsageReset, string> = {
-  continue_automatically: "Resumes from the last checkpoint at the provider's reset time.",
-  notify_only: "Tells you the quota is back; you decide when to resume.",
-  stop: "Leaves the goal paused without a notification.",
+  continue_automatically: t("Resumes from the last checkpoint at the provider's reset time."),
+  notify_only: t("Tells you the quota is back; you decide when to resume."),
+  stop: t("Leaves the goal paused without a notification."),
 };
 
 const REPORT_LABEL: Record<OnReport, string> = {
-  continue: "Carry on to the next one",
-  wait: "Wait for me to verify it",
+  continue: t("Carry on to the next one"),
+  wait: t("Wait for me to verify it"),
 };
 
 const REPORT_HINT: Record<OnReport, string> = {
-  continue: "The milestone stays reported · unverified and the run keeps going. A check Big Thing can run itself is still run.",
-  wait: "The run pauses at every claim until a check passes or you tick it.",
+  continue: t("The milestone stays reported · unverified and the run keeps going. A check Big Thing can run itself is still run."),
+  wait: t("The run pauses at every claim until a check passes or you tick it."),
 };
 
 const PLAN_CHANGE_LABEL: Record<OnPlanChange, string> = {
-  tasks_auto: "Tasks change on their own; milestones wait for me",
-  review: "Everything waits for my decision",
-  auto: "Everything applies at once; show me the diff afterwards",
+  tasks_auto: t("Tasks change on their own; milestones wait for me"),
+  review: t("Everything waits for my decision"),
+  auto: t("Everything applies at once; show me the diff afterwards"),
 };
 const PLAN_CHANGE_HINT: Record<OnPlanChange, string> = {
-  tasks_auto: "How the agent cuts its work into tasks is its own business and lands at once. Adding or dropping a milestone, or changing one's title or check, comes to the Inbox as a diff.",
-  review: "Every change, down to a task's title, waits in the Inbox until you accept or reject it.",
-  auto: "The plan changes as soon as the agent proposes it; the diff is kept in the Inbox and the journal.",
+  tasks_auto: t(
+    "How the agent cuts its work into tasks is its own business and lands at once. Adding or dropping a milestone, or changing one's title or check, comes to the Inbox as a diff.",
+  ),
+  review: t("Every change, down to a task's title, waits in the Inbox until you accept or reject it."),
+  auto: t("The plan changes as soon as the agent proposes it; the diff is kept in the Inbox and the journal."),
 };
 
 const CHECK_LABEL: Record<CheckKind, string> = {
-  manual: "I tick it",
-  command: "A command exits 0",
-  tests_pass: "Tests pass",
-  files_exist: "Files exist",
+  manual: t("I tick it"),
+  command: t("A command exits 0"),
+  tests_pass: t("Tests pass"),
+  files_exist: t("Files exist"),
 };
 
 /** "just now" / "4m ago": the age of a reason, said the way a person would. */
 function ago(ms: number): string {
   const seconds = Math.floor(Math.max(0, ms) / 1000);
-  if (seconds < 45) return "just now";
+  if (seconds < 45) return t("just now");
   const minutes = Math.round(seconds / 60);
-  if (minutes < 60) return `${minutes}m ago`;
+  if (minutes < 60) return t("{minutes}m ago", { minutes });
   const hours = Math.floor(minutes / 60);
-  return minutes % 60 === 0 ? `${hours}h ago` : `${hours}h ${minutes % 60}m ago`;
+  return minutes % 60 === 0 ? t("{hours}h ago", { hours }) : t("{hours}h {minutes}m ago", { hours, minutes: minutes % 60 });
 }
 
 function timeOf(ms: number): string {
@@ -118,13 +121,13 @@ function ProgressBar({ milestones }: { milestones: MilestoneRecord[] }) {
 function laneLabel(milestone: MilestoneRecord): string {
   switch (milestone.checkSource) {
     case "agent_tool_result":
-      return "check run by the agent, exit code read from its tool result";
+      return t("check run by the agent, exit code read from its tool result");
     case "user":
-      return "you ticked it";
+      return t("you ticked it");
     case "desktop":
-      return "check run by Big Thing";
+      return t("check run by Big Thing");
     default:
-      return "no check has run";
+      return t("no check has run");
   }
 }
 
@@ -139,10 +142,10 @@ function EvidenceSheet({ milestone }: { milestone: MilestoneRecord }) {
         {laneLabel(milestone)}
         {milestone.checkRanAt ? ` · ${new Date(milestone.checkRanAt).toLocaleString()}` : ""}
       </p>
-      {milestone.checkOutput ? <pre className="text">{milestone.checkOutput}</pre> : <p className="small muted">Nothing was recorded as output.</p>}
+      {milestone.checkOutput ? <pre className="text">{milestone.checkOutput}</pre> : <p className="small muted">{t("Nothing was recorded as output.")}</p>}
       {milestone.reportedNote && (
         <p className="small muted">
-          The model&rsquo;s own note: <em>{milestone.reportedNote}</em>
+          {t("The model’s own note:")} <em>{milestone.reportedNote}</em>
         </p>
       )}
     </div>
@@ -156,8 +159,8 @@ function MilestoneBadge({ milestone, sessionId }: { milestone: MilestoneRecord; 
   const busy = useStore((s) => s.odysseyRuntime[sessionId]?.ticking ?? false);
 
   const runButton = runnable(milestone) ? (
-    <button className="button button-small" disabled={busy} onClick={() => void runCheck(sessionId, milestone.id)} title={`Big Thing runs \`${milestone.checkSpec}\` and reads the exit code`} type="button">
-      {busy ? "Running…" : "Run check"}
+    <button className="button button-small" disabled={busy} onClick={() => void runCheck(sessionId, milestone.id)} title={t("Big Thing runs `{command}` and reads the exit code", { command: milestone.checkSpec ?? "" })} type="button">
+      {busy ? t("Running…") : t("Run check")}
     </button>
   ) : null;
 
@@ -165,8 +168,8 @@ function MilestoneBadge({ milestone, sessionId }: { milestone: MilestoneRecord; 
     const lane = laneLabel(milestone);
     return (
       <>
-        <button className="odyssey-badge badge-verified" onClick={() => setOpen(!open)} title={`Verified: ${lane}`} type="button">
-          <IconCheckCircle size={13} /> Verified
+        <button className="odyssey-badge badge-verified" onClick={() => setOpen(!open)} title={t("Verified: {lane}", { lane })} type="button">
+          <IconCheckCircle size={13} /> {t("Verified")}
         </button>
         {open && <EvidenceSheet milestone={milestone} />}
       </>
@@ -175,18 +178,18 @@ function MilestoneBadge({ milestone, sessionId }: { milestone: MilestoneRecord; 
   if (milestone.state === "reported") {
     return (
       <>
-        <span className="odyssey-badge badge-reported" title="The model reported this complete. Nothing has checked it.">
-          reported · unverified
+        <span className="odyssey-badge badge-reported" title={t("The model reported this complete. Nothing has checked it.")}>
+          {t("reported · unverified")}
         </span>
         {runButton}
         <button
           className="button button-small"
           disabled={busy}
           onClick={() => void verifyManually(sessionId, milestone.id)}
-          title={milestone.checkKind === "manual" ? "Confirm it yourself; you are the evidence" : "Accept it without running the check"}
+          title={milestone.checkKind === "manual" ? t("Confirm it yourself; you are the evidence") : t("Accept it without running the check")}
           type="button"
         >
-          {milestone.checkKind === "manual" ? "Verify" : "Accept anyway"}
+          {milestone.checkKind === "manual" ? t("Verify") : t("Accept anyway")}
         </button>
       </>
     );
@@ -194,15 +197,15 @@ function MilestoneBadge({ milestone, sessionId }: { milestone: MilestoneRecord; 
   if (milestone.state === "failed") {
     return (
       <>
-        <button className="odyssey-badge badge-failed" onClick={() => setOpen(!open)} title="The check did not pass. Open it to see what it printed." type="button">
-          <IconAlertCircle size={13} /> Check failed
+        <button className="odyssey-badge badge-failed" onClick={() => setOpen(!open)} title={t("The check did not pass. Open it to see what it printed.")} type="button">
+          <IconAlertCircle size={13} /> {t("Check failed")}
         </button>
         {runButton}
         {open && <EvidenceSheet milestone={milestone} />}
       </>
     );
   }
-  if (milestone.state === "skipped") return <span className="odyssey-badge">Skipped</span>;
+  if (milestone.state === "skipped") return <span className="odyssey-badge">{t("Skipped")}</span>;
   // Every task done and nothing reported: the work may well be finished — an
   // orchestrator running many milestones in one turn reports late or never —
   // so it can be checked or verified now rather than waiting on a claim.
@@ -212,16 +215,16 @@ function MilestoneBadge({ milestone, sessionId }: { milestone: MilestoneRecord; 
       className="button button-small"
       disabled={busy}
       onClick={() => void verifyManually(sessionId, milestone.id)}
-      title={milestone.checkKind === "manual" ? "All its tasks are done: confirm it yourself" : "All its tasks are done: accept it without running the check"}
+      title={milestone.checkKind === "manual" ? t("All its tasks are done: confirm it yourself") : t("All its tasks are done: accept it without running the check")}
       type="button"
     >
-      {milestone.checkKind === "manual" ? "Verify" : "Accept"}
+      {milestone.checkKind === "manual" ? t("Verify") : t("Accept")}
     </button>
   ) : null;
   if (milestone.state === "active") {
     return (
       <>
-        <span className="odyssey-badge badge-active">{tasksDone ? "Tasks done" : "Active"}</span>
+        <span className="odyssey-badge badge-active">{tasksDone ? t("Tasks done") : t("Active")}</span>
         {runButton}
         {verifyNow}
       </>
@@ -229,7 +232,7 @@ function MilestoneBadge({ milestone, sessionId }: { milestone: MilestoneRecord; 
   }
   return (
     <>
-      <span className="odyssey-badge">{tasksDone ? "Tasks done" : "Planned"}</span>
+      <span className="odyssey-badge">{tasksDone ? t("Tasks done") : t("Planned")}</span>
       {tasksDone && runButton}
       {verifyNow}
     </>
@@ -299,8 +302,8 @@ function MilestoneRow({
             <IconChevron open={expanded} size={13} />
           </button>
           {milestone.steps.length > 0 && (
-            <span className="odyssey-milestone-progress small muted" title="tasks done">
-              {milestone.steps.filter((step) => step.state === "done").length} / {milestone.steps.length} tasks
+            <span className="odyssey-milestone-progress small muted" title={t("tasks done")}>
+              {t("{done} / {total} tasks", { done: milestone.steps.filter((step) => step.state === "done").length, total: milestone.steps.length })}
               <span className="odyssey-meter odyssey-meter-mini" aria-hidden="true">
                 <span style={{ width: `${Math.round((milestone.steps.filter((step) => step.state === "done").length / milestone.steps.length) * 100)}%` }} />
               </span>
@@ -308,16 +311,16 @@ function MilestoneRow({
           )}
           <MilestoneBadge milestone={milestone} sessionId={sessionId} />
           <span className="row-actions">
-            <button aria-label={`Move ${milestone.title} up`} className="icon-button icon-button-xs row-action" disabled={index === 0} onClick={() => move(-1)} title="Move up (⌥↑)" type="button">
+            <button aria-label={t("Move {title} up", { title: milestone.title })} className="icon-button icon-button-xs row-action" disabled={index === 0} onClick={() => move(-1)} title={t("Move up (⌥↑)")} type="button">
               ↑
             </button>
-            <button aria-label={`Move ${milestone.title} down`} className="icon-button icon-button-xs row-action" disabled={index === total - 1} onClick={() => move(1)} title="Move down (⌥↓)" type="button">
+            <button aria-label={t("Move {title} down", { title: milestone.title })} className="icon-button icon-button-xs row-action" disabled={index === total - 1} onClick={() => move(1)} title={t("Move down (⌥↓)")} type="button">
               ↓
             </button>
-            <button aria-label={`Edit ${milestone.title}`} className="icon-button icon-button-xs row-action" onClick={() => setEditing(!editing)} title="Edit" type="button">
+            <button aria-label={t("Edit {title}", { title: milestone.title })} className="icon-button icon-button-xs row-action" onClick={() => setEditing(!editing)} title={t("Edit")} type="button">
               <IconDots size={14} />
             </button>
-            <button aria-label={`Remove ${milestone.title}`} className="icon-button icon-button-xs row-action" onClick={() => void deleteMilestone(sessionId, milestone.id)} title="Remove" type="button">
+            <button aria-label={t("Remove {name}", { name: milestone.title })} className="icon-button icon-button-xs row-action" onClick={() => void deleteMilestone(sessionId, milestone.id)} title={t("Remove")} type="button">
               <IconX size={14} />
             </button>
           </span>
@@ -329,20 +332,20 @@ function MilestoneRow({
               <>
                 {" "}
                 <button className="link small" onClick={() => setShowDetail(!showDetail)} type="button">
-                  {showDetail ? "less" : "more"}
+                  {showDetail ? t("less") : t("more")}
                 </button>
               </>
             )}
           </p>
         )}
         {expanded && milestone.section && !editing && (
-          <p className="small muted odyssey-section" title="where in the plan document this milestone comes from">
-            spec: <span className="mono">{milestone.section}</span>
+          <p className="small muted odyssey-section" title={t("where in the plan document this milestone comes from")}>
+            {t("spec:")} <span className="mono">{milestone.section}</span>
           </p>
         )}
         {expanded && milestone.reportedNote && milestone.state === "reported" && (
-          <p className="odyssey-detail small muted" title="the model's own words, not a verification">
-            Model's note: {milestone.reportedNote}
+          <p className="odyssey-detail small muted" title={t("the model's own words, not a verification")}>
+            {t("Model's note: {note}", { note: milestone.reportedNote })}
           </p>
         )}
         {expanded && !editing && <p className="small muted odyssey-check">{checkLabel(milestone.checkKind, milestone.checkSpec)}</p>}
@@ -355,12 +358,18 @@ function MilestoneRow({
               save();
             }}
           >
-            <input aria-label="Milestone title" className="input" onChange={(event) => setTitle(event.target.value)} value={title} />
-            <textarea aria-label="Milestone detail" className="textarea" onChange={(event) => setDetail(event.target.value)} rows={2} value={detail} />
-            <input aria-label="Specification section" className="input" onChange={(event) => setSection(event.target.value)} placeholder="where in the plan document this comes from (heading or line range)" value={section} />
+            <input aria-label={t("Milestone title")} className="input" onChange={(event) => setTitle(event.target.value)} value={title} />
+            <textarea aria-label={t("Milestone detail")} className="textarea" onChange={(event) => setDetail(event.target.value)} rows={2} value={detail} />
+            <input
+              aria-label={t("Specification section")}
+              className="input"
+              onChange={(event) => setSection(event.target.value)}
+              placeholder={t("where in the plan document this comes from (heading or line range)")}
+              value={section}
+            />
             <div className="row wrap">
               <label className="small muted">
-                Done when
+                {t("Done when")}
                 <select className="select" onChange={(event) => setCheckKind(event.target.value as CheckKind)} value={checkKind}>
                   {(Object.keys(CHECK_LABEL) as CheckKind[]).map((kind) => (
                     <option key={kind} value={kind}>
@@ -371,18 +380,18 @@ function MilestoneRow({
               </label>
               {checkKind !== "manual" && (
                 <input
-                  aria-label="Check specification"
+                  aria-label={t("Check specification")}
                   className="input"
                   onChange={(event) => setCheckSpec(event.target.value)}
-                  placeholder={checkKind === "files_exist" ? "one path per line" : "command to run"}
+                  placeholder={checkKind === "files_exist" ? t("one path per line") : t("command to run")}
                   value={checkSpec}
                 />
               )}
               <button className="button button-small" type="submit">
-                Save
+                {t("Save")}
               </button>
               <button className="button button-small" onClick={() => setEditing(false)} type="button">
-                Cancel
+                {t("Cancel")}
               </button>
             </div>
           </form>
@@ -405,18 +414,19 @@ export const AGENT_LABEL: Record<Provider, string> = PROVIDER_LABELS;
 export const ACCOUNT_LABEL: Record<Provider, string> = { claude: "Claude", codex: "ChatGPT", gemini: "Google" };
 
 const ACCOUNT_HINT: Record<Provider, string> = {
-  claude: "This run is on Claude Code, which spends the Claude subscription. Its own subagents spend the same account.",
-  codex: "This run is on Codex, which spends the ChatGPT subscription. Its own subagents spend the same account.",
-  gemini: "This run is on Gemini through Antigravity, which spends the Google account's Antigravity quota.",
+  claude: t("This run is on Claude Code, which spends the Claude subscription. Its own subagents spend the same account."),
+  codex: t("This run is on Codex, which spends the ChatGPT subscription. Its own subagents spend the same account."),
+  gemini: t("This run is on Gemini through Antigravity, which spends the Google account's Antigravity quota."),
 };
 
-const ORCHESTRATOR_LABEL: Record<Orchestrator, string> = { claude: "Claude only", codex: "Codex only", either: "Either account" };
+const ORCHESTRATOR_LABEL: Record<Orchestrator, string> = { claude: t("Claude only"), codex: t("Codex only"), either: t("Either account") };
 
 const ORCHESTRATOR_HINT: Record<Orchestrator, string> = {
-  claude: "This goal always runs on Claude Code, on the Claude subscription.",
-  codex: "This goal always runs on Codex, on the ChatGPT subscription.",
-  either:
+  claude: t("This goal always runs on Claude Code, on the Claude subscription."),
+  codex: t("This goal always runs on Codex, on the ChatGPT subscription."),
+  either: t(
     "Big Thing keeps the run where it is and moves it to the other account when this one is spent and the other is not. A move costs a fresh briefing — worth it against a five-hour wait and nothing less. At most one move an hour, never mid-turn.",
+  ),
 };
 
 /**
@@ -441,12 +451,12 @@ function MoveMenu({ sessionId }: { sessionId: string }) {
   return (
     <>
       <button aria-expanded={open} className="link small" onClick={() => setOpen(!open)} type="button">
-        move to&hellip;
+        {t("move to…")}
       </button>
       {open && (
         // A span, not a div: this sits inside the strip's inline row of
         // actions, and a block element there is invalid nesting.
-        <span className="row wrap odyssey-move" role="group" aria-label="Move this run to another session">
+        <span className="row wrap odyssey-move" role="group" aria-label={t("Move this run to another session")}>
           {others.map(([key, session]) => (
             <button
               className="button button-small"
@@ -470,11 +480,11 @@ function MoveMenu({ sessionId }: { sessionId: string }) {
               }}
               type="button"
             >
-              new {AGENT_LABEL[agent]} session
+              {t("new {agent} session", { agent: AGENT_LABEL[agent] })}
             </button>
           ))}
           <span className="small muted">
-            The record moves; the conversation does not. The new session is briefed from the plan and from <code>{ODYSSEY_STATE_NOTE}</code>.
+            {fill(t("The record moves; the conversation does not. The new session is briefed from the plan and from {note}."), { note: <code>{ODYSSEY_STATE_NOTE}</code> })}
           </span>
         </span>
       )}
@@ -541,18 +551,18 @@ function StateCard({ view, sessionId }: { view: OdysseyView; sessionId: string }
 
   const title =
     goal.state === "draft"
-      ? "Not started"
+      ? t("Not started")
       : goal.state === "running"
-        ? "Running"
+        ? t("Running")
         : goal.state === "waiting_usage"
-          ? `Waiting for ${ACCOUNT_LABEL[agent]}'s usage window`
+          ? t("Waiting for {account}'s usage window", { account: ACCOUNT_LABEL[agent] })
           : goal.state === "paused"
-            ? "Paused"
+            ? t("Paused")
             : goal.state === "blocked"
-              ? "Blocked"
+              ? t("Blocked")
               : goal.state === "complete"
-                ? "Complete"
-                : "Abandoned";
+                ? t("Complete")
+                : t("Abandoned");
 
   return (
     <section className={`card odyssey-state odyssey-strip state-${goal.state}`} aria-live="polite" role="status">
@@ -567,36 +577,34 @@ function StateCard({ view, sessionId }: { view: OdysseyView; sessionId: string }
             accounts looked identical to one that had not. */}
         <span className={`odyssey-account account-${agent}`} title={ACCOUNT_HINT[agent]}>
           {ACCOUNT_LABEL[agent]}
-          {orchestrator === "either" && <span className="muted"> · may move</span>}
+          {orchestrator === "either" && <span className="muted"> · {t("may move")}</span>}
         </span>
         {/* The facts that used to fill a card, in one line. */}
         <span className="odyssey-strip-facts small">
           <span>
-            <span className="muted">tasks </span>
-            <span>
-              {tasks.done} of {tasks.total}
-            </span>
+            <span className="muted">{t("tasks")} </span>
+            <span>{t("{done} of {total}", { done: tasks.done, total: tasks.total })}</span>
           </span>
           <span>
-            <span className="muted">milestones </span>
-            <span>
-              {verified} of {milestones.length}
-            </span>
+            <span className="muted">{t("milestones")} </span>
+            <span>{t("{done} of {total}", { done: verified, total: milestones.length })}</span>
           </span>
           <span>
-            <span className="muted">continuations </span>
-            <span>
-              {goal.continuationsUsed} of {goal.maxContinuations}
-            </span>
+            <span className="muted">{t("continuations")} </span>
+            <span>{t("{done} of {total}", { done: goal.continuationsUsed, total: goal.maxContinuations })}</span>
           </span>
           <span>
-            <span className="muted">tokens </span>
-            <span>{goal.tokenBudget ? `${goal.tokensUsed.toLocaleString()} of ${goal.tokenBudget.toLocaleString()}` : `${goal.tokensUsed.toLocaleString()} · no budget`}</span>
+            <span className="muted">{t("tokens")} </span>
+            <span>
+              {goal.tokenBudget
+                ? t("{done} of {total}", { done: goal.tokensUsed.toLocaleString(), total: goal.tokenBudget.toLocaleString() })
+                : t("{used} · no budget", { used: goal.tokensUsed.toLocaleString() })}
+            </span>
           </span>
         </span>
         <span className="row-actions">
           <button aria-expanded={details} className="link small" onClick={() => setDetails(!details)} type="button">
-            {details ? "hide details" : "details"}
+            {details ? t("hide details") : t("details")}
           </button>
           {(goal.state === "draft" || goal.state === "paused" || goal.state === "blocked") && (
             // A draft with no milestones has nothing to run; starting it would
@@ -607,19 +615,19 @@ function StateCard({ view, sessionId }: { view: OdysseyView; sessionId: string }
               onClick={() => void odysseyStart(sessionId)}
               title={
                 ceiling !== null
-                  ? "Resuming cannot clear a budget; raise the ceiling below"
+                  ? t("Resuming cannot clear a budget; raise the ceiling below")
                   : goal.state === "draft" && milestones.length === 0
-                    ? "Add a milestone, or let the agent propose them from the plan document"
+                    ? t("Add a milestone, or let the agent propose them from the plan document")
                     : undefined
               }
               type="button"
             >
-              {goal.state === "draft" ? "Start" : "Resume"}
+              {goal.state === "draft" ? t("Start") : t("Resume")}
             </button>
           )}
           {(goal.state === "running" || goal.state === "waiting_usage") && (
             <button className="button button-small" onClick={() => void odysseyPause(sessionId)} type="button">
-              Pause
+              {t("Pause")}
             </button>
           )}
           {goal.state !== "draft" && goal.state !== "complete" && <MoveMenu sessionId={sessionId} />}
@@ -632,29 +640,31 @@ function StateCard({ view, sessionId }: { view: OdysseyView; sessionId: string }
               // Parked, but the latest sample says there is room: the next
               // poll resumes it. Showing a countdown here was the bug — it
               // counted down to a reset the runner was no longer waiting on.
-              <p className="small muted">Usage is back; the run picks up on the next check.</p>
+              <p className="small muted">{t("Usage is back; the run picks up on the next check.")}</p>
             ) : resumeAt === null ? (
               <p className="small chip-warn">
-                {ACCOUNT_LABEL[agent]} reported no reset time, so this goal cannot resume on a clock. Resume it yourself when that account&rsquo;s quota is back.
+                {t("{account} reported no reset time, so this goal cannot resume on a clock. Resume it yourself when that account’s quota is back.", { account: ACCOUNT_LABEL[agent] })}
               </p>
             ) : (
               <>
                 <p className="small muted">
-                  {ACCOUNT_LABEL[agent]} reset time{" "}
-                  <time dateTime={new Date(resumeAt).toISOString()}>{new Date(resumeAt).toLocaleString([], { dateStyle: "medium", timeStyle: "short" })}</time>
+                  {fill(t("{account} reset time {time}"), {
+                    account: ACCOUNT_LABEL[agent],
+                    time: <time dateTime={new Date(resumeAt).toISOString()}>{new Date(resumeAt).toLocaleString([], { dateStyle: "medium", timeStyle: "short" })}</time>,
+                  })}
                 </p>
                 {/* The clock is decoration for a screen reader; the state above says what matters. */}
                 <p aria-hidden="true" className="odyssey-countdown">
-                  {countdown(resumeAt - now)} <span className="small muted">remaining</span>
+                  {countdown(resumeAt - now)} <span className="small muted">{t("remaining")}</span>
                 </p>
               </>
             )}
             <p className="small muted">
               {goal.onUsageReset === "continue_automatically"
-                ? "Auto-resume is on: Big Thing re-checks usage at the reset time and picks up from the last checkpoint."
+                ? t("Auto-resume is on: Big Thing re-checks usage at the reset time and picks up from the last checkpoint.")
                 : goal.onUsageReset === "notify_only"
-                  ? "You will be told when the quota is back; the run waits for you."
-                  : "This goal is set to stop at the reset."}
+                  ? t("You will be told when the quota is back; the run waits for you.")
+                  : t("This goal is set to stop at the reset.")}
             </p>
           </>
         )}
@@ -666,7 +676,10 @@ function StateCard({ view, sessionId }: { view: OdysseyView; sessionId: string }
             cancel would step in, once the quiet has lasted a while. */}
         {silentFor !== null && silentFor >= 5 * 60_000 && goal.deadTurnMinutes > 0 && (
           <p className="small muted">
-            No events from the session for {stallDuration(silentFor)}; Big Thing cancels the turn if it stays silent for {goal.deadTurnMinutes} minutes.
+            {t("No events from the session for {time}; Big Thing cancels the turn if it stays silent for {minutes} minutes.", {
+              time: stallDuration(silentFor),
+              minutes: goal.deadTurnMinutes,
+            })}
           </p>
         )}
         {/* The reason shows in every state and carries its age: a reason with
@@ -678,16 +691,17 @@ function StateCard({ view, sessionId }: { view: OdysseyView; sessionId: string }
             {runtime.lastReasonAt > 0 && <span className="muted"> · {ago(now - runtime.lastReasonAt)}</span>}
           </p>
         )}
-        {runtime?.forecast && <p className="small muted">Forecast: {runtime.forecast}.</p>}
-        {goal.state === "blocked" && <p className="small chip-warn">{view.journal.find((entry) => entry.kind === "guard")?.summary ?? "Blocked."}</p>}
+        {runtime?.forecast && <p className="small muted">{t("Forecast: {forecast}.", { forecast: runtime.forecast })}</p>}
+        {goal.state === "blocked" && <p className="small chip-warn">{view.journal.find((entry) => entry.kind === "guard")?.summary ?? t("Blocked.")}</p>}
         {/* Resume writes "running" and the guard writes "blocked" again on the
             same tick, so offering it here would be offering nothing. The only
             thing that clears a budget is a bigger budget. */}
         {ceiling && (
           <div className="row wrap odyssey-ceiling">
             <span className="small muted">
-              Resuming cannot clear this: {ceiling.used.toLocaleString()} of {ceiling.limit.toLocaleString()} {ceiling.kind === "tokens" ? "tokens" : "continuations"} are
-              spent.
+              {ceiling.kind === "tokens"
+                ? t("Resuming cannot clear this: {used} of {limit} tokens are spent.", { used: ceiling.used.toLocaleString(), limit: ceiling.limit.toLocaleString() })
+                : t("Resuming cannot clear this: {used} of {limit} continuations are spent.", { used: ceiling.used.toLocaleString(), limit: ceiling.limit.toLocaleString() })}
             </span>
             <button
               className="button button-small button-primary"
@@ -700,42 +714,44 @@ function StateCard({ view, sessionId }: { view: OdysseyView; sessionId: string }
               }}
               type="button"
             >
-              Allow {ceiling.step.toLocaleString()} more and resume
+              {t("Allow {count} more and resume", { count: ceiling.step.toLocaleString() })}
             </button>
           </div>
         )}
         {goal.state === "draft" && (
           <p className="small muted">
             {milestones.length === 0
-              ? "This goal has no milestones yet."
+              ? t("This goal has no milestones yet.")
               : goal.planSource
-                ? "Starting accepts the plan as it stands and submits the briefing to this session. You can read the briefing first."
-                : "Starting submits the briefing to this session. You can read it first."}
+                ? t("Starting accepts the plan as it stands and submits the briefing to this session. You can read the briefing first.")
+                : t("Starting submits the briefing to this session. You can read it first.")}
           </p>
         )}
         {goal.state === "complete" &&
           (milestones.some((milestone) => milestone.state === "reported") ? (
             <p className="small chip-warn">
-              {milestones.filter((milestone) => milestone.state === "reported").length} milestone
-              {milestones.filter((milestone) => milestone.state === "reported").length === 1 ? " is" : "s are"} the agent&rsquo;s word alone. Tick them if you have
-              checked them.
+              {milestones.filter((milestone) => milestone.state === "reported").length === 1
+                ? t("{count} milestone is the agent’s word alone. Tick them if you have checked them.", { count: 1 })
+                : t("{count} milestones are the agent’s word alone. Tick them if you have checked them.", {
+                    count: milestones.filter((milestone) => milestone.state === "reported").length,
+                  })}
             </p>
           ) : (
-            <p className="small muted">Every milestone is verified or skipped.</p>
+            <p className="small muted">{t("Every milestone is verified or skipped.")}</p>
           ))}
 
         {!waiting && verdict.kind === "exhausted" && (
           <p className="small chip-warn">
-            The {ACCOUNT_LABEL[agent]} account is spent: {verdict.reason}.
+            {t("The {account} account is spent: {reason}.", { account: ACCOUNT_LABEL[agent], reason: verdict.reason })}
           </p>
         )}
         {details && (
           <div className="odyssey-state-details">
-            <div className="odyssey-meter" title={`${continuationPct}% of the continuation limit`}>
+            <div className="odyssey-meter" title={t("{percent}% of the continuation limit", { percent: continuationPct })}>
               <span style={{ width: `${continuationPct}%` }} />
             </div>
             {budgetPct !== null && (
-              <div className="odyssey-meter" title={`${budgetPct}% of the token budget`}>
+              <div className="odyssey-meter" title={t("{percent}% of the token budget", { percent: budgetPct })}>
                 <span style={{ width: `${budgetPct}%` }} />
               </div>
             )}
@@ -745,12 +761,19 @@ function StateCard({ view, sessionId }: { view: OdysseyView; sessionId: string }
               <p className="small muted odyssey-handoff">
                 {notes?.state ? (
                   <>
-                    Handoff note <span className="mono">{ODYSSEY_STATE_NOTE}</span> updated {ago(now - notes.state.modifiedAtUnixMs)}
-                    {notes.agentNotes.length > 0 && <> · {notes.agentNotes.length} subagent note{notes.agentNotes.length === 1 ? "" : "s"}</>}
+                    {fill(t("Handoff note {note} updated {time}"), { note: <span className="mono">{ODYSSEY_STATE_NOTE}</span>, time: ago(now - notes.state.modifiedAtUnixMs) })}
+                    {notes.agentNotes.length > 0 && (
+                      <>
+                        {" · "}
+                        {notes.agentNotes.length === 1
+                          ? t("{count} subagent note", { count: 1 })
+                          : t("{count} subagent notes", { count: notes.agentNotes.length })}
+                      </>
+                    )}
                   </>
                 ) : (
                   <>
-                    No handoff note yet. The agent is asked to create <span className="mono">{ODYSSEY_STATE_NOTE}</span> on its next turn.
+                    {fill(t("No handoff note yet. The agent is asked to create {note} on its next turn."), { note: <span className="mono">{ODYSSEY_STATE_NOTE}</span> })}
                   </>
                 )}
               </p>
@@ -778,30 +801,31 @@ function Settings({ view, sessionId }: { view: OdysseyView; sessionId: string })
   return (
     <section className="card odyssey-settings">
       <header className="work-head">
-        <span className="work-title">Settings</span>
+        <span className="work-title">{t("Settings")}</span>
       </header>
       <div className="odyssey-state-body">
         <label className="odyssey-field">
-          <span className="small">Test command</span>
+          <span className="small">{t("Test command")}</span>
           <input
-            aria-label="Test command"
+            aria-label={t("Test command")}
             className="input mono"
             onBlur={() => {
               const trimmed = testCommand.trim();
               if (trimmed !== (goal.defaultCheck ?? "")) void editOdysseyGoal(sessionId, goal.id, { defaultCheck: trimmed || null });
             }}
             onChange={(event) => setTestCommand(event.target.value)}
-            placeholder="e.g. pnpm test, or python3 Tools/check.py"
+            placeholder={t("e.g. pnpm test, or python3 Tools/check.py")}
             value={testCommand}
           />
           <span className="small muted">
-            Run from the project root. The planner is told to make it each milestone&rsquo;s check unless the document names a better one, so a claim is verified by
-            Big Thing rather than waiting for your tick. Nothing here runs until a milestone with that check is reported.
+            {t(
+              "Run from the project root. The planner is told to make it each milestone’s check unless the document names a better one, so a claim is verified by Big Thing rather than waiting for your tick. Nothing here runs until a milestone with that check is reported.",
+            )}
           </span>
         </label>
         <label className="odyssey-field">
-          <span className="small">Stop when</span>
-          <select aria-label="Stop when" className="select" onChange={(event) => void editOdysseyGoal(sessionId, goal.id, { stopCondition: event.target.value as StopCondition })} value={goal.stopCondition}>
+          <span className="small">{t("Stop when")}</span>
+          <select aria-label={t("Stop when")} className="select" onChange={(event) => void editOdysseyGoal(sessionId, goal.id, { stopCondition: event.target.value as StopCondition })} value={goal.stopCondition}>
             {(Object.keys(STOP_LABEL) as StopCondition[]).map((value) => (
               <option key={value} value={value}>
                 {STOP_LABEL[value]}
@@ -811,8 +835,8 @@ function Settings({ view, sessionId }: { view: OdysseyView; sessionId: string })
           <span className="small muted">{STOP_HINT[goal.stopCondition]}</span>
         </label>
         <label className="odyssey-field">
-          <span className="small">When usage resets</span>
-          <select aria-label="When usage resets" className="select" onChange={(event) => void editOdysseyGoal(sessionId, goal.id, { onUsageReset: event.target.value as OnUsageReset })} value={goal.onUsageReset}>
+          <span className="small">{t("When usage resets")}</span>
+          <select aria-label={t("When usage resets")} className="select" onChange={(event) => void editOdysseyGoal(sessionId, goal.id, { onUsageReset: event.target.value as OnUsageReset })} value={goal.onUsageReset}>
             {(Object.keys(RESET_LABEL) as OnUsageReset[]).map((value) => (
               <option key={value} value={value}>
                 {RESET_LABEL[value]}
@@ -822,8 +846,8 @@ function Settings({ view, sessionId }: { view: OdysseyView; sessionId: string })
           <span className="small muted">{RESET_HINT[goal.onUsageReset]}</span>
         </label>
         <label className="odyssey-field">
-          <span className="small">Which account runs it</span>
-          <select aria-label="Which account runs it" className="select" onChange={(event) => void editOdysseyGoal(sessionId, goal.id, { orchestrator: event.target.value as Orchestrator })} value={goal.orchestrator ?? "claude"}>
+          <span className="small">{t("Which account runs it")}</span>
+          <select aria-label={t("Which account runs it")} className="select" onChange={(event) => void editOdysseyGoal(sessionId, goal.id, { orchestrator: event.target.value as Orchestrator })} value={goal.orchestrator ?? "claude"}>
             {(Object.keys(ORCHESTRATOR_LABEL) as Orchestrator[]).map((value) => (
               <option key={value} value={value}>
                 {ORCHESTRATOR_LABEL[value]}
@@ -834,13 +858,13 @@ function Settings({ view, sessionId }: { view: OdysseyView; sessionId: string })
             {ORCHESTRATOR_HINT[goal.orchestrator ?? "claude"]}
             {/* The setting is a policy; this says where the run actually is,
                 which is not the same thing after a move or a failover. */}
-            {runningOn && <> Right now it is running on {ACCOUNT_LABEL[runningOn]}.</>}
+            {runningOn && <> {t("Right now it is running on {account}.", { account: ACCOUNT_LABEL[runningOn] })}</>}
           </span>
         </label>
         <RunOptions onEdit={(edit) => void editOdysseyGoal(sessionId, goal.id, edit)} view={view} />
         <label className="odyssey-field">
-          <span className="small">When the agent says a milestone is done</span>
-          <select aria-label="When the agent says a milestone is done" className="select" onChange={(event) => void editOdysseyGoal(sessionId, goal.id, { onReport: event.target.value as OnReport })} value={goal.onReport}>
+          <span className="small">{t("When the agent says a milestone is done")}</span>
+          <select aria-label={t("When the agent says a milestone is done")} className="select" onChange={(event) => void editOdysseyGoal(sessionId, goal.id, { onReport: event.target.value as OnReport })} value={goal.onReport}>
             {(Object.keys(REPORT_LABEL) as OnReport[]).map((value) => (
               <option key={value} value={value}>
                 {REPORT_LABEL[value]}
@@ -850,8 +874,8 @@ function Settings({ view, sessionId }: { view: OdysseyView; sessionId: string })
           <span className="small muted">{REPORT_HINT[goal.onReport]}</span>
         </label>
         <label className="odyssey-field">
-          <span className="small">When the agent proposes a plan change</span>
-          <select aria-label="When the agent proposes a plan change" className="select" onChange={(event) => void editOdysseyGoal(sessionId, goal.id, { onPlanChange: event.target.value as OnPlanChange })} value={goal.onPlanChange}>
+          <span className="small">{t("When the agent proposes a plan change")}</span>
+          <select aria-label={t("When the agent proposes a plan change")} className="select" onChange={(event) => void editOdysseyGoal(sessionId, goal.id, { onPlanChange: event.target.value as OnPlanChange })} value={goal.onPlanChange}>
             {(Object.keys(PLAN_CHANGE_LABEL) as OnPlanChange[]).map((value) => (
               <option key={value} value={value}>
                 {PLAN_CHANGE_LABEL[value]}
@@ -861,9 +885,9 @@ function Settings({ view, sessionId }: { view: OdysseyView; sessionId: string })
           <span className="small muted">{PLAN_CHANGE_HINT[goal.onPlanChange]}</span>
         </label>
         <label className="odyssey-field">
-          <span className="small">Cancel a silent turn after</span>
+          <span className="small">{t("Cancel a silent turn after")}</span>
           <input
-            aria-label="Cancel a silent turn after"
+            aria-label={t("Cancel a silent turn after")}
             className="input"
             inputMode="numeric"
             onBlur={() => {
@@ -874,12 +898,11 @@ function Settings({ view, sessionId }: { view: OdysseyView; sessionId: string })
             value={deadTurn}
           />
           <span className="small muted">
-            Minutes with no events at all while a turn is running. A turn that goes quiet cannot settle, and nothing else would ever free the run. 0 never
-            cancels.
+            {t("Minutes with no events at all while a turn is running. A turn that goes quiet cannot settle, and nothing else would ever free the run. 0 never cancels.")}
           </span>
         </label>
         <label className="odyssey-field">
-          <span className="small">Continuation limit</span>
+          <span className="small">{t("Continuation limit")}</span>
           <input
             className="input"
             inputMode="numeric"
@@ -890,10 +913,10 @@ function Settings({ view, sessionId }: { view: OdysseyView; sessionId: string })
             onChange={(event) => setMax(event.target.value)}
             value={max}
           />
-          <span className="small muted">Big Thing stops after this many continuations, whatever state the goal is in.</span>
+          <span className="small muted">{t("Big Thing stops after this many continuations, whatever state the goal is in.")}</span>
         </label>
         <label className="odyssey-field">
-          <span className="small">Token budget</span>
+          <span className="small">{t("Token budget")}</span>
           <input
             className="input"
             inputMode="numeric"
@@ -903,10 +926,10 @@ function Settings({ view, sessionId }: { view: OdysseyView; sessionId: string })
               if (value === null || Number.isFinite(value)) void editOdysseyGoal(sessionId, goal.id, { tokenBudget: value });
             }}
             onChange={(event) => setBudget(event.target.value)}
-            placeholder="no budget"
+            placeholder={t("no budget")}
             value={budget}
           />
-          <span className="small muted">Paid input and output, counted from the agent's own transcript. Blank means no ceiling.</span>
+          <span className="small muted">{t("Paid input and output, counted from the agent's own transcript. Blank means no ceiling.")}</span>
         </label>
         <SkillRow />
       </div>
@@ -937,14 +960,16 @@ function SkillRow() {
 
   return (
     <div className="odyssey-field">
-      <span className="small">The `big-thing` skill</span>
+      <span className="small">{t("The `big-thing` skill")}</span>
       <div className="row wrap">
         <button className="button button-small" disabled={busy} onClick={() => void install()} type="button">
-          {busy ? "Installing…" : "Install or repair"}
+          {busy ? t("Installing…") : t("Install or repair")}
         </button>
         {state && <span className="small muted mono">{state.path}</span>}
       </div>
-      <span className="small muted">The full protocol the model can load on demand. Big Thing installs it with the first briefing; reinstall it if you have edited the copy.</span>
+      <span className="small muted">
+        {t("The full protocol the model can load on demand. Big Thing installs it with the first briefing; reinstall it if you have edited the copy.")}
+      </span>
     </div>
   );
 }
@@ -953,10 +978,8 @@ function VerifiedStrip({ milestones }: { milestones: MilestoneRecord[] }) {
   return (
     <section className="card odyssey-verified">
       <header className="work-head">
-        <span className="work-title">Verified milestones</span>
-        <span className="work-meta">
-          {verifiedCount(milestones)} of {milestones.length}
-        </span>
+        <span className="work-title">{t("Verified milestones")}</span>
+        <span className="work-meta">{t("{done} of {total}", { done: verifiedCount(milestones), total: milestones.length })}</span>
       </header>
       <div className="odyssey-seals">
         {milestones.map((milestone) => (
@@ -965,13 +988,13 @@ function VerifiedStrip({ milestones }: { milestones: MilestoneRecord[] }) {
           <span
             className={`odyssey-seal ${milestone.state === "verified" ? "seal-on" : ""} ${milestone.state === "failed" ? "seal-failed" : ""}`}
             key={milestone.id}
-            title={milestone.state === "verified" ? `${milestone.title} — ${laneLabel(milestone)}` : milestone.state === "failed" ? `${milestone.title} — the check did not pass` : milestone.title}
+            title={milestone.state === "verified" ? `${milestone.title} — ${laneLabel(milestone)}` : milestone.state === "failed" ? t("{title} — the check did not pass", { title: milestone.title }) : milestone.title}
           >
             {milestone.state === "verified" ? <IconCheckCircle size={16} /> : milestone.state === "failed" ? <IconAlertCircle size={14} /> : <span className="odyssey-seal-empty" />}
           </span>
         ))}
       </div>
-      <p className="small muted odyssey-foot">A milestone is verified when a check ran or you ticked it — not when the agent said so.</p>
+      <p className="small muted odyssey-foot">{t("A milestone is verified when a check ran or you ticked it — not when the agent said so.")}</p>
     </section>
   );
 }
@@ -999,16 +1022,20 @@ function MovedAway({ from, moved }: { from: string; moved: { goalId: string; tit
   return (
     <div className="odyssey-empty">
       <section className="card odyssey-new">
-        <h3>This run moved to another session</h3>
+        <h3>{t("This run moved to another session")}</h3>
         <p className="small muted">
-          <strong>{moved.title}</strong> is still running — its milestones, its history and its budget came with it. What stayed behind is this session&rsquo;s
-          conversation, which is why the run was briefed afresh where it landed.
+          {fill(
+            t(
+              "{title} is still running — its milestones, its history and its budget came with it. What stayed behind is this session’s conversation, which is why the run was briefed afresh where it landed.",
+            ),
+            { title: <strong>{moved.title}</strong> },
+          )}
         </p>
         <div className="row wrap">
           <button className="button button-small button-primary" disabled={!target} onClick={() => selectSession(moved.to)} type="button">
-            {target ? "Open the run" : "That session is not attached"}
+            {target ? t("Open the run") : t("That session is not attached")}
           </button>
-          <span className="small muted">You can start a separate goal here whenever you want one.</span>
+          <span className="small muted">{t("You can start a separate goal here whenever you want one.")}</span>
         </div>
       </section>
       <NewGoalFormToggle from={from} />
@@ -1024,10 +1051,15 @@ function NewGoalFormToggle({ from }: { from: string }) {
   if (!open)
     return (
       <button className="link small" onClick={() => setOpen(true)} type="button">
-        set a goal for this session
+        {t("set a goal for this session")}
       </button>
     );
   return <NewGoalForm agentSessionId={session.snapshot.agentSessionId} sessionId={from} workspaceId={session.workspaceId} />;
+}
+
+/** Who leads a preset: its orchestrator's provider, and the model when it names one. */
+function presetLead(preset: TeamPreset): string {
+  return `${PROVIDER_LABELS[preset.orchestrator.provider]}${preset.orchestrator.model ? ` · ${preset.orchestrator.model}` : ""}`;
 }
 
 function NewGoalForm({ sessionId, workspaceId, agentSessionId }: { sessionId: string; workspaceId: string; agentSessionId: string | null }) {
@@ -1073,7 +1105,7 @@ function NewGoalForm({ sessionId, workspaceId, agentSessionId }: { sessionId: st
     async (paths: string[]) => {
       const path = paths.find(isPlanDocument);
       if (!path) {
-        setError({ code: "UNSUPPORTED", message: "Drop a Markdown or text file to plan a goal from it.", retry: "user_action" });
+        setError({ code: "UNSUPPORTED", message: t("Drop a Markdown or text file to plan a goal from it."), retry: "user_action" });
         return;
       }
       try {
@@ -1168,17 +1200,18 @@ function NewGoalForm({ sessionId, workspaceId, agentSessionId }: { sessionId: st
           void create();
         }}
       >
-        <h3>Set a goal for this session</h3>
+        <h3>{t("Set a goal for this session")}</h3>
         <p className="small muted">
-          Big Thing breaks a goal into milestones and keeps this session working through them, parking itself when the account's usage runs out. It never marks a
-          milestone done on the agent's word alone.
+          {t(
+            "Big Thing breaks a goal into milestones and keeps this session working through them, parking itself when the account's usage runs out. It never marks a milestone done on the agent's word alone.",
+          )}
         </p>
-        <input aria-label="Goal title" className="input" onChange={(event) => setTitle(event.target.value)} placeholder="Ship onboarding v2" value={title} />
+        <input aria-label={t("Goal title")} className="input" onChange={(event) => setTitle(event.target.value)} placeholder={t("Ship onboarding v2")} value={title} />
         <textarea
-          aria-label="Goal brief"
+          aria-label={t("Goal brief")}
           className="textarea"
           onChange={(event) => setBrief(event.target.value)}
-          placeholder="What done looks like, and anything the agent must respect."
+          placeholder={t("What done looks like, and anything the agent must respect.")}
           rows={3}
           value={brief}
         />
@@ -1188,49 +1221,59 @@ function NewGoalForm({ sessionId, workspaceId, agentSessionId }: { sessionId: st
             <header className="row wrap">
               <strong className="small mono">{document.name}</strong>
               <span className="small muted">
-                {Math.max(1, Math.round(document.summary.bytes / 1024))} KB · {document.summary.lines.toLocaleString()} lines · {document.summary.headings} headings
+                {t("{size} KB · {lines} lines · {headings} headings", {
+                  size: Math.max(1, Math.round(document.summary.bytes / 1024)),
+                  lines: document.summary.lines.toLocaleString(),
+                  headings: document.summary.headings,
+                })}
               </span>
               <button className="link small" onClick={() => setDocument(null)} type="button">
-                remove
+                {t("remove")}
               </button>
             </header>
             <p className="small muted">
-              Big Thing will hand this document to the session and the agent will propose the milestones. Nothing is read from it here, and the goal stays a draft
-              until you start it.
+              {t(
+                "Big Thing will hand this document to the session and the agent will propose the milestones. Nothing is read from it here, and the goal stays a draft until you start it.",
+              )}
             </p>
             {document.adopted ? (
               <p className="small muted">
-                {document.adopted.copied ? "Copied into the project as " : "The agent can read it at "}
-                <span className="mono">{document.adopted.path}</span> — so it can go back to the full text whenever a milestone&rsquo;s detail is not enough.
+                {fill(
+                  document.adopted.copied
+                    ? t("Copied into the project as {path} — so it can go back to the full text whenever a milestone’s detail is not enough.")
+                    : t("The agent can read it at {path} — so it can go back to the full text whenever a milestone’s detail is not enough."),
+                  { path: <span className="mono">{document.adopted.path}</span> },
+                )}
               </p>
             ) : (
               <p className="small chip-warn">
-                This could not be placed in the project, so the agent sees it once in the planning turn and cannot read it again afterwards.
+                {t("This could not be placed in the project, so the agent sees it once in the planning turn and cannot read it again afterwards.")}
               </p>
             )}
           </section>
         ) : (
-          <p className="odyssey-dropzone small muted">Drop a Markdown roadmap or plan here and the agent will turn it into milestones.</p>
+          <p className="odyssey-dropzone small muted">{t("Drop a Markdown roadmap or plan here and the agent will turn it into milestones.")}</p>
         )}
 
         <label className="odyssey-field">
-          <span className="small">Test command</span>
+          <span className="small">{t("Test command")}</span>
           <input
-            aria-label="Test command"
+            aria-label={t("Test command")}
             className="input mono"
             onChange={(event) => setTestCommand(event.target.value)}
-            placeholder="e.g. pnpm test, or python3 Tools/check.py"
+            placeholder={t("e.g. pnpm test, or python3 Tools/check.py")}
             value={testCommand}
           />
           <span className="small muted">
-            Run from the project root. The agent is told to make it each milestone&rsquo;s check when it plans, so Big Thing can verify a claim instead of waiting for
-            your tick. Without one, every milestone is yours to tick.
+            {t(
+              "Run from the project root. The agent is told to make it each milestone’s check when it plans, so Big Thing can verify a claim instead of waiting for your tick. Without one, every milestone is yours to tick.",
+            )}
           </span>
         </label>
         <label className="odyssey-field">
-          <span className="small">Team</span>
-          <select aria-label="Team" className="select" onChange={(event) => setPresetId(event.target.value)} value={presetId}>
-            <option value="">This session&rsquo;s own team</option>
+          <span className="small">{t("Team")}</span>
+          <select aria-label={t("Team")} className="select" onChange={(event) => setPresetId(event.target.value)} value={presetId}>
+            <option value="">{t("This session’s own team")}</option>
             {presets.map((entry) => (
               <option key={entry.id} value={entry.id}>
                 {entry.name}
@@ -1239,23 +1282,25 @@ function NewGoalForm({ sessionId, workspaceId, agentSessionId }: { sessionId: st
           </select>
           <span className="small muted">
             {preset
-              ? `Led by ${PROVIDER_LABELS[preset.orchestrator.provider]}${preset.orchestrator.model ? ` · ${preset.orchestrator.model}` : ""} with ${preset.combo.workers.length} worker${preset.combo.workers.length === 1 ? "" : "s"}. A run on another account moves there when it starts.`
-              : "The run leads whatever team this session has."}
+              ? preset.combo.workers.length === 1
+                ? t("Led by {who} with {count} worker. A run on another account moves there when it starts.", { who: presetLead(preset), count: 1 })
+                : t("Led by {who} with {count} workers. A run on another account moves there when it starts.", { who: presetLead(preset), count: preset.combo.workers.length })
+              : t("The run leads whatever team this session has.")}
           </span>
         </label>
         <label className="odyssey-field">
-          <span className="small">Who hands out the tasks</span>
-          <select aria-label="Who hands out the tasks" className="select" onChange={(event) => setDispatch(event.target.value as "agent" | "runner")} value={dispatch}>
-            <option value="agent">The orchestrator delegates</option>
-            <option value="runner">Big Thing hands out the tasks</option>
+          <span className="small">{t("Who hands out the tasks")}</span>
+          <select aria-label={t("Who hands out the tasks")} className="select" onChange={(event) => setDispatch(event.target.value as "agent" | "runner")} value={dispatch}>
+            <option value="agent">{t("The orchestrator delegates")}</option>
+            <option value="runner">{t("Big Thing hands out the tasks")}</option>
           </select>
         </label>
         <label className="odyssey-toggle">
           <input checked={isolate} onChange={(event) => setIsolate(event.target.checked)} type="checkbox" />
-          <span className="small">Run in its own branch and worktree, so it never touches your checkout until you merge</span>
+          <span className="small">{t("Run in its own branch and worktree, so it never touches your checkout until you merge")}</span>
         </label>
         <label className="odyssey-field">
-          <span className="small">Stop when</span>
+          <span className="small">{t("Stop when")}</span>
           <select className="select" onChange={(event) => setStop(event.target.value as StopCondition)} value={stop}>
             {(Object.keys(STOP_LABEL) as StopCondition[]).map((value) => (
               <option key={value} value={value}>
@@ -1267,9 +1312,11 @@ function NewGoalForm({ sessionId, workspaceId, agentSessionId }: { sessionId: st
         </label>
         <div className="row wrap">
           <button className="button button-primary" disabled={!title.trim() || !agentSessionId || creating} type="submit">
-            {creating ? "Creating…" : document ? "Create goal and ask the agent to plan it" : "Create goal"}
+            {creating ? t("Creating…") : document ? t("Create goal and ask the agent to plan it") : t("Create goal")}
           </button>
-          <span className="small muted">{agentSessionId ? `Budget starts at ${maxContinuations} continuations; change it in Settings.` : "Waiting for the agent to report this session's id."}</span>
+          <span className="small muted">
+            {agentSessionId ? t("Budget starts at {count} continuations; change it in Settings.", { count: maxContinuations }) : t("Waiting for the agent to report this session's id.")}
+          </span>
         </div>
       </form>
     </div>
@@ -1299,44 +1346,49 @@ function PlanCard({ view, sessionId }: { view: OdysseyView; sessionId: string })
 
   const ask = (
     <button className="button button-small" disabled={busy} onClick={() => void requestPlan(sessionId)} type="button">
-      {busy ? "Asking…" : milestones.length > 0 ? "Ask the agent again" : "Ask the agent to plan it"}
+      {busy ? t("Asking…") : milestones.length > 0 ? t("Ask the agent again") : t("Ask the agent to plan it")}
     </button>
   );
 
   return (
-    <section aria-label="Plan document" className="card odyssey-plan-card">
+    <section aria-label={t("Plan document")} className="card odyssey-plan-card">
       <header className="work-head">
         <span className="work-glyph">
           <IconCode size={14} />
         </span>
-        <span className="work-title">Planned from {source}</span>
+        <span className="work-title">{t("Planned from {source}", { source })}</span>
         <span className="row-actions">{ask}</span>
       </header>
       <div className="odyssey-state-body">
         {milestones.length === 0 && !refused && (
-          <p className="small muted">{asked ? "The agent is reading the document and will propose the milestones in its reply." : "Ask the agent to read the document and propose the milestones."}</p>
+          <p className="small muted">
+            {asked ? t("The agent is reading the document and will propose the milestones in its reply.") : t("Ask the agent to read the document and propose the milestones.")}
+          </p>
         )}
         {refused && milestones.length === 0 && (
           <p className="small chip-warn">
-            The agent&rsquo;s reply contained no plan. {refused.detail ?? ""} Read what it said in the transcript, then ask again or write the milestones yourself.
+            {t("The agent’s reply contained no plan. {detail} Read what it said in the transcript, then ask again or write the milestones yourself.", { detail: refused.detail ?? "" })}
           </p>
         )}
         {milestones.length > 0 && (
           <>
             <p className="small muted">
-              {proposed?.summary ?? `${milestones.length} milestones are proposed`}. They are the agent&rsquo;s reading of the document, not Big Thing&rsquo;s — edit,
-              reorder or remove any of them before you start.
+              {t("{summary}. They are the agent’s reading of the document, not Big Thing’s — edit, reorder or remove any of them before you start.", {
+                summary: proposed?.summary ?? t("{count} milestones are proposed", { count: milestones.length }),
+              })}
             </p>
             {runnable > 0 && (
               <p className="small chip-warn">
-                {runnable} of them {runnable === 1 ? "has a check" : "have checks"} Big Thing will run in this workspace. Read those commands in the milestone list
-                before you press Start.
+                {runnable === 1
+                  ? t("{count} of them has a check Big Thing will run in this workspace. Read those commands in the milestone list before you press Start.", { count: 1 })
+                  : t("{count} of them have checks Big Thing will run in this workspace. Read those commands in the milestone list before you press Start.", { count: runnable })}
               </p>
             )}
             {allManual(milestones) && (
               <p className="small chip-warn">
-                Every milestone is manual: the run will stop at each claim until you tick it, and nothing is verified by a command. Set a test command in Settings
-                and ask the agent again, or edit the checks yourself.
+                {t(
+                  "Every milestone is manual: the run will stop at each claim until you tick it, and nothing is verified by a command. Set a test command in Settings and ask the agent again, or edit the checks yourself.",
+                )}
               </p>
             )}
             {proposed?.detail && <p className="small muted">{proposed.detail}</p>}
@@ -1438,14 +1490,14 @@ export function OdysseyPane({ sessionId }: { sessionId: string }) {
       <header className="odyssey-header">
         <div>
           <h2>{goal.title}</h2>
-          <p className="small muted">{goal.brief || "No brief."}</p>
+          <p className="small muted">{goal.brief || t("No brief.")}</p>
         </div>
         <div className="row wrap">
           <button className="button button-small button-primary" onClick={() => setAmendOpen(true)} type="button">
-            Add or change work
+            {t("Add or change work")}
           </button>
           <button className="button button-small" onClick={() => setBriefingOpen(true)} type="button">
-            Preview briefing
+            {t("Preview briefing")}
           </button>
           <button
             className="button button-small"
@@ -1456,10 +1508,10 @@ export function OdysseyPane({ sessionId }: { sessionId: string }) {
             }}
             type="button"
           >
-            Edit goal
+            {t("Edit goal")}
           </button>
-          <button className="button button-small button-warn" onClick={() => void deleteOdyssey(sessionId, goal.id)} title="Delete this goal and its record" type="button">
-            Delete
+          <button className="button button-small button-warn" onClick={() => void deleteOdyssey(sessionId, goal.id)} title={t("Delete this goal and its record")} type="button">
+            {t("Delete")}
           </button>
         </div>
       </header>
@@ -1467,7 +1519,7 @@ export function OdysseyPane({ sessionId }: { sessionId: string }) {
       <div className="odyssey-progress-row">
         <ProgressBar milestones={milestones} />
         <span className="small muted">
-          {verified} of {milestones.length} milestones verified
+          {t("{verified} of {total} milestones verified", { verified, total: milestones.length })}
         </span>
       </div>
 
@@ -1480,14 +1532,14 @@ export function OdysseyPane({ sessionId }: { sessionId: string }) {
             void editOdysseyGoal(sessionId, goal.id, { title: goalTitle, brief: goalBrief });
           }}
         >
-          <input aria-label="Goal title" className="input" onChange={(event) => setGoalTitle(event.target.value)} value={goalTitle} />
-          <textarea aria-label="Goal brief" className="textarea" onChange={(event) => setGoalBrief(event.target.value)} rows={3} value={goalBrief} />
+          <input aria-label={t("Goal title")} className="input" onChange={(event) => setGoalTitle(event.target.value)} value={goalTitle} />
+          <textarea aria-label={t("Goal brief")} className="textarea" onChange={(event) => setGoalBrief(event.target.value)} rows={3} value={goalBrief} />
           <div className="row">
             <button className="button button-small" type="submit">
-              Save
+              {t("Save")}
             </button>
             <button className="button button-small" onClick={() => setEditingGoal(false)} type="button">
-              Cancel
+              {t("Cancel")}
             </button>
           </div>
         </form>
@@ -1498,13 +1550,13 @@ export function OdysseyPane({ sessionId }: { sessionId: string }) {
       <div className="tablist odyssey-tabs" role="tablist">
         {(
           [
-            ["roadmap", "Roadmap"],
-            ["inbox", inbox.length > 0 ? `Inbox (${inbox.length})` : "Inbox"],
-            ["documents", "Documents"],
-            ["team", "Team"],
-            ["history", "History"],
-            ["changes", openAmendments > 0 ? `Changes (${openAmendments})` : "Changes"],
-            ["settings", "Settings"],
+            ["roadmap", t("Roadmap")],
+            ["inbox", inbox.length > 0 ? t("Inbox ({count})", { count: inbox.length }) : t("Inbox")],
+            ["documents", t("Documents")],
+            ["team", t("Team")],
+            ["history", t("History")],
+            ["changes", openAmendments > 0 ? t("Changes ({count})", { count: openAmendments }) : t("Changes")],
+            ["settings", t("Settings")],
           ] as const
         ).map(([id, label]) => (
           <button aria-selected={tab === id} className={`tab ${tab === id ? "tab-on" : ""}`} key={id} onClick={() => setTab(id)} role="tab" type="button">
@@ -1546,7 +1598,7 @@ export function OdysseyPane({ sessionId }: { sessionId: string }) {
               }}
             >
               <IconPlus size={14} />
-              <input aria-label="New milestone" className="input" onChange={(event) => setNewMilestone(event.target.value)} placeholder="Add a milestone…" value={newMilestone} />
+              <input aria-label={t("New milestone")} className="input" onChange={(event) => setNewMilestone(event.target.value)} placeholder={t("Add a milestone…")} value={newMilestone} />
             </form>
           </div>
         </div>
@@ -1570,14 +1622,14 @@ export function OdysseyPane({ sessionId }: { sessionId: string }) {
       {tab === "changes" && (
         <div className="odyssey-tab-stack">
           <AmendmentList amendments={amendments} sessionId={sessionId} />
-          {openAmendments === 0 && <p className="small muted">Nothing queued. Use &ldquo;Add or change work&rdquo; to fold a document, a folder or an instruction into the running plan.</p>}
+          {openAmendments === 0 && <p className="small muted">{t("Nothing queued. Use “Add or change work” to fold a document, a folder or an instruction into the running plan.")}</p>}
         </div>
       )}
       {tab === "settings" && <Settings sessionId={sessionId} view={view} />}
 
       <footer className="odyssey-footer small muted">
-        {latest ? `${timeOf(latest.at)} · ${latest.summary}` : "Nothing recorded yet."}
-        <span>Saved in this app's database, not in your project.</span>
+        {latest ? `${timeOf(latest.at)} · ${latest.summary}` : t("Nothing recorded yet.")}
+        <span>{t("Saved in this app's database, not in your project.")}</span>
       </footer>
 
       {amendOpen && (
@@ -1596,11 +1648,11 @@ export function OdysseyPane({ sessionId }: { sessionId: string }) {
       {briefingOpen && (
         <div aria-modal="true" className="modal-backdrop" onClick={() => setBriefingOpen(false)} role="dialog">
           <div className="modal odyssey-briefing" onClick={(event) => event.stopPropagation()}>
-            <h2>What the session will be told</h2>
-            <p className="small muted">This exact text is submitted once when the goal starts. Continuations after it are one or two lines.</p>
+            <h2>{t("What the session will be told")}</h2>
+            <p className="small muted">{t("This exact text is submitted once when the goal starts. Continuations after it are one or two lines.")}</p>
             <pre className="text">{briefing}</pre>
             <button className="button" onClick={() => setBriefingOpen(false)} type="button">
-              Close
+              {t("Close")}
             </button>
           </div>
         </div>

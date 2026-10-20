@@ -10,6 +10,7 @@
  */
 import type { AmendmentRecord, OdysseyRecord, WorkspaceNotes } from "@thingmaker/contracts";
 import { fileNameOf, isPlanDocument } from "./odysseyDocument";
+import { t } from "./i18n";
 
 export type DocumentSource =
   /** A file in the workspace, read through the explorer. */
@@ -38,11 +39,11 @@ function kilobytes(bytes: number): string {
 
 function age(ms: number): string {
   const minutes = Math.round(Math.max(0, ms) / 60_000);
-  if (minutes < 1) return "just now";
-  if (minutes < 60) return `${minutes}m ago`;
+  if (minutes < 1) return t("just now");
+  if (minutes < 60) return t("{n}m ago", { n: minutes });
   const hours = Math.floor(minutes / 60);
-  if (hours < 48) return `${hours}h ago`;
-  return `${Math.floor(hours / 24)}d ago`;
+  if (hours < 48) return t("{n}h ago", { n: hours });
+  return t("{n}d ago", { n: Math.floor(hours / 24) });
 }
 
 function dayOf(at: number): string {
@@ -72,7 +73,7 @@ export function documentEntries(input: {
       id: "plan",
       group: "plan",
       label: goal.planSource,
-      meta: `stored with the goal${goal.planDocumentBytes ? ` · ${kilobytes(goal.planDocumentBytes)}` : ""}`,
+      meta: `${t("stored with the goal")}${goal.planDocumentBytes ? ` · ${kilobytes(goal.planDocumentBytes)}` : ""}`,
       source: { kind: "stored_plan", goalId: goal.id },
       markdown: isPlanDocument(goal.planSource),
     });
@@ -85,7 +86,7 @@ export function documentEntries(input: {
         id: `doc-${record.id}`,
         group: "added",
         label: record.documentSource,
-        meta: `attached ${dayOf(record.at)}${record.documentBytes ? ` · ${kilobytes(record.documentBytes)}` : ""} · not in the workspace`,
+        meta: `${t("attached {day}", { day: dayOf(record.at) })}${record.documentBytes ? ` · ${kilobytes(record.documentBytes)}` : ""} · ${t("not in the workspace")}`,
         source: { kind: "amendment", amendmentId: record.id },
         markdown: isPlanDocument(record.documentSource),
       });
@@ -98,7 +99,7 @@ export function documentEntries(input: {
         id: `ref-${record.id}-${reference.path}`,
         group: "added",
         label: fileNameOf(reference.path),
-        meta: `${reference.path} · ${reference.detail} · added ${dayOf(record.at)}`,
+        meta: `${reference.path} · ${reference.detail} · ${t("added {day}", { day: dayOf(record.at) })}`,
         source: folder ? null : { kind: "file", path: reference.path },
         markdown: !folder && isPlanDocument(reference.path),
       });
@@ -110,7 +111,7 @@ export function documentEntries(input: {
       id: "state-note",
       group: "notes",
       label: fileNameOf(notes.state.path),
-      meta: `${notes.state.path} · updated ${age(now - notes.state.modifiedAtUnixMs)}`,
+      meta: `${notes.state.path} · ${t("updated {age}", { age: age(now - notes.state.modifiedAtUnixMs) })}`,
       source: { kind: "file", path: notes.state.path },
       markdown: true,
     });
@@ -118,14 +119,14 @@ export function documentEntries(input: {
   for (const note of notes?.agentNotes ?? []) {
     if (seen.has(note.path)) continue;
     seen.add(note.path);
-    entries.push({ id: `agent-${note.path}`, group: "notes", label: fileNameOf(note.path), meta: `${note.path} · written ${age(now - note.modifiedAtUnixMs)}`, source: { kind: "file", path: note.path }, markdown: true });
+    entries.push({ id: `agent-${note.path}`, group: "notes", label: fileNameOf(note.path), meta: `${note.path} · ${t("written {age}", { age: age(now - note.modifiedAtUnixMs) })}`, source: { kind: "file", path: note.path }, markdown: true });
   }
 
   return entries;
 }
 
 export const GROUP_LABEL: Record<DocumentEntry["group"], string> = {
-  plan: "Plan",
-  added: "Added along the way",
-  notes: "The agent's notes",
+  plan: t("Plan"),
+  added: t("Added along the way"),
+  notes: t("The agent's notes"),
 };

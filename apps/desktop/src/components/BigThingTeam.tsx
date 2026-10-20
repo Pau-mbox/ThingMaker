@@ -4,20 +4,48 @@
  * branch, the timeline of who did each milestone, and the project's shared
  * memory. All of it reads the record; actions go to the engine.
  */
-import { useCallback, useEffect, useState } from "react";
+import { Fragment, useCallback, useEffect, useState, type ReactNode } from "react";
 import { PROVIDER_LABELS, type AccountPolicy, type Dispatch, type GoalEdit, type MemoryEntry, type MemoryKind, type OdysseyView, type Provider, type RunCommit } from "@thingmaker/contracts";
 import { api } from "../ipc";
 import { useStore } from "../store";
+import { t } from "../i18n";
 
-const DISPATCH_LABEL: Record<Dispatch, string> = { agent: "The orchestrator delegates", runner: "Big Thing hands out the tasks" };
+/**
+ * A translated sentence with elements in it: `{name}` placeholders the
+ * translation left in place are filled with `nodes`, so word order can change.
+ */
+export function fill(text: string, nodes: Record<string, ReactNode>): ReactNode {
+  return text.split(/\{(\w+)\}/g).map((part, index) => (index % 2 === 1 ? <Fragment key={index}>{part in nodes ? nodes[part] : `{${part}}`}</Fragment> : part));
+}
+
+const DISPATCH_LABEL: Record<Dispatch, string> = { agent: t("The orchestrator delegates"), runner: t("Big Thing hands out the tasks") };
 const DISPATCH_HINT: Record<Dispatch, string> = {
-  agent: "The orchestrator decides which task goes to which worker, through its team tools.",
-  runner: "Ready tasks — nothing they depend on is still open — go to the team's workers in parallel, by the capability each task names. The orchestrator plans, verifies and reports.",
+  agent: t("The orchestrator decides which task goes to which worker, through its team tools."),
+  runner: t("Ready tasks — nothing they depend on is still open — go to the team's workers in parallel, by the capability each task names. The orchestrator plans, verifies and reports."),
 };
-const POLICY_LABEL: Record<AccountPolicy, string> = { drain: "Use one account until it runs out", spread: "Spread across the accounts" };
+const POLICY_LABEL: Record<AccountPolicy, string> = { drain: t("Use one account until it runs out"), spread: t("Spread across the accounts") };
 const POLICY_HINT: Record<AccountPolicy, string> = {
-  drain: "The run stays where it is and moves only when this account is spent and another is not. Each move costs a fresh briefing.",
-  spread: "At a milestone boundary the run moves to the account with clearly more room left, so both windows last longer. Needs “Either account”.",
+  drain: t("The run stays where it is and moves only when this account is spent and another is not. Each move costs a fresh briefing."),
+  spread: t("At a milestone boundary the run moves to the account with clearly more room left, so both windows last longer. Needs “Either account”."),
+};
+
+/** A milestone's state as shown; the state itself stays the record's. */
+const MILESTONE_STATE_LABEL: Record<string, string> = {
+  planned: t("planned"),
+  active: t("active"),
+  reported: t("reported"),
+  verified: t("verified"),
+  failed: t("failed"),
+  skipped: t("skipped"),
+};
+
+/** A memory kind as shown; the kind itself is what the agents read. */
+const KIND_LABEL: Record<MemoryKind, string> = {
+  decision: t("decision"),
+  convention: t("convention"),
+  fact: t("fact"),
+  todo: t("todo"),
+  warning: t("warning"),
 };
 
 /** Settings rows for the engine's options. */
@@ -29,8 +57,8 @@ export function RunOptions({ view, onEdit }: { view: OdysseyView; onEdit: (edit:
   return (
     <>
       <label className="odyssey-field">
-        <span className="small">Who hands out the tasks</span>
-        <select aria-label="Who hands out the tasks" className="select" onChange={(event) => onEdit({ dispatch: event.target.value as Dispatch })} value={dispatch}>
+        <span className="small">{t("Who hands out the tasks")}</span>
+        <select aria-label={t("Who hands out the tasks")} className="select" onChange={(event) => onEdit({ dispatch: event.target.value as Dispatch })} value={dispatch}>
           {(Object.keys(DISPATCH_LABEL) as Dispatch[]).map((value) => (
             <option key={value} value={value}>
               {DISPATCH_LABEL[value]}
@@ -42,12 +70,12 @@ export function RunOptions({ view, onEdit }: { view: OdysseyView; onEdit: (edit:
       {dispatch === "runner" && (
         <label className="odyssey-toggle">
           <input checked={!!goal.reviewTasks} onChange={(event) => onEdit({ reviewTasks: event.target.checked })} type="checkbox" />
-          <span className="small">Review every finished task on another provider before it counts as done</span>
+          <span className="small">{t("Review every finished task on another provider before it counts as done")}</span>
         </label>
       )}
       <label className="odyssey-field">
-        <span className="small">How it spends the accounts</span>
-        <select aria-label="How it spends the accounts" className="select" onChange={(event) => onEdit({ accountPolicy: event.target.value as AccountPolicy })} value={policy}>
+        <span className="small">{t("How it spends the accounts")}</span>
+        <select aria-label={t("How it spends the accounts")} className="select" onChange={(event) => onEdit({ accountPolicy: event.target.value as AccountPolicy })} value={policy}>
           {(Object.keys(POLICY_LABEL) as AccountPolicy[]).map((value) => (
             <option key={value} value={value}>
               {POLICY_LABEL[value]}
@@ -55,19 +83,15 @@ export function RunOptions({ view, onEdit }: { view: OdysseyView; onEdit: (edit:
           ))}
         </select>
         <span className="small muted">
-          {POLICY_HINT[policy]} Either way, a turn the forecast says would not fit is moved or held until the reset before it is sent.
+          {POLICY_HINT[policy]} {t("Either way, a turn the forecast says would not fit is moved or held until the reset before it is sent.")}
         </span>
       </label>
       <label className="odyssey-toggle">
         <input checked={!!goal.isolate || isolated} disabled={isolated || goal.state !== "draft"} onChange={(event) => onEdit({ isolate: event.target.checked })} type="checkbox" />
         <span className="small">
-          {isolated ? (
-            <>
-              Runs in its own worktree on <span className="mono">{goal.branch}</span>
-            </>
-          ) : (
-            "Run in its own branch and worktree (Git repositories; chosen before the run starts)"
-          )}
+          {isolated
+            ? fill(t("Runs in its own worktree on {branch}"), { branch: <span className="mono">{goal.branch}</span> })
+            : t("Run in its own branch and worktree (Git repositories; chosen before the run starts)")}
         </span>
       </label>
     </>
@@ -93,10 +117,10 @@ export function WorktreeCard({ view, sessionId }: { view: OdysseyView; sessionId
 
   const rollback = async (commit: RunCommit) => {
     const confirmed = await api.confirmDialog({
-      title: "Roll the run back to this checkpoint?",
-      message: `Everything the run did after “${commit.subject}” is dropped from its worktree, including files it has not committed. Your own checkout is not touched. The run is paused afterwards.`,
-      okLabel: "Roll back",
-      cancelLabel: "Keep it",
+      title: t("Roll the run back to this checkpoint?"),
+      message: t("Everything the run did after “{subject}” is dropped from its worktree, including files it has not committed. Your own checkout is not touched. The run is paused afterwards.", { subject: commit.subject }),
+      okLabel: t("Roll back"),
+      cancelLabel: t("Keep it"),
       warning: true,
     });
     if (!confirmed) return;
@@ -116,7 +140,13 @@ export function WorktreeCard({ view, sessionId }: { view: OdysseyView; sessionId
     setBusy(true);
     try {
       const outcome = await api.bigthingMerge(goal.id);
-      setMerged(outcome.outcome === "merged" ? `Merged (${outcome.commit.slice(0, 10)}).` : outcome.outcome === "up_to_date" ? "Nothing to merge." : `It would conflict in ${outcome.files.join(", ")}; nothing was changed.`);
+      setMerged(
+        outcome.outcome === "merged"
+          ? t("Merged ({commit}).", { commit: outcome.commit.slice(0, 10) })
+          : outcome.outcome === "up_to_date"
+            ? t("Nothing to merge.")
+            : t("It would conflict in {files}; nothing was changed.", { files: outcome.files.join(", ") }),
+      );
       await refresh(sessionId, goal.id);
     } catch (error) {
       setError(error);
@@ -128,16 +158,17 @@ export function WorktreeCard({ view, sessionId }: { view: OdysseyView; sessionId
   return (
     <section className="card odyssey-branch">
       <header className="work-head">
-        <span className="work-title">Branch</span>
+        <span className="work-title">{t("Branch")}</span>
         <span className="small mono">{goal.branch}</span>
       </header>
       <p className="small muted">
-        The run works in <span className="mono">{goal.worktreePath}</span>. Every turn that changed something is a commit here; your checkout stays as it was until
-        you merge.
+        {fill(t("The run works in {path}. Every turn that changed something is a commit here; your checkout stays as it was until you merge."), {
+          path: <span className="mono">{goal.worktreePath}</span>,
+        })}
       </p>
       <div className="row wrap">
         <button className="button button-small button-primary" disabled={busy} onClick={() => void merge()} type="button">
-          Merge into the checkout
+          {t("Merge into the checkout")}
         </button>
         {merged && <span className="small">{merged}</span>}
       </div>
@@ -148,19 +179,28 @@ export function WorktreeCard({ view, sessionId }: { view: OdysseyView; sessionId
               <span className="mono small">{commit.commit.slice(0, 8)}</span>
               <span className="small odyssey-grow">{commit.subject}</span>
               <button className="link small" disabled={busy} onClick={() => void rollback(commit)} type="button">
-                roll back to here
+                {t("roll back to here")}
               </button>
             </li>
           ))}
         </ol>
       ) : (
-        <p className="small muted">No checkpoints committed yet.</p>
+        <p className="small muted">{t("No checkpoints committed yet.")}</p>
       )}
     </section>
   );
 }
 
 type Worked = { provider?: Provider; model?: string; prompts: number; first: number; last: number };
+
+function ledBy(entry: Worked): string {
+  const values = {
+    who: `${entry.provider ? PROVIDER_LABELS[entry.provider] : t("an earlier build")}${entry.model ? ` · ${entry.model}` : ""}`,
+    count: entry.prompts,
+    when: new Date(entry.first).toLocaleString([], { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }),
+  };
+  return entry.prompts === 1 ? t("Led by {who} — {count} continuation, {when}", values) : t("Led by {who} — {count} continuations, {when}", values);
+}
 
 /** Who worked each milestone, from the record: the prompts and the tasks. */
 export function Timeline({ view }: { view: OdysseyView }) {
@@ -175,16 +215,16 @@ export function Timeline({ view }: { view: OdysseyView }) {
       current.last = Math.max(current.last, entry.at);
       by.set(key, current);
     }
-    const workers = milestone.steps.filter((step) => step.agentName || step.harness).map((step) => ({ step, owner: step.model ? `${step.harness ?? "worker"} · ${step.model}` : (step.harness ?? step.agentName ?? "") }));
+    const workers = milestone.steps.filter((step) => step.agentName || step.harness).map((step) => ({ step, owner: step.model ? `${step.harness ?? t("worker")} · ${step.model}` : (step.harness ?? step.agentName ?? "") }));
     return { milestone, index, orchestrators: [...by.values()], workers };
   });
   return (
     <section className="card odyssey-team-timeline">
       <header className="work-head">
-        <span className="work-title">Who did what</span>
+        <span className="work-title">{t("Who did what")}</span>
       </header>
       {rows.length === 0 ? (
-        <p className="small muted">No milestones yet.</p>
+        <p className="small muted">{t("No milestones yet.")}</p>
       ) : (
         <ol className="odyssey-who">
           {rows.map(({ milestone, index, orchestrators, workers }) => (
@@ -193,20 +233,18 @@ export function Timeline({ view }: { view: OdysseyView }) {
                 <strong className="small">
                   {index + 1}. {milestone.title}
                 </strong>
-                <span className="chip small">{milestone.state}</span>
+                <span className="chip small">{MILESTONE_STATE_LABEL[milestone.state] ?? milestone.state}</span>
               </div>
-              {orchestrators.length === 0 && workers.length === 0 && <p className="small muted">Not worked yet.</p>}
+              {orchestrators.length === 0 && workers.length === 0 && <p className="small muted">{t("Not worked yet.")}</p>}
               {orchestrators.map((entry) => (
                 <p className="small" key={`${entry.provider}-${entry.model}`}>
-                  Led by {entry.provider ? PROVIDER_LABELS[entry.provider] : "an earlier build"}
-                  {entry.model ? ` · ${entry.model}` : ""} — {entry.prompts} continuation{entry.prompts === 1 ? "" : "s"},{" "}
-                  {new Date(entry.first).toLocaleString([], { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}
+                  {ledBy(entry)}
                 </p>
               ))}
               {workers.map(({ step, owner }) => (
                 <p className="small muted" key={step.id}>
                   {step.agentName ?? step.title}: {owner}
-                  {step.review ? ` · review: ${step.review}` : ""}
+                  {step.review ? ` · ${t("review: {review}", { review: step.review })}` : ""}
                 </p>
               ))}
             </li>
@@ -249,10 +287,10 @@ export function MemoryPanel({ workspaceId, goalUpdatedAt }: { workspaceId: strin
   return (
     <section className="card odyssey-memory">
       <header className="work-head">
-        <span className="work-title">Project memory</span>
-        <span className="small muted">{entries ? `${entries.length} entr${entries.length === 1 ? "y" : "ies"}` : ""}</span>
+        <span className="work-title">{t("Project memory")}</span>
+        <span className="small muted">{entries ? (entries.length === 1 ? t("{count} entry", { count: 1 }) : t("{count} entries", { count: entries.length })) : ""}</span>
       </header>
-      <p className="small muted">The orchestrator and its workers read this with memory_read and add to it with memory_write. What you add here they see on their next read.</p>
+      <p className="small muted">{t("The orchestrator and its workers read this with memory_read and add to it with memory_write. What you add here they see on their next read.")}</p>
       <form
         className="odyssey-memory-add"
         onSubmit={(event) => {
@@ -260,17 +298,17 @@ export function MemoryPanel({ workspaceId, goalUpdatedAt }: { workspaceId: strin
           void add();
         }}
       >
-        <select aria-label="Kind" className="select" onChange={(event) => setKind(event.target.value as MemoryKind)} value={kind}>
+        <select aria-label={t("Kind")} className="select" onChange={(event) => setKind(event.target.value as MemoryKind)} value={kind}>
           {KINDS.map((value) => (
             <option key={value} value={value}>
-              {value}
+              {KIND_LABEL[value]}
             </option>
           ))}
         </select>
-        <input aria-label="Memory title" className="input" onChange={(event) => setTitle(event.target.value)} placeholder="e.g. Prices are integers in cents" value={title} />
-        <textarea aria-label="Memory body" className="textarea" onChange={(event) => setBody(event.target.value)} placeholder="Why, and anything the team must respect." rows={2} value={body} />
+        <input aria-label={t("Memory title")} className="input" onChange={(event) => setTitle(event.target.value)} placeholder={t("e.g. Prices are integers in cents")} value={title} />
+        <textarea aria-label={t("Memory body")} className="textarea" onChange={(event) => setBody(event.target.value)} placeholder={t("Why, and anything the team must respect.")} rows={2} value={body} />
         <button className="button button-small" disabled={!title.trim()} type="submit">
-          Add to memory
+          {t("Add to memory")}
         </button>
       </form>
       {entries && entries.length > 0 && (
@@ -278,7 +316,7 @@ export function MemoryPanel({ workspaceId, goalUpdatedAt }: { workspaceId: strin
           {entries.map((entry) => (
             <li key={entry.id}>
               <div className="row wrap">
-                <span className="chip small">{entry.kind}</span>
+                <span className="chip small">{KIND_LABEL[entry.kind] ?? entry.kind}</span>
                 <strong className="small odyssey-grow">{entry.title}</strong>
                 <span className="small muted">{entry.author}</span>
                 <button
@@ -291,7 +329,7 @@ export function MemoryPanel({ workspaceId, goalUpdatedAt }: { workspaceId: strin
                   }
                   type="button"
                 >
-                  remove
+                  {t("remove")}
                 </button>
               </div>
               {entry.body && <p className="small muted">{entry.body}</p>}

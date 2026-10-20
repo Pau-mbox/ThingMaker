@@ -15,6 +15,7 @@ import { IntegrationsPanel } from "./components/IntegrationsPanel";
 import { TeamsView } from "./components/TeamsView";
 import { CommandPalette } from "./components/CommandPalette";
 import { IconFolder, IconKey } from "./components/icons";
+import { t } from "./i18n";
 
 const ChillView = lazy(() => import("./chill/ChillView"));
 
@@ -23,15 +24,18 @@ function Welcome() {
   const setView = useStore((s) => s.setView);
   const loadProviders = useStore((s) => s.loadProviders);
   const workspaces = useStore((s) => s.workspaces);
+  const [executionBefore, executionAfter] = t(
+    "Execution is {mode}: agents' tools run with your full user authority. Review a workspace's executable configuration before trusting it.",
+  ).split("{mode}");
   return (
     <div className="welcome">
       <div className="welcome-card">
         <img className="welcome-brand-icon" src={`${import.meta.env.BASE_URL}thingmaker-icon.png`} alt="" draggable={false} />
         <h1>ThingMaker</h1>
-        <p className="muted">One desktop for Claude Code and Codex on your own subscriptions: sessions you can observe, steer, review and hand between providers.</p>
+        <p className="muted">{t("One desktop for Claude Code and Codex on your own subscriptions: sessions you can observe, steer, review and hand between providers.")}</p>
         <div className="welcome-actions">
           <button className="button button-primary" onClick={() => void addWorkspaceByPicker()} type="button">
-            <IconFolder size={15} /> {workspaces.length === 0 ? "Add a project folder" : "Add another folder"}
+            <IconFolder size={15} /> {workspaces.length === 0 ? t("Add a project folder") : t("Add another folder")}
           </button>
           <button
             className="button"
@@ -41,26 +45,43 @@ function Welcome() {
             }}
             type="button"
           >
-            <IconKey size={15} /> Set up providers
+            <IconKey size={15} /> {t("Set up providers")}
           </button>
         </div>
         <dl className="welcome-keys">
           <dt>⌘K</dt>
-          <dd>command palette</dd>
+          <dd>{t("command palette")}</dd>
           <dt>⌘N</dt>
-          <dd>new session in the selected workspace</dd>
+          <dd>{t("new session in the selected workspace")}</dd>
           <dt>⌘1–9</dt>
-          <dd>switch sessions</dd>
+          <dd>{t("switch sessions")}</dd>
           <dt>⌘B</dt>
-          <dd>toggle sidebar</dd>
+          <dd>{t("toggle sidebar")}</dd>
         </dl>
         <p className="small muted">
-          Execution is <strong>Trusted local · host access</strong>: agents' tools run with your full user authority. Review a workspace's executable configuration before
-          trusting it.
+          {executionBefore}
+          <strong>{t("Trusted local · host access")}</strong>
+          {executionAfter}
         </p>
       </div>
     </div>
   );
+}
+
+/** What an error says about trying again, in words. */
+function retryLabel(retry: string): string {
+  switch (retry) {
+    case "never":
+      return t("trying again will not help");
+    case "read_only":
+      return t("safe to try again");
+    case "after_reconcile":
+      return t("try again once reconnected");
+    case "user_action":
+      return t("check before trying again");
+    default:
+      return retry;
+  }
 }
 
 export function App() {
@@ -111,24 +132,24 @@ export function App() {
       <CloseRequestDialog />
       <LockedResumeDialog />
       {IS_REMOTE && !chillMode && <ConnectionBanner />}
-      {chillMode && <ErrorBoundary label="Chill" onReset={() => setChillMode(false)} fallback={<div className="chill" role="alert" aria-label="Chill rendering unavailable"><button aria-label="Back to work" onClick={() => setChillMode(false)}><svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor"><path d="M9 5H5v14h4M13 8l4 4-4 4M9 12h11" /></svg></button></div>}><Suspense fallback={<div className="chill" aria-label="Opening Chill" />}><ChillView onExit={() => setChillMode(false)} /></Suspense></ErrorBoundary>}
+      {chillMode && <ErrorBoundary label="Chill" onReset={() => setChillMode(false)} fallback={<div className="chill" role="alert" aria-label={t("Chill rendering unavailable")}><button aria-label={t("Back to work")} onClick={() => setChillMode(false)}><svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor"><path d="M9 5H5v14h4M13 8l4 4-4 4M9 12h11" /></svg></button></div>}><Suspense fallback={<div className="chill" aria-label={t("Opening Chill")} />}><ChillView onExit={() => setChillMode(false)} /></Suspense></ErrorBoundary>}
       <div className="shell" style={chillMode ? { display: "none" } : undefined}>
         {!sidebarCollapsed && (
-          <ErrorBoundary label="sidebar">
+          <ErrorBoundary label={t("sidebar")}>
             <Sidebar />
           </ErrorBoundary>
         )}
-        {IS_REMOTE && !sidebarCollapsed && <button aria-label="Close the menu" className="mobile-sidebar-backdrop" onClick={toggleSidebar} type="button" />}
+        {IS_REMOTE && !sidebarCollapsed && <button aria-label={t("Close the menu")} className="mobile-sidebar-backdrop" onClick={toggleSidebar} type="button" />}
         <section className="main">
-          <ErrorBoundary label="top bar">
+          <ErrorBoundary label={t("top bar")}>
             <TopBar />
           </ErrorBoundary>
           {error && (
             <div className="banner banner-error" role="alert">
               <strong>{error.code}</strong> {error.message}
-              <span className="muted"> (retry: {error.retry.replace("_", " ")})</span>
+              <span className="muted"> ({retryLabel(error.retry)})</span>{" "}
               <button className="link" onClick={clearError} type="button">
-                dismiss
+                {t("dismiss")}
               </button>
             </div>
           )}
@@ -137,11 +158,11 @@ export function App() {
               {busy}…
             </div>
           )}
-          <ErrorBoundary label="attention banner">
+          <ErrorBoundary label={t("attention banner")}>
             <AttentionBanner />
           </ErrorBoundary>
           <div className="main-pane">
-            <ErrorBoundary key={view.kind === "session" ? view.sessionId : view.kind} label={`${view.kind} view`}>
+            <ErrorBoundary key={view.kind === "session" ? view.sessionId : view.kind} label={t("{view} view", { view: view.kind })}>
               {view.kind === "welcome" && <Welcome />}
               {view.kind === "workspace" && <WorkspaceView key={view.workspaceId} workspaceId={view.workspaceId} />}
               {view.kind === "session" && <SessionPanel key={view.sessionId} sessionId={view.sessionId} />}

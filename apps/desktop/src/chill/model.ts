@@ -5,6 +5,7 @@ import type {
   ActivityGoal,
   WorkspaceRecord,
 } from "@thingmaker/contracts";
+import { t } from "../i18n";
 export type ActivityActorView = ActivityActor & {
   reason: string | null;
   retryAt: number | null;
@@ -53,11 +54,11 @@ export function projectsOf(
       ...actor,
       status: stale ? "unknown" : actor.status,
       reason: stale
-        ? "No recent activity reported"
+        ? t("No recent activity reported")
         : actor.status === "unknown"
           ? actor.native
-            ? "Child completion has not been reported"
-            : "Current session state is uncertain"
+            ? t("Child completion has not been reported")
+            : t("Current session state is uncertain")
           : (actor.waitingReason ?? null),
       retryAt: actor.retryAtUnixMs ?? null,
       jobId: null,
@@ -154,13 +155,13 @@ export function projectsOf(
   });
 }
 export function ageLabel(at: number, now: number): string {
-  if (!at) return "Recency unknown";
+  if (!at) return t("Recency unknown");
   const seconds = Math.max(0, Math.floor((now - at) / 1000));
   return seconds < 60
-    ? "Just now"
+    ? t("Just now")
     : seconds < 3600
-      ? `${Math.floor(seconds / 60)}m ago`
+      ? t("{n}m ago", { n: Math.floor(seconds / 60) })
       : seconds < 86400
-        ? `${Math.floor(seconds / 3600)}h ago`
-        : `${Math.floor(seconds / 86400)}d ago`;
+        ? t("{n}h ago", { n: Math.floor(seconds / 3600) })
+        : t("{n}d ago", { n: Math.floor(seconds / 86400) });
 }

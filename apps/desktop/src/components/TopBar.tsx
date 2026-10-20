@@ -7,6 +7,7 @@ import { IS_REMOTE } from "../remote/mode";
 import { useEffect } from "react";
 import { basenameOf, sessionTitle, useStore } from "../store";
 import { IconBranch, IconCommand, IconExport, IconPlug, IconSidebar } from "./icons";
+import { t } from "../i18n";
 
 export function TopBar() {
   const view = useStore((s) => s.view);
@@ -43,22 +44,22 @@ export function TopBar() {
     }
   } else if (view.kind === "workspace") {
     const workspace = workspaces.find((w) => w.id === view.workspaceId);
-    title = workspace ? basenameOf(workspace.displayPath) : "Workspace";
+    title = workspace ? basenameOf(workspace.displayPath) : t("Workspace");
     subtitle = workspace?.displayPath ?? null;
-  } else if (view.kind === "signin") title = "Sign-in";
-  else if (view.kind === "settings") title = "Settings";
-  else if (view.kind === "teams") title = "Teams";
-  else if (view.kind === "integrations") title = "Integrations";
+  } else if (view.kind === "signin") title = t("Sign-in");
+  else if (view.kind === "settings") title = t("Settings");
+  else if (view.kind === "teams") title = t("Teams");
+  else if (view.kind === "integrations") title = t("Integrations");
 
   return (
     <header className={`topbar ${sidebarCollapsed && !IS_REMOTE ? "topbar-inset" : ""}`} data-tauri-drag-region>
       {IS_REMOTE && (
-        <button aria-label="Workspaces and sessions" className="icon-button" onClick={toggleSidebar} type="button">
+        <button aria-label={t("Workspaces and sessions")} className="icon-button" onClick={toggleSidebar} type="button">
           <IconSidebar />
         </button>
       )}
       {sidebarCollapsed && !IS_REMOTE && (
-        <button aria-label="Show sidebar (⌘B)" className="icon-button" onClick={toggleSidebar} title="Show sidebar (⌘B)" type="button">
+        <button aria-label={t("Show sidebar (⌘B)")} className="icon-button" onClick={toggleSidebar} title={t("Show sidebar (⌘B)")} type="button">
           <IconSidebar />
         </button>
       )}
@@ -76,24 +77,26 @@ export function TopBar() {
             className="branch-chip"
             disabled={view.kind !== "session"}
             onClick={() => setSessionTab("changes")}
-            title={`Git ${repo.detached ? "detached at" : "branch"} ${repo.head}${repo.upstream ? ` · tracking ${repo.upstream}` : " · no upstream"}${
-              repo.ahead || repo.behind ? ` · ${repo.ahead} ahead, ${repo.behind} behind` : ""
-            }\n${repo.root}${view.kind === "session" ? "\nOpen the Changes tab" : ""}`}
+            title={`${[
+              repo.detached ? t("Git detached at {head}", { head: repo.head }) : t("Git branch {head}", { head: repo.head }),
+              repo.upstream ? t("tracking {upstream}", { upstream: repo.upstream }) : t("no upstream"),
+              ...(repo.ahead || repo.behind ? [t("{ahead} ahead, {behind} behind", { ahead: repo.ahead, behind: repo.behind })] : []),
+            ].join(" · ")}\n${repo.root}${view.kind === "session" ? `\n${t("Open the Changes tab")}` : ""}`}
             type="button"
           >
             <IconBranch size={13} />
             <span className="branch-name">{repo.head}</span>
-            {repo.detached && <span className="branch-flag">detached</span>}
+            {repo.detached && <span className="branch-flag">{t("detached")}</span>}
             {repo.ahead > 0 && <span className="branch-count">↑{repo.ahead}</span>}
             {repo.behind > 0 && <span className="branch-count">↓{repo.behind}</span>}
           </button>
         )}
         {view.kind === "session" && (
           <button
-            aria-label="Export the transcript as Markdown"
+            aria-label={t("Export the transcript as Markdown")}
             className="icon-button icon-button-xs topbar-quiet remote-hidden"
             onClick={() => void exportTranscript(view.sessionId)}
-            title="Export the transcript as Markdown…"
+            title={t("Export the transcript as Markdown…")}
             type="button"
           >
             <IconExport size={14} />
@@ -101,16 +104,16 @@ export function TopBar() {
         )}
       </div>
       <div className="topbar-actions">
-        <button className="button small" title="Enter Chill mode (⌘⇧C)" onClick={() => useStore.getState().setChillMode(true)} type="button">☾ Chill</button>
+        <button className="button small" title={t("Enter Chill mode (⌘⇧C)")} onClick={() => useStore.getState().setChillMode(true)} type="button">☾ Chill</button>
         <button
           className={`icon-button remote-hidden ${view.kind === "integrations" ? "on" : ""}`}
           onClick={() => setView({ kind: "integrations" })}
-          title="MCP, plugins, skills and harnesses (⌘I)"
+          title={t("MCP, plugins, skills and harnesses (⌘I)")}
           type="button"
         >
           <IconPlug />
         </button>
-        <button className="icon-button remote-hidden" onClick={() => setPaletteOpen(true)} title="Command palette (⌘K)" type="button">
+        <button className="icon-button remote-hidden" onClick={() => setPaletteOpen(true)} title={t("Command palette (⌘K)")} type="button">
           <IconCommand />
         </button>
       </div>

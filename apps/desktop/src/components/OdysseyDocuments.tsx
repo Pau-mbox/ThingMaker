@@ -15,6 +15,7 @@ import { Markdown } from "../markdown";
 import { useStore } from "../store";
 import { GROUP_LABEL, documentEntries, type DocumentEntry, type DocumentSource } from "../odysseyDocuments";
 import { IconBox, IconFolder, IconMessage, IconX } from "./icons";
+import { t } from "../i18n";
 
 /** Lines read in one go; the largest plan document so far was 2,400. */
 const READ_LINES = 20_000;
@@ -26,27 +27,27 @@ async function load(workspaceId: string, source: DocumentSource, fallbackGoalId:
     case "file": {
       try {
         const read = await api.fileRead(workspaceId, source.path, 0, READ_LINES);
-        if (read.binary) return { text: "", note: "This file is binary and cannot be shown here." };
-        return { text: read.content, note: read.truncated ? `Showing the first ${read.returnedLines.toLocaleString()} of ${read.totalLines.toLocaleString()} lines.` : null };
+        if (read.binary) return { text: "", note: t("This file is binary and cannot be shown here.") };
+        return { text: read.content, note: read.truncated ? t("Showing the first {shown} of {total} lines.", { shown: read.returnedLines.toLocaleString(), total: read.totalLines.toLocaleString() }) : null };
       } catch (error) {
         // A plan document that has gone from the workspace still exists as
         // the copy stored with the goal; say which one is being shown.
         if (fallbackGoalId) {
           const stored = await api.odysseyPlanDocument(fallbackGoalId);
-          if (stored) return { text: stored, note: "The file could not be read from the workspace; this is the copy stored with the goal when it was created." };
+          if (stored) return { text: stored, note: t("The file could not be read from the workspace; this is the copy stored with the goal when it was created.") };
         }
         throw error;
       }
     }
     case "stored_plan": {
       const stored = await api.odysseyPlanDocument(source.goalId);
-      if (!stored) throw new Error("This goal has no stored plan document.");
-      return { text: stored, note: "The copy stored with the goal when it was created." };
+      if (!stored) throw new Error(t("This goal has no stored plan document."));
+      return { text: stored, note: t("The copy stored with the goal when it was created.") };
     }
     case "amendment": {
       const document = await api.odysseyAmendDocument(source.amendmentId);
-      if (!document) throw new Error("This amendment's document is no longer stored.");
-      return { text: document, note: "Quoted to the agent in its prompt, because the file is outside the workspace." };
+      if (!document) throw new Error(t("This amendment's document is no longer stored."));
+      return { text: document, note: t("Quoted to the agent in its prompt, because the file is outside the workspace.") };
     }
   }
 }
@@ -84,10 +85,10 @@ function DocumentViewer({ entry, workspaceId, goalId, onClose }: { entry: Docume
           <span className="row-actions">
             {entry.markdown && (
               <button className="link small" onClick={() => setRaw(!raw)} type="button">
-                {raw ? "rendered" : "raw text"}
+                {raw ? t("rendered") : t("raw text")}
               </button>
             )}
-            <button aria-label="Close" className="icon-button" onClick={onClose} type="button">
+            <button aria-label={t("Close")} className="icon-button" onClick={onClose} type="button">
               <IconX size={14} />
             </button>
           </span>
@@ -95,7 +96,7 @@ function DocumentViewer({ entry, workspaceId, goalId, onClose }: { entry: Docume
         {loaded?.note && <p className="small muted">{loaded.note}</p>}
         {error && <p className="small chip-warn">{error}</p>}
         <div className="odyssey-document-body">
-          {loaded === null && !error && <p className="small muted">Reading…</p>}
+          {loaded === null && !error && <p className="small muted">{t("Reading…")}</p>}
           {loaded && (raw ? <pre className="text">{loaded.text}</pre> : <Markdown source={loaded.text} />)}
         </div>
       </div>
@@ -120,12 +121,10 @@ export function DocumentsCard({ sessionId, view }: { sessionId: string; view: Od
   const groups = (["plan", "added", "notes"] as const).map((group) => ({ group, items: entries.filter((entry) => entry.group === group) })).filter((group) => group.items.length > 0);
 
   return (
-    <section aria-label="Documents" className="card odyssey-documents">
+    <section aria-label={t("Documents")} className="card odyssey-documents">
       <header className="work-head">
-        <span className="work-title">Documents</span>
-        <span className="work-meta small muted">
-          {entries.length} item{entries.length === 1 ? "" : "s"}
-        </span>
+        <span className="work-title">{t("Documents")}</span>
+        <span className="work-meta small muted">{entries.length === 1 ? t("{count} item", { count: 1 }) : t("{count} items", { count: entries.length })}</span>
       </header>
       {groups.map(({ group, items }) => (
         <div className="odyssey-documents-group" key={group}>
@@ -142,7 +141,7 @@ export function DocumentsCard({ sessionId, view }: { sessionId: string; view: Od
                 </span>
                 {entry.source !== null && (
                   <button className="link small" onClick={() => setOpen(entry)} type="button">
-                    View
+                    {t("View")}
                   </button>
                 )}
               </li>

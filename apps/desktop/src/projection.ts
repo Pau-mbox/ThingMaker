@@ -16,12 +16,14 @@ import type {
   SessionEvent,
   SubmissionState,
   ToolPatch,
+  TurnKind,
   TurnPhase,
   CapabilitySnapshot,
   PlanContent,
   QueueView,
   QuotaSnapshot,
 } from "@thingmaker/contracts";
+import { t } from "./i18n";
 
 export type Role = "user" | "agent" | "thought";
 
@@ -324,14 +326,14 @@ export function applyEvent(projection: Projection, envelope: EventEnvelope): Pro
         else if (payload.turnId !== undefined) projection.autonomous.add(payload.turnId);
       } else if (payload.effect === "cancelling") {
         if (payload.kind === "foreground") projection.foreground = "cancelling";
-        pushCard(projection, { kind: "turn", text: "cancellation requested" }, envelope.sequence);
+        pushCard(projection, { kind: "turn", text: t("cancellation requested") }, envelope.sequence);
       } else if (payload.effect === "settled") {
         if (payload.kind === "foreground") projection.foreground = payload.phase;
         else if (payload.turnId !== undefined) projection.autonomous.delete(payload.turnId);
         projection.settledTurns += 1;
         if (payload.phase !== "succeeded") {
           const reason = payload.stopReason ? ` (${payload.stopReason})` : payload.error ? ` (${payload.error})` : "";
-          pushCard(projection, { kind: "turn", text: `${payload.kind} turn ${payload.phase}${reason}` }, envelope.sequence);
+          pushCard(projection, { kind: "turn", text: turnLine(payload.kind, payload.phase, reason) }, envelope.sequence);
         }
       }
       break;
@@ -363,7 +365,7 @@ export function applyEvent(projection: Projection, envelope: EventEnvelope): Pro
     case "overflow":
       pushCard(
         projection,
-        { kind: "diagnostic", text: `${payload.stream} frame of ${payload.bytes} bytes exceeded ${payload.limit}${payload.fatal ? "; attachment failed" : ""}` },
+        { kind: "diagnostic", text: payload.fatal ? t("{stream} frame of {bytes} bytes exceeded {limit}; attachment failed", { stream: payload.stream, bytes: payload.bytes, limit: payload.limit }) : t("{stream} frame of {bytes} bytes exceeded {limit}", { stream: payload.stream, bytes: payload.bytes, limit: payload.limit }) },
         envelope.sequence,
       );
       break;
@@ -445,7 +447,7 @@ function applyUpdate(projection: Projection, update: Extract<SessionEvent, { typ
       }
       break;
     case "compaction":
-      pushCard(projection, { kind: "compaction", text: `compaction ${update.compactionId}: ${update.status}${update.error ? ` (${update.error})` : ""}` }, sequence);
+      pushCard(projection, { kind: "compaction", text: t("compaction {id}: {status}{error}", { id: update.compactionId, status: update.status, error: update.error ? ` (${update.error})` : "" }) }, sequence);
       break;
     case "unknown": {
       const label = typeof (update as Record<string, unknown>).originalKind === "string" ? String((update as Record<string, unknown>).originalKind) : "unknown";
@@ -457,13 +459,36 @@ function applyUpdate(projection: Projection, update: Extract<SessionEvent, { typ
   }
 }
 
+/** A turn that did not succeed, as its transcript line. */
+function turnLine(kind: TurnKind, phase: TurnPhase, reason: string): string {
+  const values = { reason };
+  if (kind === "foreground" && phase === "failed") return t("foreground turn failed{reason}", values);
+  if (kind === "foreground" && phase === "cancelled") return t("foreground turn cancelled{reason}", values);
+  if (kind === "autonomous" && phase === "failed") return t("autonomous turn failed{reason}", values);
+  if (kind === "autonomous" && phase === "cancelled") return t("autonomous turn cancelled{reason}", values);
+  return t("{kind} turn {phase}{reason}", { kind, phase, reason });
+}
+
 function describeRuntimeEvent(event: Extract<SessionEvent, { type: "runtime_event" }>): string {
   switch (event.event) {
-    case "subagent_state_changed":
-      return `subagent ${event.name} (${event.harness}) ${event.status}`;
+    case "subagent_state_changed": {
+      const values = { name: event.name, harness: event.harness };
+      switch (event.status) {
+        case "starting":
+          return t("subagent {name} ({harness}) starting", values);
+        case "working":
+          return t("subagent {name} ({harness}) working", values);
+        case "idle":
+          return t("subagent {name} ({harness}) idle", values);
+        case "removed":
+          return t("subagent {name} ({harness}) removed", values);
+        default:
+          return t("subagent {name} ({harness}) {status}", { ...values, status: String(event.status) });
+      }
+    }
     case "subagent_descendants_removed":
-      return `subagent descendants of ${event.ancestor_id} removed`;
+      return t("subagent descendants of {id} removed", { id: event.ancestor_id });
     default:
-      return "runtime event";
+      return t("runtime event");
   }
 }

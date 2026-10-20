@@ -10,11 +10,12 @@ export function PhoneAppSettings() {
   const native = window.ThingMakerNative;
   const [lock, setLock] = useState(() => native?.lockEnabled?.() ?? true);
   if (!native?.unpair) return null;
-  const mode = native.connectionMode?.() === "direct" ? "through your tunnel" : "through your relay";
+  const direct = native.connectionMode?.() === "direct";
+  const name = native.macName?.() ?? t("Computer");
   return (
     <div className="phone-app-settings small">
       <p className="muted">
-        {native.macName?.() ?? "Computer"}, {mode}
+        {direct ? t("{name}, through your tunnel", { name }) : t("{name}, through your relay", { name })}
       </p>
       {native.setLockEnabled && (
         <label className="check">
@@ -26,7 +27,7 @@ export function PhoneAppSettings() {
             }}
             type="checkbox"
           />{" "}
-          Ask for the fingerprint or screen lock when opening
+          {t("Ask for the fingerprint or screen lock when opening")}
         </label>
       )}
       <label>
@@ -40,11 +41,11 @@ export function PhoneAppSettings() {
       <button
         className="link small"
         onClick={() => {
-          if (window.confirm("Unpair this phone? You can pair it again from the computer's Settings → Phone.")) native.unpair?.();
+          if (window.confirm(t("Unpair this phone? You can pair it again from the computer's Settings → Phone."))) native.unpair?.();
         }}
         type="button"
       >
-        Unpair this phone
+        {t("Unpair this phone")}
       </button>
     </div>
   );

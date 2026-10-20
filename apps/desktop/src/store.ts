@@ -44,6 +44,7 @@ import type {
   QuotaSnapshot,
   QueueOp,
   ProviderVersion,
+  TurnPhase,
 } from "@thingmaker/contracts";
 import { EMPTY_COMBO, JOB_EVENT, SESSION_TITLE_EVENT, type SessionTitleChange, ODYSSEY_STATE_NOTE, PROVIDERS, PROVIDER_LABELS, BIGTHING_EVENT, asConfigOptions, isEffortOption, type Combo, type JobView, type ProviderModel, type BigThingEvent, type BigThingRuntime, type TeamPreset } from "@thingmaker/contracts";
 import { handoffBrief, readPresets, upsertJob, upsertPreset } from "./team";
@@ -51,6 +52,7 @@ import { handoffBrief, readPresets, upsertJob, upsertPreset } from "./team";
 /** Preference keys (scope `ui`) for saved teams. */
 const TEAM_PRESETS_KEY = "teamPresets";
 const DEFAULT_PRESET_KEY = "defaultTeamPreset";
+import { t } from "./i18n";
 import { api } from "./ipc";
 import { notify, shouldNotify } from "./notifications";
 import { CLAUDE_RETRY_MS, claudeUsageFrom } from "./odysseyClaudeQuota";
@@ -472,7 +474,21 @@ export function sessionTitle(session: LiveSession, records?: SessionRecord[]): s
       if (text && text.type === "text" && text.text.trim()) return text.text.trim().slice(0, 60);
     }
   }
-  return `Session ${session.handle.id.replace(/^kw-/, "").slice(0, 8)}`;
+  return t("Session {id}", { id: session.handle.id.replace(/^kw-/, "").slice(0, 8) });
+}
+
+/** What a screen reader hears when a foreground turn settles. */
+function turnAnnouncement(title: string, phase: TurnPhase): string {
+  switch (phase) {
+    case "succeeded":
+      return t("{title}: turn succeeded", { title });
+    case "failed":
+      return t("{title}: turn failed", { title });
+    case "cancelled":
+      return t("{title}: turn cancelled", { title });
+    default:
+      return t("{title}: turn {phase}", { title, phase });
+  }
 }
 
 /** Difference of one window between two samples; a changed reset time means the window rolled over. */
@@ -635,12 +651,12 @@ async function attachLive(get: Get, set: Set, handle: SessionHandle, workspaceId
       if (payload.type === "turn" && payload.effect === "settled" && payload.kind === "foreground") {
         turnStartedAt = null;
         void get().sampleUsage(id, "settle");
-        announcement = `${sessionTitle(current)}: turn ${payload.phase}`;
+        announcement = turnAnnouncement(sessionTitle(current), payload.phase);
       } else if (payload.type === "permission_request") {
-        announcement = `${sessionTitle(current)}: the agent asked for input`;
+        announcement = t("{title}: the agent asked for input", { title: sessionTitle(current) });
         // A run's permission decisions are journalled by the engine.
       } else if (payload.type === "exited") {
-        announcement = `${sessionTitle(current)}: the agent exited`;
+        announcement = t("{title}: the agent exited", { title: sessionTitle(current) });
       }
     }
     if (viewing) attention = "none";
@@ -649,7 +665,7 @@ async function attachLive(get: Get, set: Set, handle: SessionHandle, workspaceId
     if (!viewing && attention !== "none" && attention !== current.attention) {
       const settings = get().settings;
       const workspace = get().workspaces.find((w) => w.id === current.workspaceId);
-      const name = workspace ? basenameOf(workspace.displayPath) : "a workspace";
+      const name = workspace ? basenameOf(workspace.displayPath) : t("a workspace");
       if (settings && shouldNotify(settings, attention, current.workspaceId)) void notify(attention, name);
     }
   };
@@ -797,9 +813,9 @@ export const useStore = create<State>((set, get) => ({
   },
 
   async testNotification() {
-    const sent = await notify("completed", "a test workspace");
+    const sent = await notify("completed", t("a test workspace"));
     if (!sent) {
-      set({ error: { code: "UNSUPPORTED", message: "Notifications are not permitted by the operating system for ThingMaker.", retry: "user_action" } });
+      set({ error: { code: "UNSUPPORTED", message: t("Notifications are not permitted by the operating system for ThingMaker."), retry: "user_action" } });
     }
   },
 
@@ -817,7 +833,7 @@ export const useStore = create<State>((set, get) => ({
   },
 
   async quitAndStop() {
-    set({ closeRequest: null, busy: "Stopping local tasks and quitting" });
+    set({ closeRequest: null, busy: t("Stopping local tasks and quitting") });
     try {
       await api.appQuit(true);
     } catch (error) {
@@ -847,7 +863,7 @@ export const useStore = create<State>((set, get) => ({
 
   async addWorkspaceByPath(path) {
     if (!path.trim()) return;
-    set({ busy: "Inspecting workspace", error: null });
+    set({ busy: t("Inspecting workspace"), error: null });
     try {
       const inspection = await api.workspaceInspect(path.trim());
       const workspaces = await api.workspaceList();
@@ -884,7 +900,7 @@ export const useStore = create<State>((set, get) => ({
   async trust(workspaceId, state) {
     const inspection = get().inspections[workspaceId];
     if (!inspection) return;
-    set({ busy: "Recording trust decision", error: null });
+    set({ busy: t("Recording trust decision"), error: null });
     try {
       const updated = await api.workspaceTrust(workspaceId, state, inspection.trustDigest);
       const workspaces = await api.workspaceList();
@@ -933,13 +949,15 @@ export const useStore = create<State>((set, get) => ({
     try {
       const { version } = await api.providerUpdate(provider);
       set({ providerVersions: { ...get().providerVersions, [provider]: version } });
-      const now = version.installed ?? "the new version";
+      const now = version.installed ?? t("the new version");
       result = {
         ok: true,
         text:
           now === before
-            ? `Already on ${now}.`
-            : `Updated${before ? ` from ${before}` : ""} to ${now}. Sessions already open keep the version they started with; new sessions use ${now}.`,
+            ? t("Already on {version}.", { version: now })
+            : before
+              ? t("Updated from {before} to {version}. Sessions already open keep the version they started with; new sessions use {version}.", { before, version: now })
+              : t("Updated to {version}. Sessions already open keep the version they started with; new sessions use {version}.", { version: now }),
       };
     } catch (error) {
       result = { ok: false, text: asError(error).message };
@@ -1296,21 +1314,21 @@ export const useStore = create<State>((set, get) => ({
     if (!view || !session) return;
     const running = session.projection.foreground === "running" || session.projection.foreground === "awaiting_user";
     if (target.kind === "session" && !get().sessions[target.sessionId]) {
-      set({ error: asError(new Error("that session is not attached any more")) });
+      set({ error: asError(new Error(t("that session is not attached any more"))) });
       return;
     }
     try {
       const confirmed = await api.confirmDialog({
-        title: "Move this run to another session?",
+        title: t("Move this run to another session?"),
         message: [
-          running ? "The turn running now is cancelled first." : "",
-          `The goal, its milestones and its history move across. The conversation does not: the new session is briefed from the record and from \`${ODYSSEY_STATE_NOTE}\`, and starts with no memory of this one.`,
-          target.kind === "new" ? `A fresh ${PROVIDER_LABELS[target.agent]} session is opened for it.` : "",
+          running ? t("The turn running now is cancelled first.") : "",
+          t("The goal, its milestones and its history move across. The conversation does not: the new session is briefed from the record and from `{note}`, and starts with no memory of this one.", { note: ODYSSEY_STATE_NOTE }),
+          target.kind === "new" ? t("A fresh {provider} session is opened for it.", { provider: PROVIDER_LABELS[target.agent] }) : "",
         ]
           .filter(Boolean)
           .join(" "),
-        okLabel: "Move the run",
-        cancelLabel: "Leave it here",
+        okLabel: t("Move the run"),
+        cancelLabel: t("Leave it here"),
         warning: running,
       });
       if (!confirmed) return;
@@ -1318,10 +1336,10 @@ export const useStore = create<State>((set, get) => ({
       set({ error: asError(error) });
       return;
     }
-    set({ busy: "Moving the run" });
+    set({ busy: t("Moving the run") });
     try {
       await api.bigthingMove(view.goal.id, target.kind === "session" ? { kind: "session", handle: target.sessionId } : { kind: "new", provider: target.agent });
-      get().announce(`${view.goal.title}: moved to another session`);
+      get().announce(t("{title}: moved to another session", { title: view.goal.title }));
     } catch (error) {
       set({ error: asError(error) });
     } finally {
@@ -1374,7 +1392,7 @@ export const useStore = create<State>((set, get) => ({
         const settings = state.settings;
         const kind: AttentionKind = event.attention === "needs_input" ? "needs_input" : event.attention === "blocked" ? "failed" : "completed";
         const workspace = state.workspaces.find((entry) => entry.id === event.workspaceId);
-        if (settings && shouldNotify(settings, kind, event.workspaceId)) void notify(kind, workspace ? basenameOf(workspace.displayPath) : "a workspace");
+        if (settings && shouldNotify(settings, kind, event.workspaceId)) void notify(kind, workspace ? basenameOf(workspace.displayPath) : t("a workspace"));
         return;
       }
       case "session_named":
@@ -1396,7 +1414,7 @@ export const useStore = create<State>((set, get) => ({
         if (from && from !== event.toHandle) {
           set({
             odyssey: { ...get().odyssey, [from]: null },
-            odysseyMovedAway: { ...get().odysseyMovedAway, [from]: { goalId: event.goalId, title: view?.goal.title ?? "The run", to: event.toHandle } },
+            odysseyMovedAway: { ...get().odysseyMovedAway, [from]: { goalId: event.goalId, title: view?.goal.title ?? t("The run"), to: event.toHandle } },
           });
         }
         if (get().sessions[event.toHandle]) void get().loadOdyssey(event.toHandle);
@@ -1630,7 +1648,7 @@ export const useStore = create<State>((set, get) => ({
   async resendOutbox(workspaceId, entry) {
     const target = Object.values(get().sessions).find((s) => s.workspaceId === workspaceId && s.snapshot.agentSessionId === entry.agentSessionId);
     if (!target || entry.text === null) {
-      set({ error: { code: "NOT_READY", message: "Resume the session this prompt belonged to before resending it.", retry: "user_action" } });
+      set({ error: { code: "NOT_READY", message: t("Resume the session this prompt belonged to before resending it."), retry: "user_action" } });
       return;
     }
     const requestId = crypto.randomUUID();
@@ -1660,7 +1678,7 @@ export const useStore = create<State>((set, get) => ({
     const merged = [...current];
     for (const snapshot of snapshots) if (!merged.some((a) => a.id === snapshot.id)) merged.push(snapshot);
     if (merged.length > 8) {
-      set({ error: { code: "LIMIT_EXCEEDED", message: "At most eight attachments per prompt.", retry: "user_action" } });
+      set({ error: { code: "LIMIT_EXCEEDED", message: t("At most eight attachments per prompt."), retry: "user_action" } });
       return;
     }
     set({ attachments: { ...get().attachments, [sessionId]: merged } });
@@ -1875,7 +1893,7 @@ export const useStore = create<State>((set, get) => ({
       }
     }
     const chosen: Provider = recorded ?? provider ?? defaults.provider ?? "claude";
-    set({ busy: mode.mode === "new" ? `Starting ${PROVIDER_LABELS[chosen]}` : `Resuming ${PROVIDER_LABELS[chosen]} session`, error: null, lockedResume: null });
+    set({ busy: mode.mode === "new" ? t("Starting {provider}", { provider: PROVIDER_LABELS[chosen] }) : t("Resuming {provider} session", { provider: PROVIDER_LABELS[chosen] }), error: null, lockedResume: null });
     try {
       const opened = await api.sessionOpen({ workspaceId, mode, provider: chosen, ...launchDefaults(defaults, chosen) });
       await attachLive(get, set, opened.handle, workspaceId, true);
@@ -2021,7 +2039,7 @@ export const useStore = create<State>((set, get) => ({
         const entry = (await api.sessionListOpen()).find((open) => open.handle.id === handleId);
         const workspaceId = get().sessions[job.orchestrator]?.workspaceId ?? entry?.workspaceId ?? undefined;
         if (!entry || !workspaceId) {
-          set({ error: { code: "NOT_READY", message: "This worker has stopped. Its transcript is in the sidebar under its orchestrator.", retry: "user_action" } });
+          set({ error: { code: "NOT_READY", message: t("This worker has stopped. Its transcript is in the sidebar under its orchestrator."), retry: "user_action" } });
           return;
         }
         await attachLive(get, set, entry.handle, workspaceId, true);
@@ -2113,7 +2131,7 @@ export const useStore = create<State>((set, get) => ({
 
   async openSessionWithPreset(workspaceId, preset) {
     const { provider, model, effort } = preset.orchestrator;
-    set({ busy: `Starting ${preset.name}`, error: null });
+    set({ busy: t("Starting {name}", { name: preset.name }), error: null });
     try {
       const opened = await api.sessionOpen({
         workspaceId,
@@ -2291,16 +2309,21 @@ export const useStore = create<State>((set, get) => ({
     const agents = [...session.projection.inspector.agents.values()].filter((agent) => agent.status === "working" || agent.status === "starting").length;
     if (running || detached > 0 || agents > 0) {
       const parts = [];
-      if (running) parts.push("a turn is still running");
-      if (agents > 0) parts.push(`${agents} subagent${agents === 1 ? " is" : "s are"} still working and will be killed with it (only what they wrote to docs/big-thing/agents/ survives)`);
-      if (detached > 0) parts.push(`${detached} detached background call(s) are active`);
+      if (running) parts.push(t("a turn is still running"));
+      if (agents > 0)
+        parts.push(
+          agents === 1
+            ? t("{n} subagent is still working and will be killed with it (only what they wrote to docs/big-thing/agents/ survives)", { n: agents })
+            : t("{n} subagents are still working and will be killed with it (only what they wrote to docs/big-thing/agents/ survives)", { n: agents }),
+        );
+      if (detached > 0) parts.push(t("{n} detached background call(s) are active", { n: detached }));
       let confirmed = false;
       try {
         confirmed = await api.confirmDialog({
-          title: "Stop this session?",
-          message: `Stopping shuts down this agent: ${parts.join(" and ")}. It will be asked to cancel first; remote side effects already in flight cannot be undone. The durable transcript stays on disk and can be resumed.`,
-          okLabel: "Stop session",
-          cancelLabel: "Keep running",
+          title: t("Stop this session?"),
+          message: t("Stopping shuts down this agent: {reasons}. It will be asked to cancel first; remote side effects already in flight cannot be undone. The durable transcript stays on disk and can be resumed.", { reasons: parts.join(t(" and ")) }),
+          okLabel: t("Stop session"),
+          cancelLabel: t("Keep running"),
           warning: true,
         });
       } catch (error) {
@@ -2309,7 +2332,7 @@ export const useStore = create<State>((set, get) => ({
       }
       if (!confirmed) return;
     }
-    set({ busy: "Stopping session" });
+    set({ busy: t("Stopping session") });
     try {
       await api.sessionStop(session.handle);
       const { [sessionId]: _removed, ...rest } = get().sessions;
@@ -2345,7 +2368,7 @@ export const useStore = create<State>((set, get) => ({
   async setConfigOption(sessionId, configId, value) {
     const session = get().sessions[sessionId];
     if (!session) return;
-    set({ busy: `Switching ${configId}`, error: null });
+    set({ busy: t("Switching {option}", { option: configId }), error: null });
     try {
       const result = (await api.sessionSetConfigOption(session.handle, configId, value)) as { configOptions?: unknown } | null;
       const current = get().sessions[sessionId];
@@ -2416,10 +2439,10 @@ export const useStore = create<State>((set, get) => ({
     const current = info?.auth?.account ? ` (${info.auth.account})` : "";
     const confirmed = await api
       .confirmDialog({
-        title: `Switch ${PROVIDER_LABELS[provider]} account?`,
-        message: `This signs ${PROVIDER_LABELS[provider]} out of the current account${current} and opens its own sign-in. Sessions already running keep the account they started with; new ones use the account you sign in with. It also changes the account for ${PROVIDER_LABELS[provider]} outside ThingMaker.`,
-        okLabel: "Sign out and sign in again",
-        cancelLabel: "Cancel",
+        title: t("Switch {provider} account?", { provider: PROVIDER_LABELS[provider] }),
+        message: t("This signs {provider} out of the current account{account} and opens its own sign-in. Sessions already running keep the account they started with; new ones use the account you sign in with. It also changes the account for {provider} outside ThingMaker.", { provider: PROVIDER_LABELS[provider], account: current }),
+        okLabel: t("Sign out and sign in again"),
+        cancelLabel: t("Cancel"),
         warning: true,
       })
       .catch(() => false);

@@ -8,6 +8,7 @@ import { useEffect, useState } from "react";
 import type { RuntimeEnvInfo } from "@thingmaker/contracts";
 import { api } from "../ipc";
 import { useStore } from "../store";
+import { t } from "../i18n";
 
 export function RuntimeEnvSection() {
   const setError = useStore((s) => s.setError);
@@ -46,22 +47,26 @@ export function RuntimeEnvSection() {
 
   return (
     <section>
-      <h3>Runtime environment</h3>
+      <h3>{t("Runtime environment")}</h3>
       <p className="small muted">
-        Agents and the terminal start with a documented environment: PATH, locale and proxies, nothing else. Add a variable here when a skill or
-        MCP server needs one (the imagegen skill's CLI fallback reads <span className="mono">OPENAI_API_KEY</span>, which is API billing, separate from the
-        ChatGPT subscription login). The value is stored in the {info?.backend ?? "OS keychain"}, shown nowhere, and applied to sessions and terminals started
-        after you add it.
+        {t(
+          "Agents and the terminal start with a documented environment: PATH, locale and proxies, nothing else. Add a variable here when a skill or MCP server needs one (the imagegen skill's CLI fallback reads",
+        )}{" "}
+        <span className="mono">OPENAI_API_KEY</span>
+        {t(
+          ", which is API billing, separate from the ChatGPT subscription login). The value is stored in the {backend}, shown nowhere, and applied to sessions and terminals started after you add it.",
+          { backend: info?.backend ?? t("OS keychain") },
+        )}
       </p>
-      {info && !info.available && <p className="small chip-warn">Secure storage for runtime variables is not available on this platform in this release.</p>}
+      {info && !info.available && <p className="small chip-warn">{t("Secure storage for runtime variables is not available on this platform in this release.")}</p>}
       {info && info.names.length > 0 && (
         <ul className="call-list">
           {info.names.map((n) => (
             <li className="row wrap" key={n}>
               <span className="mono">{n}</span>
-              <span className="small muted">value stored in the keychain</span>
+              <span className="small muted">{t("value stored in the keychain")}</span>
               <button className="button button-small" onClick={() => void remove(n)} type="button">
-                Remove
+                {t("Remove")}
               </button>
             </li>
           ))}
@@ -74,10 +79,10 @@ export function RuntimeEnvSection() {
           if (name.trim() && value) void add();
         }}
       >
-        <input aria-label="Variable name" autoCapitalize="characters" className="input mono" disabled={!info?.available} onChange={(e) => setName(e.target.value)} placeholder="OPENAI_API_KEY" spellCheck={false} value={name} />
-        <input aria-label="Variable value" autoComplete="off" className="input" disabled={!info?.available} onChange={(e) => setValue(e.target.value)} placeholder="value (never shown again)" type="password" value={value} />
+        <input aria-label={t("Variable name")} autoCapitalize="characters" className="input mono" disabled={!info?.available} onChange={(e) => setName(e.target.value)} placeholder="OPENAI_API_KEY" spellCheck={false} value={name} />
+        <input aria-label={t("Variable value")} autoComplete="off" className="input" disabled={!info?.available} onChange={(e) => setValue(e.target.value)} placeholder={t("value (never shown again)")} type="password" value={value} />
         <button className="button button-primary" disabled={busy || !name.trim() || !value || !info?.available} type="submit">
-          {info?.names.includes(name.trim()) ? "Replace value" : "Add variable"}
+          {info?.names.includes(name.trim()) ? t("Replace value") : t("Add variable")}
         </button>
       </form>
     </section>

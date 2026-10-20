@@ -14,6 +14,7 @@ import { api } from "../ipc";
 import { fileNameOf, isPlanDocument, summarize } from "../odysseyDocument";
 import { MAX_TELLS, amendmentStatus } from "../odysseyAmend";
 import { IconBox, IconFolder, IconX } from "./icons";
+import { t } from "../i18n";
 
 /** Largest document inlined into a prompt, matching the native guard. */
 const MAX_DOCUMENT_BYTES = 32 * 1024;
@@ -72,7 +73,7 @@ export function AmendDialog({
           if (inspected) inside.push(path);
         } catch {
           if (!isPlanDocument(path)) {
-            setError({ code: "UNSUPPORTED", message: `${fileNameOf(path)} is outside this workspace and is not a document, so the agent has no way to read it.`, retry: "user_action" });
+            setError({ code: "UNSUPPORTED", message: t("{name} is outside this workspace and is not a document, so the agent has no way to read it.", { name: fileNameOf(path) }), retry: "user_action" });
             continue;
           }
           try {
@@ -81,7 +82,10 @@ export function AmendDialog({
             if (measured.bytes > MAX_DOCUMENT_BYTES) {
               setError({
                 code: "LIMIT_EXCEEDED",
-                message: `${fileNameOf(path)} is ${Math.round(measured.bytes / 1024)} KB. A document outside the workspace is quoted in the agent's prompt, so it has to be under ${MAX_DOCUMENT_BYTES / 1024} KB — put it in the project and drop it again to reference it instead.`,
+                message: t(
+                  "{name} is {size} KB. A document outside the workspace is quoted in the agent's prompt, so it has to be under {limit} KB — put it in the project and drop it again to reference it instead.",
+                  { name: fileNameOf(path), size: Math.round(measured.bytes / 1024), limit: MAX_DOCUMENT_BYTES / 1024 },
+                ),
                 retry: "user_action",
               });
               continue;
@@ -149,30 +153,34 @@ export function AmendDialog({
   return (
     <div aria-modal="true" className="modal-backdrop" onClick={onClose} role="dialog">
       <div className={`modal odyssey-amend ${dropping ? "drop-target" : ""}`} onClick={(event) => event.stopPropagation()}>
-        <h2>Add or change work</h2>
+        <h2>{t("Add or change work")}</h2>
         <p className="small muted">
-          This does not interrupt the run. It is carried to the agent on its next prompt, and the agent decides where it belongs in the plan and when to do it.
+          {t("This does not interrupt the run. It is carried to the agent on its next prompt, and the agent decides where it belongs in the plan and when to do it.")}
         </p>
 
         <textarea
-          aria-label="What you want"
+          aria-label={t("What you want")}
           autoFocus
           className="textarea"
           onChange={(event) => setNote(event.target.value)}
-          placeholder={isNote ? "Prefer the built-in harness for the rest of this milestone; the delegates are slow today." : "Generate the ships from the new art and embed them in the trading UI at some point."}
+          placeholder={
+            isNote
+              ? t("Prefer the built-in harness for the rest of this milestone; the delegates are slow today.")
+              : t("Generate the ships from the new art and embed them in the trading UI at some point.")
+          }
           rows={4}
           value={note}
         />
         <label className="row small odyssey-amend-kind">
           <input checked={isNote} onChange={(event) => setIsNote(event.target.checked)} type="checkbox" />
           <span>
-            Just a note to the agent, no plan change expected. <span className="muted">Carried once and closed as delivered; a change is re-asked until the agent folds it in.</span>
+            {t("Just a note to the agent, no plan change expected.")} <span className="muted">{t("Carried once and closed as delivered; a change is re-asked until the agent folds it in.")}</span>
           </span>
         </label>
 
         <div className="odyssey-amend-refs">
           <label className="small muted" htmlFor="odyssey-ref-input">
-            Point the agent at files or folders in the project — it opens them itself, so a whole folder costs nothing to mention.
+            {t("Point the agent at files or folders in the project — it opens them itself, so a whole folder costs nothing to mention.")}
           </label>
           <form
             className="odyssey-amend-add"
@@ -186,11 +194,11 @@ export function AmendDialog({
           >
             <input className="input" id="odyssey-ref-input" onChange={(event) => setTyped(event.target.value)} placeholder="Assets/Art/Ships" value={typed} />
             <button className="button button-small" type="submit">
-              Add
+              {t("Add")}
             </button>
           </form>
 
-          {refs.length === 0 && !document && <p className="small muted odyssey-dropzone">…or drop files and folders here.</p>}
+          {refs.length === 0 && !document && <p className="small muted odyssey-dropzone">{t("…or drop files and folders here.")}</p>}
 
           <ul className="odyssey-amend-list">
             {refs.map((reference) => (
@@ -198,7 +206,7 @@ export function AmendDialog({
                 {reference.kind === "directory" ? <IconFolder size={13} /> : <IconBox size={13} />}
                 <span className="small mono">{reference.path}</span>
                 <span className="small muted">{reference.detail}</span>
-                <button aria-label={`Remove ${reference.path}`} className="icon-button icon-button-xs" onClick={() => setRefs(refs.filter((entry) => entry.path !== reference.path))} type="button">
+                <button aria-label={t("Remove {name}", { name: reference.path })} className="icon-button icon-button-xs" onClick={() => setRefs(refs.filter((entry) => entry.path !== reference.path))} type="button">
                   <IconX size={12} />
                 </button>
               </li>
@@ -207,8 +215,8 @@ export function AmendDialog({
               <li>
                 <IconBox size={13} />
                 <span className="small mono">{document.name}</span>
-                <span className="small muted">quoted in the prompt · outside the workspace</span>
-                <button aria-label={`Remove ${document.name}`} className="icon-button icon-button-xs" onClick={() => setDocument(null)} type="button">
+                <span className="small muted">{t("quoted in the prompt · outside the workspace")}</span>
+                <button aria-label={t("Remove {name}", { name: document.name })} className="icon-button icon-button-xs" onClick={() => setDocument(null)} type="button">
                   <IconX size={12} />
                 </button>
               </li>
@@ -218,10 +226,10 @@ export function AmendDialog({
 
         <div className="row wrap">
           <button className="button button-primary" disabled={!note.trim() || busy} onClick={() => void submit()} type="button">
-            {busy ? "Queueing…" : "Queue for the agent"}
+            {busy ? t("Queueing…") : t("Queue for the agent")}
           </button>
           <button className="button" onClick={onClose} type="button">
-            Cancel
+            {t("Cancel")}
           </button>
         </div>
       </div>
@@ -240,8 +248,8 @@ export function AmendmentList({ sessionId, amendments }: { sessionId: string; am
   return (
     <section className="card odyssey-amendments">
       <header className="work-head">
-        <span className="work-title">Your changes</span>
-        <span className="work-meta small muted">{open.length} waiting</span>
+        <span className="work-title">{t("Your changes")}</span>
+        <span className="work-meta small muted">{t("{count} waiting", { count: open.length })}</span>
       </header>
       <ul className="odyssey-amend-list">
         {open.map((record) => (
@@ -255,7 +263,7 @@ export function AmendmentList({ sessionId, amendments }: { sessionId: string; am
             ))}
             {record.state === "pending" && (
               <button className="link small" onClick={() => void discard(sessionId, record.id)} type="button">
-                discard
+                {t("discard")}
               </button>
             )}
           </li>
@@ -263,11 +271,11 @@ export function AmendmentList({ sessionId, amendments }: { sessionId: string; am
       </ul>
       {open.some((record) => record.tellCount >= MAX_TELLS) ? (
         <p className="small chip-warn">
-          The agent was asked and did not fold this in. It will not be asked again — say it yourself in the prompt, or add the milestone by hand.
+          {t("The agent was asked and did not fold this in. It will not be asked again — say it yourself in the prompt, or add the milestone by hand.")}
         </p>
       ) : (
         <p className="small muted">
-          The agent folds these in when it reaches a point where they fit; nothing is interrupted. It is asked again every few continuations until it does.
+          {t("The agent folds these in when it reaches a point where they fit; nothing is interrupted. It is asked again every few continuations until it does.")}
         </p>
       )}
     </section>

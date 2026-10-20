@@ -9,6 +9,7 @@
  * this cannot read is shown as itself, shortened, never guessed at.
  */
 import type { ToolPatch } from "@thingmaker/contracts";
+import { t } from "./i18n";
 
 export type StepVerb = "read" | "search" | "list" | "run" | "edit" | "fetch" | "agent" | "other";
 
@@ -24,8 +25,6 @@ export type Step = {
   failed: boolean;
 };
 
-const VERB_WORD: Record<StepVerb, string> = { read: "Read", search: "Searched", list: "Listed", run: "Ran", edit: "Edited", fetch: "Fetched", agent: "Started", other: "Used" };
-const VERB_ING: Record<StepVerb, string> = { read: "reading", search: "searching", list: "listing", run: "running", edit: "editing", fetch: "fetching", agent: "starting", other: "using" };
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -173,7 +172,7 @@ function quoted(pattern: string): string {
     .map((entry) => entry.replace(/\\(.)/g, "$1").replace(/^\^|\$$/g, "").trim())
     .filter(Boolean);
   const shown = alternatives.slice(0, 3).map((entry) => `“${short(entry, 30)}”`);
-  return `for ${shown.join(", ")}${alternatives.length > 3 ? ` +${alternatives.length - 3}` : ""}`;
+  return t("for {patterns}", { patterns: `${shown.join(", ")}${alternatives.length > 3 ? ` +${alternatives.length - 3}` : ""}` });
 }
 
 function joinTargets(targets: string[]): string | null {
@@ -201,13 +200,13 @@ function readCommand(tokens: string[], rel: (path: string) => string): StepPart 
       // `-n` here is a switch, not a flag with a value: the script follows.
       const [script = "", ...files] = operands(args, false);
       const lines = /^(\d+)(?:,(\d+))?p$/.exec(script);
-      if (lines) range = lines[2] ? `lines ${lines[1]}–${lines[2]}` : `line ${lines[1]}`;
+      if (lines) range = lines[2] ? t("lines {from}–{to}", { from: lines[1] as string, to: lines[2] }) : t("line {n}", { n: lines[1] as string });
       rest = files;
     } else {
       rest = operands(args).filter((arg) => !/^\+?\d+$/.test(arg));
       const flag = args.indexOf("-n");
       const count = flag >= 0 ? args[flag + 1] : args.find((arg) => /^-\d+$/.test(arg))?.slice(1);
-      if ((name === "head" || name === "tail") && count) range = `${name === "head" ? "first" : "last"} ${count} lines`;
+      if ((name === "head" || name === "tail") && count) range = name === "head" ? t("first {n} lines", { n: count }) : t("last {n} lines", { n: count });
     }
     if (rest.length === 0) return null;
     return { verb: "read", target: joinTargets(rest.map(rel)), extra: range, files: rest.length };
@@ -295,21 +294,21 @@ function editedCount(patch: ToolPatch): number {
 
 /** ThingMaker's own team tools, in words. */
 const TEAM_TOOLS: Record<string, string> = {
-  list_workers: "Looked at the team",
-  delegate: "Delegated a task",
-  await_jobs: "Waited for the workers",
-  job_status: "Checked a worker's job",
-  cancel_job: "Cancelled a worker's job",
-  phone_status: "Checked the phone",
-  phone_install: "Installed an app on the phone",
-  memory_read: "Read the project memory",
-  memory_write: "Wrote to the project memory",
-  board: "Read the task board",
-  bigthing_report: "Reported a milestone",
-  bigthing_task: "Moved a task",
-  bigthing_ask: "Asked you a question",
-  bigthing_propose_plan: "Proposed the plan",
-  bigthing_amend: "Proposed a plan change",
+  list_workers: t("Looked at the team"),
+  delegate: t("Delegated a task"),
+  await_jobs: t("Waited for the workers"),
+  job_status: t("Checked a worker's job"),
+  cancel_job: t("Cancelled a worker's job"),
+  phone_status: t("Checked the phone"),
+  phone_install: t("Installed an app on the phone"),
+  memory_read: t("Read the project memory"),
+  memory_write: t("Wrote to the project memory"),
+  board: t("Read the task board"),
+  bigthing_report: t("Reported a milestone"),
+  bigthing_task: t("Moved a task"),
+  bigthing_ask: t("Asked you a question"),
+  bigthing_propose_plan: t("Proposed the plan"),
+  bigthing_amend: t("Proposed a plan change"),
 };
 
 /** An MCP tool's call, `mcp__server__tool` (Claude) or `server · tool` (Codex), as words. */
@@ -345,17 +344,42 @@ export function stepOf(patch: ToolPatch, roots: (string | null | undefined)[]): 
   return { verb, sentence: short(named ?? title, 100), parts: [{ verb, target: null, extra: null, files: 0 }], running, failed };
 }
 
+/** One part as words: "Read MOBILE.md first 30 lines", "Searched Assets for “tooltip”" (the extra carries the "for"). */
+function partText(part: StepPart): string {
+  const target = part.target ?? "";
+  switch (part.verb) {
+    case "read":
+      if (part.target && part.extra) return t("Read {target} {range}", { target, range: part.extra });
+      return part.target ? t("Read {target}", { target }) : t("Read");
+    case "search":
+      if (part.target && part.extra) return t("Searched {target} {pattern}", { target, pattern: part.extra });
+      if (part.extra) return t("Searched {pattern}", { pattern: part.extra });
+      return part.target ? t("Searched {target}", { target }) : t("Searched");
+    case "list":
+      return part.target ? t("Listed {target}", { target }) : t("Listed");
+    case "run":
+      return part.target ? t("Ran {target}", { target }) : t("Ran");
+    case "edit":
+      return part.target ? t("Edited {target}", { target }) : t("Edited");
+    case "fetch":
+      return part.target ? t("Fetched {target}", { target }) : t("Fetched");
+    case "agent":
+      return part.target ? t("Started {target}", { target }) : t("Started");
+    default:
+      return part.target ? t("Used {target}", { target }) : t("Used");
+  }
+}
+
 /** The step as one line of plain text, for a live label or a test. */
 export function stepText(step: Step): string {
   if (step.sentence) return step.sentence;
   return step.parts
     .slice(0, 2)
     .map((part, index) => {
-      const word = VERB_WORD[part.verb];
-      const text = [index === 0 ? word : word.toLowerCase(), part.target, part.extra].filter(Boolean).join(" ");
-      return text;
+      const text = partText(part);
+      return index === 0 ? text : text.charAt(0).toLowerCase() + text.slice(1);
     })
-    .concat(step.parts.length > 2 ? [`+${step.parts.length - 2} more`] : [])
+    .concat(step.parts.length > 2 ? [t("+{n} more", { n: step.parts.length - 2 })] : [])
     .join(" · ");
 }
 
@@ -363,8 +387,26 @@ export function stepText(step: Step): string {
 export function stepDoing(step: Step): string {
   const part = step.parts[0];
   if (step.sentence && (!part || !part.target)) return step.sentence.charAt(0).toLowerCase() + step.sentence.slice(1);
-  if (!part) return "working";
-  return [VERB_ING[part.verb], part.target === "." ? "the project" : part.target].filter(Boolean).join(" ");
+  if (!part) return t("working");
+  const target = part.target === "." ? t("the project") : part.target;
+  switch (part.verb) {
+    case "read":
+      return target ? t("reading {target}", { target }) : t("reading");
+    case "search":
+      return target ? t("searching {target}", { target }) : t("searching");
+    case "list":
+      return target ? t("listing {target}", { target }) : t("listing");
+    case "run":
+      return target ? t("running {target}", { target }) : t("running");
+    case "edit":
+      return target ? t("editing {target}", { target }) : t("editing");
+    case "fetch":
+      return target ? t("fetching {target}", { target }) : t("fetching");
+    case "agent":
+      return target ? t("starting {target}", { target }) : t("starting");
+    default:
+      return target ? t("using {target}", { target }) : t("using");
+  }
 }
 
 /** "Explored · read 6 files, searched 9 times" for a run of steps. A run
@@ -374,18 +416,17 @@ export function summarize(steps: Step[]): { title: string; detail: string } {
   for (const step of steps) {
     for (const part of step.parts) tally[part.verb] += part.verb === "read" || part.verb === "edit" ? Math.max(1, part.files) : 1;
   }
-  const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
   const phrases = [
-    tally.edit && `edited ${plural(tally.edit, "file", "files")}`,
-    tally.read && `read ${plural(tally.read, "file", "files")}`,
-    tally.search && `searched ${plural(tally.search, "time", "times")}`,
-    tally.list && `listed ${plural(tally.list, "folder", "folders")}`,
-    tally.run && `ran ${plural(tally.run, "command", "commands")}`,
-    tally.fetch && `fetched ${plural(tally.fetch, "page", "pages")}`,
-    tally.agent && `started ${plural(tally.agent, "agent", "agents")}`,
-    tally.other && `used ${plural(tally.other, "tool", "tools")}`,
+    tally.edit && (tally.edit === 1 ? t("edited {n} file", { n: tally.edit }) : t("edited {n} files", { n: tally.edit })),
+    tally.read && (tally.read === 1 ? t("read {n} file", { n: tally.read }) : t("read {n} files", { n: tally.read })),
+    tally.search && (tally.search === 1 ? t("searched {n} time", { n: tally.search }) : t("searched {n} times", { n: tally.search })),
+    tally.list && (tally.list === 1 ? t("listed {n} folder", { n: tally.list }) : t("listed {n} folders", { n: tally.list })),
+    tally.run && (tally.run === 1 ? t("ran {n} command", { n: tally.run }) : t("ran {n} commands", { n: tally.run })),
+    tally.fetch && (tally.fetch === 1 ? t("fetched {n} page", { n: tally.fetch }) : t("fetched {n} pages", { n: tally.fetch })),
+    tally.agent && (tally.agent === 1 ? t("started {n} agent", { n: tally.agent }) : t("started {n} agents", { n: tally.agent })),
+    tally.other && (tally.other === 1 ? t("used {n} tool", { n: tally.other }) : t("used {n} tools", { n: tally.other })),
   ].filter(Boolean) as string[];
   const exploring = tally.edit + tally.run + tally.fetch + tally.agent + tally.other === 0;
-  if (tally.edit > 0 && phrases.length === 1) return { title: `Edited ${plural(tally.edit, "file", "files")}`, detail: "" };
-  return { title: exploring ? "Explored" : "", detail: phrases.join(", ") };
+  if (tally.edit > 0 && phrases.length === 1) return { title: tally.edit === 1 ? t("Edited {n} file", { n: tally.edit }) : t("Edited {n} files", { n: tally.edit }), detail: "" };
+  return { title: exploring ? t("Explored") : "", detail: phrases.join(", ") };
 }

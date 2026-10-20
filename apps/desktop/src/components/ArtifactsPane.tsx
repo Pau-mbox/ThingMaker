@@ -7,13 +7,53 @@
  * Export writes selected versions and a manifest into a chosen folder after a
  * preview of exclusions and sensitive-content warnings.
  */
-import { Suspense, lazy, useCallback, useEffect, useMemo, useState } from "react";
+import { Suspense, lazy, useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import type { ArtifactContent, ArtifactRecord, ExportOutcome } from "@thingmaker/contracts";
+import { t } from "../i18n";
 import { api } from "../ipc";
 import { useStore } from "../store";
 import { Markdown } from "../markdown";
 
 const CodeEditor = lazy(() => import("./MonacoEditor"));
+
+/** Where a version came from, in words. */
+function provenanceWord(provenance: string): string {
+  return provenance === "observed" ? t("observed") : t("runtime-reported");
+}
+
+/** How a version is shown, in words. */
+function viewerWord(viewer: string): string {
+  switch (viewer) {
+    case "text":
+      return t("text");
+    case "markdown":
+      return "Markdown";
+    case "json":
+      return "JSON";
+    case "code":
+      return t("code");
+    case "image":
+      return t("image");
+    case "markup_source":
+      return t("markup source");
+    case "external":
+      return t("external");
+    default:
+      return viewer.replace("_", " ");
+  }
+}
+
+/** A sentence with one piece of markup in it, at `{name}`. */
+function around(text: string, name: string, node: ReactNode) {
+  const [before, after] = text.split(`{${name}}`);
+  return (
+    <>
+      {before}
+      {node}
+      {after}
+    </>
+  );
+}
 
 function bytes(n: number): string {
   return n < 1024 ? `${n} B` : n < 1024 * 1024 ? `${(n / 1024).toFixed(1)} KiB` : `${(n / 1024 / 1024).toFixed(1)} MiB`;
@@ -48,7 +88,7 @@ export function ArtifactsPane({ workspaceId, agentSessionId }: { workspaceId: st
     try {
       const outcome = await api.artifactsRefresh(workspaceId, agentSessionId);
       setRecords(outcome.artifacts);
-      setNotes([`scanned ${outcome.scanned} candidate(s), ${outcome.newVersions} new version(s)`, ...outcome.notes]);
+      setNotes([t("scanned {scanned} candidate(s), {versions} new version(s)", { scanned: outcome.scanned, versions: outcome.newVersions }), ...outcome.notes]);
     } catch (error) {
       setError(error);
     } finally {
@@ -104,13 +144,13 @@ export function ArtifactsPane({ workspaceId, agentSessionId }: { workspaceId: st
     <div className="artifacts-pane">
       <div className="row wrap">
         <button className="button button-primary" disabled={busy} onClick={() => void refresh()} type="button">
-          {busy ? "Scanning…" : "Scan for new versions"}
+          {busy ? t("Scanning…") : t("Scan for new versions")}
         </button>
         <button className="button" disabled={checked.size === 0} onClick={() => void previewExport()} type="button">
-          Export selected ({checked.size})…
+          {t("Export selected ({n})…", { n: checked.size })}
         </button>
         <span className="small muted">
-          Sources: files the agent reported producing (runtime-reported) and workspace files changed since the session baseline (observed).
+          {t("Sources: files the agent reported producing (runtime-reported) and workspace files changed since the session baseline (observed).")}
         </span>
       </div>
       {notes.map((note) => (
@@ -120,20 +160,20 @@ export function ArtifactsPane({ workspaceId, agentSessionId }: { workspaceId: st
       ))}
       <div className="artifacts-body">
         <ul className="artifact-list">
-          {groups.length === 0 && <li className="muted small">No artifacts recorded. Scan after the agent has produced output.</li>}
+          {groups.length === 0 && <li className="muted small">{t("No artifacts recorded. Scan after the agent has produced output.")}</li>}
           {groups.map((group) => (
             <li className="artifact-group" key={group.key}>
               <div className="row wrap">
                 <span className={`chip small ${group.versions[0]?.provenance === "observed" ? "chip-warn" : ""}`}>
-                  {group.versions[0]?.provenance === "observed" ? "observed" : "runtime-reported"}
+                  {provenanceWord(group.versions[0]?.provenance ?? "")}
                 </span>
                 <strong className="mono small">{group.versions[0]?.logicalPath}</strong>
-                {group.versions[0]?.callId && <span className="small muted">call {group.versions[0].callId}</span>}
+                {group.versions[0]?.callId && <span className="small muted">{t("call {id}", { id: group.versions[0].callId })}</span>}
               </div>
               <ul className="call-list nested">
                 {group.versions.map((record) => (
                   <li className="row wrap" key={record.id}>
-                    <input aria-label={`select version ${record.version}`} checked={checked.has(record.id)} onChange={() => toggle(record.id)} type="checkbox" />
+                    <input aria-label={t("select version {n}", { n: record.version })} checked={checked.has(record.id)} onChange={() => toggle(record.id)} type="checkbox" />
                     <button className={`link ${selected === record.id ? "link-on" : ""}`} onClick={() => void view(record.id)} type="button">
                       v{record.version}
                     </button>
@@ -147,17 +187,17 @@ export function ArtifactsPane({ workspaceId, agentSessionId }: { workspaceId: st
           ))}
         </ul>
         <div className="artifact-viewer">
-          {!selected && <p className="muted small">Select a version to view it.</p>}
-          {selected && !content && <p className="muted small">Loading…</p>}
+          {!selected && <p className="muted small">{t("Select a version to view it.")}</p>}
+          {selected && !content && <p className="muted small">{t("Loading…")}</p>}
           {content && (
             <>
               <div className="row wrap">
-                <span className="chip small">{content.record.viewer.replace("_", " ")}</span>
+                <span className="chip small">{viewerWord(content.record.viewer)}</span>
                 <span className="mono small muted">{content.record.sourcePath}</span>
-                {content.truncated && <span className="chip small chip-warn">preview truncated at 2 MiB</span>}
+                {content.truncated && <span className="chip small chip-warn">{t("preview truncated at 2 MiB")}</span>}
                 {(content.record.viewer === "external" || content.unavailable) && (
                   <button className="button button-small" onClick={() => void openUrl(`file://${content.record.sourcePath}`)} type="button">
-                    Open externally
+                    {t("Open externally")}
                   </button>
                 )}
               </div>
@@ -186,7 +226,7 @@ export function ArtifactsPane({ workspaceId, agentSessionId }: { workspaceId: st
                 </pre>
               )}
               {content.text !== undefined && (content.record.viewer === "code" || content.record.viewer === "markup_source") && (
-                <Suspense fallback={<p className="muted small">Loading editor…</p>}>
+                <Suspense fallback={<p className="muted small">{t("Loading editor…")}</p>}>
                   <CodeEditor path={content.record.logicalPath} readOnly value={content.text} />
                 </Suspense>
               )}
@@ -199,21 +239,24 @@ export function ArtifactsPane({ workspaceId, agentSessionId }: { workspaceId: st
       {exportPreview && (
         <div aria-modal="true" className="modal-backdrop" role="dialog">
           <div className="modal modal-wide">
-            <h2>Export {exportPreview.written.length} artifact version(s)</h2>
+            <h2>{t("Export {n} artifact version(s)", { n: exportPreview.written.length })}</h2>
             <p className="small muted">
-              Files are written with a version suffix plus <code>artifact-manifest.json</code> (hashes and provenance). Publishing anywhere is a separate
-              step you would take yourself; nothing leaves this machine.
+              {around(
+                t("Files are written with a version suffix plus {manifest} (hashes and provenance). Publishing anywhere is a separate step you would take yourself; nothing leaves this machine."),
+                "manifest",
+                <code>artifact-manifest.json</code>,
+              )}
             </p>
             {exportPreview.sensitiveHits > 0 && (
               <p className="banner banner-error">
-                {exportPreview.sensitiveHits} secret-looking pattern(s) were found in text artifacts. Review them before sharing the export.
+                {t("{n} secret-looking pattern(s) were found in text artifacts. Review them before sharing the export.", { n: exportPreview.sensitiveHits })}
               </p>
             )}
             {exportPreview.excluded.length > 0 && (
               <ul className="call-list">
                 {exportPreview.excluded.map((e) => (
                   <li className="small chip-warn" key={e.id}>
-                    excluded {e.id.slice(0, 8)}: {e.reason}
+                    {t("excluded {id}: {reason}", { id: e.id.slice(0, 8), reason: e.reason })}
                   </li>
                 ))}
               </ul>
@@ -221,16 +264,16 @@ export function ArtifactsPane({ workspaceId, agentSessionId }: { workspaceId: st
             <ul className="call-list">
               {exportPreview.written.map((w) => (
                 <li className="small mono" key={w.id}>
-                  {w.exportedAs} · {bytes(w.bytes)} · {w.provenance}
+                  {w.exportedAs} · {bytes(w.bytes)} · {provenanceWord(w.provenance)}
                 </li>
               ))}
             </ul>
             <div className="row wrap">
               <button className="button button-primary" onClick={() => void runExport()} type="button">
-                Choose folder and export…
+                {t("Choose folder and export…")}
               </button>
               <button className="button" onClick={() => setExportPreview(null)} type="button">
-                Cancel
+                {t("Cancel")}
               </button>
             </div>
           </div>
@@ -238,9 +281,9 @@ export function ArtifactsPane({ workspaceId, agentSessionId }: { workspaceId: st
       )}
       {exportResult && exportResult.directory && (
         <p className="small">
-          Exported {exportResult.written.length} file(s) to <span className="mono">{exportResult.directory}</span>.{" "}
+          {around(t("Exported {n} file(s) to {directory}.", { n: exportResult.written.length }), "directory", <span className="mono">{exportResult.directory}</span>)}{" "}
           <button className="link" onClick={() => setExportResult(null)} type="button">
-            dismiss
+            {t("dismiss")}
           </button>
         </p>
       )}

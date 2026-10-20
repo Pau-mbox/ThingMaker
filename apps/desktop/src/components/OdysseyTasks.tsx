@@ -14,14 +14,15 @@ import { useStore } from "../store";
 import { TASK_STATUS_LABEL, dependencyNumbers, matchAgentToTask, taskNumber, taskOwner, taskStatus, type TaskStatus } from "../odysseyTasks";
 import { describeModel } from "./OdysseyActivity";
 import { IconAgents, IconChevron } from "./icons";
+import { t } from "../i18n";
 
 function ago(ms: number): string {
   const minutes = Math.round(Math.max(0, ms) / 60_000);
-  if (minutes < 1) return "just now";
-  if (minutes < 60) return `${minutes}m ago`;
+  if (minutes < 1) return t("just now");
+  if (minutes < 60) return t("{minutes}m ago", { minutes });
   const hours = Math.floor(minutes / 60);
-  if (hours < 48) return `${hours}h ago`;
-  return `${Math.floor(hours / 24)}d ago`;
+  if (hours < 48) return t("{hours}h ago", { hours });
+  return t("{days}d ago", { days: Math.floor(hours / 24) });
 }
 
 export function TaskStatusChip({ status }: { status: TaskStatus }) {
@@ -63,11 +64,11 @@ export function TaskTable({ milestone, milestoneIndex, sessionId }: { milestone:
           <thead>
             <tr>
               <th>#</th>
-              <th>Task</th>
-              <th>Owner</th>
-              <th>Status</th>
-              <th>Depends on</th>
-              <th>Updated</th>
+              <th>{t("Task")}</th>
+              <th>{t("Owner")}</th>
+              <th>{t("Status")}</th>
+              <th>{t("Depends on")}</th>
+              <th>{t("Updated")}</th>
             </tr>
           </thead>
           <tbody>
@@ -93,7 +94,7 @@ export function TaskTable({ milestone, milestoneIndex, sessionId }: { milestone:
                     )}
                     {unfolded && step.detail && <p className="odyssey-task-detail">{step.detail}</p>}
                     {unfolded && step.note && status !== "pending" && (
-                      <p className="odyssey-task-detail odyssey-task-note" title="the agent's note on this task">
+                      <p className="odyssey-task-detail odyssey-task-note" title={t("the agent's note on this task")}>
                         {step.note}
                       </p>
                     )}
@@ -103,7 +104,7 @@ export function TaskTable({ milestone, milestoneIndex, sessionId }: { milestone:
                       <span className="odyssey-task-owner" title={step.agentName ?? undefined}>
                         <IconAgents size={11} />
                         <span className="mono">{who}</span>
-                        {running && <span className="spinner spinner-xs" aria-label="working" />}
+                        {running && <span className="spinner spinner-xs" aria-label={t("working")} />}
                       </span>
                     ) : (
                       <span className="muted">—</span>
@@ -131,7 +132,7 @@ export function TaskTable({ milestone, milestoneIndex, sessionId }: { milestone:
               setTitle("");
             }}
           >
-            <input aria-label="New task" className="input" onChange={(event) => setTitle(event.target.value)} placeholder="Add a task…" value={title} />
+            <input aria-label={t("New task")} className="input" onChange={(event) => setTitle(event.target.value)} placeholder={t("Add a task…")} value={title} />
           </form>
           {milestone.state !== "verified" && milestone.state !== "skipped" && (
             <button
@@ -141,13 +142,13 @@ export function TaskTable({ milestone, milestoneIndex, sessionId }: { milestone:
                 setAsked(true);
                 void requestTasks(sessionId, milestoneIndex);
               }}
-              title="Queues a change for the agent: break this milestone into tasks in its next reply"
+              title={t("Queues a change for the agent: break this milestone into tasks in its next reply")}
               type="button"
             >
-              {asked ? "asked — it arrives with the next prompt" : steps.length === 0 ? "ask the agent to break it into tasks" : "ask the agent for more tasks"}
+              {asked ? t("asked — it arrives with the next prompt") : steps.length === 0 ? t("ask the agent to break it into tasks") : t("ask the agent for more tasks")}
             </button>
           )}
-          {steps.length === 0 && !asked && <span className="small muted">No tasks yet.</span>}
+          {steps.length === 0 && !asked && <span className="small muted">{t("No tasks yet.")}</span>}
         </div>
       )}
     </div>

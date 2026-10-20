@@ -62,7 +62,7 @@ describe("the phone's bridge", () => {
     await Promise.resolve();
     const retries = outcomes.map((error) => (error as { retry: string }).retry);
     expect(retries.filter((retry) => retry === "user_action")).toHaveLength(8);
-    expect(retries.filter((retry) => retry === "safe")).toHaveLength(1);
+    expect(retries.filter((retry) => retry === "after_reconcile")).toHaveLength(1);
   });
 
   it("never sends a request again after its promise failed", async () => {
@@ -72,7 +72,7 @@ describe("the phone's bridge", () => {
     // Still waiting for the welcome: the call is queued, not sent.
     const failed = bridge.call("session_submit").catch((error) => error);
     first.close();
-    expect(((await failed) as { retry: string }).retry).toBe("safe");
+    expect(((await failed) as { retry: string }).retry).toBe("after_reconcile");
     vi.advanceTimersByTime(20_000);
     const second = FakeSocket.last!;
     expect(second).not.toBe(first);

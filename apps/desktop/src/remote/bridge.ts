@@ -11,6 +11,8 @@
  * the origin that served it, with the token from `#token=` in the address.
  */
 
+import { t } from "../i18n";
+
 type Pending = { resolve: (value: unknown) => void; reject: (error: unknown) => void };
 type ChannelSink = { onmessage?: ((message: unknown) => void) | null };
 
@@ -61,10 +63,10 @@ export function askNative<T>(ask: (id: string) => void): Promise<T> {
 }
 
 /** Why the app's socket would not open, as the connection banner says it. */
-const CLOSE_REASON: Record<string, string> = {
-  "relay-without-computer": "The relay is up, but ThingMaker on the computer is not connected to it.",
-  "access-refused": "Cloudflare Access turned this phone away. Pair again to pick up the current token.",
-  unreachable: "Can't reach the computer's address. Is this phone online?",
+const CLOSE_REASON: Record<string, () => string> = {
+  "relay-without-computer": () => t("The relay is up, but ThingMaker on the computer is not connected to it."),
+  "access-refused": () => t("Cloudflare Access turned this phone away. Pair again to pick up the current token."),
+  unreachable: () => t("Can't reach the computer's address. Is this phone online?"),
 };
 
 /** What the bridge needs of a socket: the browser's, or the app's. */
@@ -177,15 +179,15 @@ export class Bridge {
       // A call that went out may or may not have run: it is never sent
       // again by itself. One that never left can be tried again.
       for (const [id, pending] of this.pending) {
-        if (this.sent.has(id)) pending.reject({ code: "IO", message: "The connection dropped while this was on its way; check before trying again.", retry: "user_action" });
-        else pending.reject({ code: "IO", message: "Not sent: the connection to the computer dropped.", retry: "safe" });
+        if (this.sent.has(id)) pending.reject({ code: "IO", message: t("The connection dropped while this was on its way; check before trying again."), retry: "user_action" });
+        else pending.reject({ code: "IO", message: t("Not sent: the connection to the computer dropped."), retry: "after_reconcile" });
       }
-      for (const waiting of this.waiting.splice(0)) waiting.reject({ code: "IO", message: "Not sent: the connection to the computer dropped.", retry: "safe" });
+      for (const waiting of this.waiting.splice(0)) waiting.reject({ code: "IO", message: t("Not sent: the connection to the computer dropped."), retry: "after_reconcile" });
       this.pending.clear();
       this.sent.clear();
       this.queue.length = 0;
       if (this.state === "denied") return;
-      this.lastReason = reason ? CLOSE_REASON[reason] : undefined;
+      this.lastReason = reason ? CLOSE_REASON[reason]?.() : undefined;
       this.setState("closed", this.lastReason);
       // A reconnect starts the screens over: streams missed while away are
       // read again from the Mac rather than patched together here.
@@ -225,7 +227,7 @@ export class Bridge {
         }
         return;
       case "denied":
-        this.setState("denied", String(frame.message ?? "This phone is not paired."));
+        this.setState("denied", String(frame.message ?? t("This phone is not paired.")));
         this.socket?.close();
         return;
       case "result": {

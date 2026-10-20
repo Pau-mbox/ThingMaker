@@ -1,5 +1,6 @@
 import { useMemo } from "react";
 import type { ToolPatch } from "@thingmaker/contracts";
+import { t } from "../i18n";
 import { toolImages } from "../toolImages";
 import { BlockImage, imageSource } from "./InlineImage";
 
@@ -7,7 +8,7 @@ import { BlockImage, imageSource } from "./InlineImage";
 export function ToolPayloads({ patch, workspaceId }: { patch: ToolPatch; workspaceId: string }) {
   const sections = useMemo(() => {
     const seen = new Set<string>();
-    return [["Input", patch.rawInput], ["Output", patch.rawOutput], ["Content", patch.content]]
+    return [[t("Input"), patch.rawInput], [t("Output"), patch.rawOutput], [t("Content"), patch.content]]
       .filter(([, value]) => value !== null && value !== undefined)
       .map(([label, value]) => {
         const { detail, images } = toolImages(value);

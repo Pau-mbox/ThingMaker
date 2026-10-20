@@ -6,6 +6,7 @@
  */
 import { useEffect, useState } from "react";
 import type { WorkspaceImage } from "@thingmaker/contracts";
+import { t } from "../i18n";
 import { api } from "../ipc";
 import { useStore } from "../store";
 
@@ -55,17 +56,17 @@ export function BlockImage({ data, mimeType, uri, workspaceId }: { data: string 
   }
   if (!data || broken) {
     return (
-      <span className="chip small" title={broken ? "the image data in this message could not be decoded" : undefined}>
-        {broken ? "image could not be displayed" : `image ${uri ?? "(inline)"}`}
+      <span className="chip small" title={broken ? t("the image data in this message could not be decoded") : undefined}>
+        {broken ? t("image could not be displayed") : uri ? t("image {uri}", { uri }) : t("image (inline)")}
         {uri && /^file:\/\//i.test(uri) && (
           <button className="link small" onClick={() => void openUrl(uri)} type="button">
-            open
+            {t("open")}
           </button>
         )}
       </span>
     );
   }
-  return <img alt="attached image" className="image" onError={() => setBroken(true)} src={imageSource(data, mimeType)} />;
+  return <img alt={t("attached image")} className="image" onError={() => setBroken(true)} src={imageSource(data, mimeType)} />;
 }
 
 /**
@@ -128,19 +129,19 @@ export function InlineImage({ workspaceId, relative, alt, generated }: { workspa
     return () => document.removeEventListener("keydown", onKey, true);
   }, [large]);
 
-  if (image === undefined) return <span className="chip small muted">loading {relative}…</span>;
+  if (image === undefined) return <span className="chip small muted">{t("loading {path}…", { path: relative })}</span>;
   if (image === null) return null;
   const src = `data:${image.mime};base64,${image.dataBase64}`;
   return (
     <>
       <figure className="inline-image">
-        <button className="inline-image-button" onClick={() => setLarge(true)} title="Open larger" type="button">
+        <button className="inline-image-button" onClick={() => setLarge(true)} title={t("Open larger")} type="button">
           <img alt={alt ?? relative} src={src} />
         </button>
         <figcaption className="small muted">
           <span className="mono">{relative}</span> · {image.width}×{image.height} · {(image.bytes / 1024).toFixed(0)} KiB
           {image.credentials?.generator ? (
-            <span title="Generator recorded in the file's Content Credentials (C2PA manifest), read as recorded and not signature-verified">
+            <span title={t("Generator recorded in the file's Content Credentials (C2PA manifest), read as recorded and not signature-verified")}>
               {" "}· {image.credentials.generator}
               {image.credentials.generatorVersion ? ` ${image.credentials.generatorVersion}` : ""}
             </span>
@@ -155,13 +156,13 @@ export function InlineImage({ workspaceId, relative, alt, generated }: { workspa
               <span className="mono small">{relative}</span>
               <span className="small muted">
                 {image.width}×{image.height} · {image.mime}
-                {image.credentials?.generator ? ` · Content Credentials: ${image.credentials.generator}${image.credentials.generatorVersion ? ` ${image.credentials.generatorVersion}` : ""}${image.credentials.claimGenerator ? ` (${image.credentials.claimGenerator})` : ""}` : ""}
+                {image.credentials?.generator ? ` · ${t("Content Credentials: {generator}", { generator: `${image.credentials.generator}${image.credentials.generatorVersion ? ` ${image.credentials.generatorVersion}` : ""}${image.credentials.claimGenerator ? ` (${image.credentials.claimGenerator})` : ""}` })}` : ""}
               </span>
               <button className="button button-small" onClick={() => void openUrl(`file://${image.absolutePath}`)} type="button">
-                Open externally
+                {t("Open externally")}
               </button>
               <button className="button button-small" onClick={() => setLarge(false)} type="button">
-                Close
+                {t("Close")}
               </button>
             </div>
           </div>

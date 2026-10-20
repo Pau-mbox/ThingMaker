@@ -1,7 +1,8 @@
-import { Fragment, memo, useCallback, useEffect, useMemo, useRef, useState, type ClipboardEvent, type KeyboardEvent, type ReactElement } from "react";
+import { Fragment, memo, useCallback, useEffect, useMemo, useRef, useState, type ClipboardEvent, type KeyboardEvent, type ReactElement, type ReactNode } from "react";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import type { ContentBlock, Mention, Provider, ToolPatch } from "@thingmaker/contracts";
 import { PROVIDER_LABELS } from "@thingmaker/contracts";
+import { t } from "../i18n";
 import { useStore, isWorkerIn, sessionTitle, type SessionTab } from "../store";
 import { api } from "../ipc";
 import { ConfigPickers } from "./ConfigPickers";
@@ -34,6 +35,18 @@ import { IconAgents, IconArrowUp, IconAt, IconBox, IconBranch, IconCheck, IconCh
 
 const EMPTY_LIST: never[] = [];
 
+/** A sentence with one piece of markup in it, at `{name}`. */
+function around(text: string, name: string, node: ReactNode) {
+  const [before, after] = text.split(`{${name}}`);
+  return (
+    <>
+      {before}
+      {node}
+      {after}
+    </>
+  );
+}
+
 function copyText(text: string) {
   void navigator.clipboard?.writeText(text).catch(() => undefined);
 }
@@ -56,25 +69,25 @@ function Blocks({ blocks, markdown, onLink, workspaceId }: { blocks: ContentBloc
           case "audio":
             return (
               <span className="chip" key={index}>
-                audio {block.mimeType ?? ""}
+                {t("audio {mime}", { mime: block.mimeType ?? "" })}
               </span>
             );
           case "resource_link":
             return (
-              <span className="chip mono" key={index} title="path reference: the agent reads this file itself">
+              <span className="chip mono" key={index} title={t("path reference: the agent reads this file itself")}>
                 {block.name ?? block.uri}
               </span>
             );
           case "resource":
             return (
               <pre className="text" key={index}>
-                {block.text ?? `[resource ${block.uri ?? ""}]`}
+                {block.text ?? t("[resource {uri}]", { uri: block.uri ?? "" })}
               </pre>
             );
           default:
             return (
               <details className="unknown" key={index}>
-                <summary>unknown content block {block.originalType}</summary>
+                <summary>{t("unknown content block {type}", { type: block.originalType })}</summary>
                 <pre className="text">{JSON.stringify(block.raw, null, 2)}</pre>
               </details>
             );
@@ -97,14 +110,14 @@ function ToolDetail({ patch, provider, workspaceId }: { patch: ToolPatch; provid
       {testRun && <TestsCard millis={millis} run={testRun} />}
       {edited.length > 0 && (
         <>
-          <h4>Files this call reported writing</h4>
+          <h4>{t("Files this call reported writing")}</h4>
           <EditedFilesList files={edited} />
         </>
       )}
       <ToolPayloads patch={patch} workspaceId={workspaceId} />
       <p className="small muted">
-        {patch.toolKind ?? "tool"} · {patch.status ?? "no status"} · supplied fields: {patch.present.join(", ") || "none"}
-        {patch.cleared.length > 0 ? `; cleared: ${patch.cleared.join(", ")}` : ""}
+        {patch.toolKind ?? t("tool")} · {patch.status ?? t("no status")} · {t("supplied fields: {fields}", { fields: patch.present.join(", ") || t("none") })}
+        {patch.cleared.length > 0 ? `; ${t("cleared: {fields}", { fields: patch.cleared.join(", ") })}` : ""}
       </p>
     </>
   );
@@ -114,9 +127,9 @@ function ToolCard({ patch, detached, provider, workspaceId }: { patch: ToolPatch
   return (
     <details className="card card-tool">
       <summary>
-        <span className="chip">{patch.toolKind ?? "tool"}</span> {patch.title ?? patch.name ?? patch.toolCallId}{" "}
-        <span className="chip small">{patch.status ?? "no status"}</span>
-        {detached && <span className="chip chip-warn small">detached: {detached.replace("_", " ")}</span>}
+        <span className="chip">{patch.toolKind ?? t("tool")}</span> {patch.title ?? patch.name ?? patch.toolCallId}{" "}
+        <span className="chip small">{patch.status ?? t("no status")}</span>
+        {detached && <span className="chip chip-warn small">{t("detached: {state}", { state: detached.replace("_", " ") })}</span>}
       </summary>
       <ToolDetail patch={patch} provider={provider} workspaceId={workspaceId} />
     </details>
@@ -191,12 +204,12 @@ function CardBody({ card, sessionId }: { card: Card; sessionId: string }) {
               <ProviderMark provider={provider} size={15} />
             </span>
             <div className="card-content">
-              {card.message.contentUnknown && <span className="chip chip-warn small">content not supplied</span>}
+              {card.message.contentUnknown && <span className="chip chip-warn small">{t("content not supplied")}</span>}
               <Blocks blocks={card.message.blocks} markdown onLink={onLink} workspaceId={workspaceId} />
             </div>
             <span className="card-actions card-actions-float">
               <button className="link small" onClick={() => copyText(messageText(card))} type="button">
-                copy
+                {t("copy")}
               </button>
             </span>
           </article>
@@ -205,11 +218,11 @@ function CardBody({ card, sessionId }: { card: Card; sessionId: string }) {
       return (
         <article className={`card card-${card.message.role}`}>
           <header className="small muted" title={card.message.messageId}>
-            {card.message.role === "user" ? "You" : card.message.role === "thought" ? "Reasoning" : provider ? PROVIDER_LABELS[provider] : "Agent"}
-            {card.message.contentUnknown && <span className="chip chip-warn small">content not supplied</span>}
+            {card.message.role === "user" ? t("You") : card.message.role === "thought" ? t("Reasoning") : provider ? PROVIDER_LABELS[provider] : t("Agent")}
+            {card.message.contentUnknown && <span className="chip chip-warn small">{t("content not supplied")}</span>}
             <span className="card-actions">
               <button className="link small" onClick={() => copyText(messageText(card))} type="button">
-                copy
+                {t("copy")}
               </button>
             </span>
           </header>
@@ -235,14 +248,14 @@ function CardBody({ card, sessionId }: { card: Card; sessionId: string }) {
       if (card.decision === "allowed") return null;
       return (
         <div className="card card-notice notice-warning">
-          The agent asked for permission ({card.title ?? card.requestId}) and it was <strong>refused</strong>.
+          {around(t("The agent asked for permission ({title}) and it was {refused}.", { title: card.title ?? card.requestId }), "refused", <strong>{t("refused")}</strong>)}
         </div>
       );
     case "unknown":
       return (
         <details className="card card-unknown">
           <summary>
-            Unknown {card.label} {card.truncated && <span className="chip small">payload truncated</span>}
+            {t("Unknown {label}", { label: card.label })} {card.truncated && <span className="chip small">{t("payload truncated")}</span>}
           </summary>
           <pre className="text">{JSON.stringify(card.raw, null, 2)}</pre>
         </details>
@@ -352,11 +365,57 @@ function toBase64(buffer: ArrayBuffer): string {
 
 /** The views kept behind one menu so the bar stays quiet. */
 export const GROUPED_VIEWS: { id: SessionTab; label: string; icon: (props: { size?: number }) => ReactElement; hint: string }[] = [
-  { id: "files", label: "Files", icon: IconFolder, hint: "Browse the workspace" },
-  { id: "changes", label: "Changes", icon: IconBranch, hint: "Review the diff and commit" },
-  { id: "context", label: "Context", icon: IconAt, hint: "What the agent can see" },
-  { id: "artifacts", label: "Artifacts", icon: IconBox, hint: "Files the run produced" },
-  { id: "images", label: "Images", icon: IconImage, hint: "Generated images" },
+  // Getters, so the words are looked up in the interface's language when shown.
+  {
+    id: "files",
+    get label() {
+      return t("Files");
+    },
+    icon: IconFolder,
+    get hint() {
+      return t("Browse the workspace");
+    },
+  },
+  {
+    id: "changes",
+    get label() {
+      return t("Changes");
+    },
+    icon: IconBranch,
+    get hint() {
+      return t("Review the diff and commit");
+    },
+  },
+  {
+    id: "context",
+    get label() {
+      return t("Context");
+    },
+    icon: IconAt,
+    get hint() {
+      return t("What the agent can see");
+    },
+  },
+  {
+    id: "artifacts",
+    get label() {
+      return t("Artifacts");
+    },
+    icon: IconBox,
+    get hint() {
+      return t("Files the run produced");
+    },
+  },
+  {
+    id: "images",
+    get label() {
+      return t("Images");
+    },
+    icon: IconImage,
+    get hint() {
+      return t("Generated images");
+    },
+  },
 ];
 
 /**
@@ -415,7 +474,7 @@ export function ViewsMenu({ tab, onPick, badges }: { tab: SessionTab; onPick: (t
         type="button"
       >
         {current ? <current.icon size={13} /> : <IconDots size={13} />}
-        {current?.label ?? "Views"}
+        {current?.label ?? t("Views")}
         {hidden.length > 0 && <span className="tab-badge">{hidden.join(" ")}</span>}
         {/* Rotated by CSS from the button's expanded state: down when closed, up when open. */}
         <IconChevron size={13} />
@@ -697,8 +756,8 @@ export function SessionPanel({ sessionId }: { sessionId: string }) {
   if (!session) {
     return (
       <section className="panel session-panel">
-        <h2>Session</h2>
-        <p className="muted">This session is no longer attached.</p>
+        <h2>{t("Session")}</h2>
+        <p className="muted">{t("This session is no longer attached.")}</p>
       </section>
     );
   }
@@ -776,9 +835,9 @@ export function SessionPanel({ sessionId }: { sessionId: string }) {
   const jobsBusy = sessionJobs.filter((job) => job.status === "starting" || job.status === "running").length;
   const jobsWaiting = sessionJobs.filter((job) => job.status === "waiting").length;
   const agentsBusy = working + jobsBusy;
-  const agentsLabel = `Agents${agentsBusy > 0 ? ` · ${agentsBusy}` : ""}${jobsWaiting > 0 ? ` · ${jobsWaiting} waiting` : ""}`;
+  const agentsLabel = `${t("Agents")}${agentsBusy > 0 ? ` · ${agentsBusy}` : ""}${jobsWaiting > 0 ? ` · ${t("{n} waiting", { n: jobsWaiting })}` : ""}`;
   const tabs: { id: typeof tab; label: string }[] = [
-    { id: "transcript", label: "Transcript" },
+    { id: "transcript", label: t("Transcript") },
     { id: "agents", label: agentsLabel },
     ...(isWorker ? [] : [{ id: "odyssey" as const, label: odysseyLabel }]),
   ];
@@ -789,12 +848,12 @@ export function SessionPanel({ sessionId }: { sessionId: string }) {
         <h2
           title={[
             handle.id,
-            `process ${projection.process} · attachment ${projection.attachment} · turn ${projection.foreground}`,
+            t("process {process} · attachment {attachment} · turn {turn}", { process: projection.process, attachment: projection.attachment, turn: projection.foreground }),
             projection.capabilities
-              ? `${projection.capabilities.agentName} ${projection.capabilities.agentVersion} · ACP v${projection.capabilities.protocolVersion}${projection.capabilities.supportsSteering ? " · steering" : " · no steering"}`
+              ? `${projection.capabilities.agentName} ${projection.capabilities.agentVersion} · ACP v${projection.capabilities.protocolVersion} · ${projection.capabilities.supportsSteering ? t("steering") : t("no steering")}`
               : null,
-            projection.usage ? `context ${projection.usage.used ?? "?"}/${projection.usage.size ?? "?"}` : null,
-            `events ${projection.eventCount} · seq ${projection.lastSequence}`,
+            projection.usage ? t("context {used}/{size}", { used: projection.usage.used ?? "?", size: projection.usage.size ?? "?" }) : null,
+            t("events {n} · seq {seq}", { n: projection.eventCount, seq: projection.lastSequence }),
           ]
             .filter(Boolean)
             .join("\n")}
@@ -805,22 +864,22 @@ export function SessionPanel({ sessionId }: { sessionId: string }) {
             want to act on are shown, and the details stay on hover. */}
         {(projection.process !== "ready" || projection.attachment !== "attached" || projection.exit || projection.autonomous.size > 0) && (
           <div className="row wrap">
-            {projection.process !== "ready" && <span className="chip chip-warn">process: {projection.process}</span>}
-            {projection.attachment !== "attached" && <span className="chip chip-warn">attachment: {projection.attachment}</span>}
-            {projection.autonomous.size > 0 && <span className="chip chip-active">autonomous turns: {projection.autonomous.size}</span>}
+            {projection.process !== "ready" && <span className="chip chip-warn">{t("process: {state}", { state: projection.process })}</span>}
+            {projection.attachment !== "attached" && <span className="chip chip-warn">{t("attachment: {state}", { state: projection.attachment })}</span>}
+            {projection.autonomous.size > 0 && <span className="chip chip-active">{t("autonomous turns: {n}", { n: projection.autonomous.size })}</span>}
             {projection.exit && (
               <span className="chip chip-warn">
-                exited status {projection.exit.status ?? "?"}
-                {projection.exit.forced ? " (forced)" : ""}
+                {t("exited status {status}", { status: projection.exit.status ?? "?" })}
+                {projection.exit.forced ? ` ${t("(forced)")}` : ""}
               </span>
             )}
           </div>
         )}
         {projection.snapshotNeeded && (
           <div className="banner banner-busy">
-            The event stream lagged; deltas were skipped.{" "}
+            {t("The event stream lagged; deltas were skipped.")}{" "}
             <button className="link" onClick={() => void refreshSnapshot(sessionId)} type="button">
-              refresh from snapshot and history
+              {t("refresh from snapshot and history")}
             </button>
           </div>
         )}
@@ -831,26 +890,26 @@ export function SessionPanel({ sessionId }: { sessionId: string }) {
             toggle and a menu, and claiming otherwise would mislead a reader
             using a screen reader. */}
         <div className="tablist" role="tablist">
-          {tabs.map((t) => (
+          {tabs.map((item) => (
             <button
-              aria-selected={tab === t.id}
-              className={`tab ${tab === t.id ? "tab-on" : ""} ${t.id === "transcript" && active ? "tab-running" : ""}`}
-              key={t.id}
-              onClick={() => setTab(t.id)}
+              aria-selected={tab === item.id}
+              className={`tab ${tab === item.id ? "tab-on" : ""} ${item.id === "transcript" && active ? "tab-running" : ""}`}
+              key={item.id}
+              onClick={() => setTab(item.id)}
               role="tab"
               type="button"
             >
-              {t.label}
+              {item.label}
             </button>
           ))}
         </div>
         <span className="tabs-spacer" />
         <button
-          aria-label="Terminal"
+          aria-label={t("Terminal")}
           aria-pressed={tab === "terminal"}
           className={`icon-button icon-button-xs tab-icon remote-hidden ${tab === "terminal" ? "on" : ""}`}
           onClick={() => setTab("terminal")}
-          title="Terminal"
+          title={t("Terminal")}
           type="button"
         >
           <IconTerminal size={15} />
@@ -868,7 +927,7 @@ export function SessionPanel({ sessionId }: { sessionId: string }) {
               {searchOpen && (
                 <>
                   <input
-                    aria-label="Search transcript"
+                    aria-label={t("Search transcript")}
                     className="input"
                     onChange={(e) => setQuery(e.target.value)}
                     onKeyDown={(e) => {
@@ -878,18 +937,18 @@ export function SessionPanel({ sessionId }: { sessionId: string }) {
                         composerRef.current?.focus();
                       }
                     }}
-                    placeholder="Search transcript (Esc to close)"
+                    placeholder={t("Search transcript (Esc to close)")}
                     ref={searchRef}
                     value={query}
                   />
                   <span className="small muted">
-                    {filteredCards.length} of {projection.cards.length} entries
+                    {t("{shown} of {total} entries", { shown: filteredCards.length, total: projection.cards.length })}
                   </span>
                 </>
               )}
               {windowStart > 0 && (
                 <button className="link small" onClick={() => setVisible((v) => v + uiPrefs.transcriptPage)} type="button">
-                  show {Math.min(uiPrefs.transcriptPage, windowStart)} earlier of {windowStart}
+                  {t("show {n} earlier of {total}", { n: Math.min(uiPrefs.transcriptPage, windowStart), total: windowStart })}
                 </button>
               )}
             </div>
@@ -919,7 +978,7 @@ export function SessionPanel({ sessionId }: { sessionId: string }) {
               ) : (
                 <details className="runtime-group" key={group.key}>
                   <summary className="small muted">
-                    runtime · {group.cards.length} events · latest: {(group.cards.at(-1) as { text: string }).text.slice(0, 120)}
+                    {t("runtime · {n} events · latest: {text}", { n: group.cards.length, text: (group.cards.at(-1) as { text: string }).text.slice(0, 120) })}
                   </summary>
                   {group.cards.map((card) => (
                     <CardView card={card} key={card.key} sessionId={sessionId} />
@@ -944,10 +1003,12 @@ export function SessionPanel({ sessionId }: { sessionId: string }) {
               // files that never made it into the transcript, not a gallery.
               <details className="card observed-images">
                 <summary className="small muted">
-                  {observedImages.length} image{observedImages.length === 1 ? "" : "s"} appeared in output/imagegen during this session (observed files)
+                  {observedImages.length === 1
+                    ? t("{n} image appeared in output/imagegen during this session (observed files)", { n: observedImages.length })
+                    : t("{n} images appeared in output/imagegen during this session (observed files)", { n: observedImages.length })}
                   <span className="link small observed-images-open" onClick={(event) => event.stopPropagation()} role="none">
                     <button className="link small" onClick={() => setTab("images")} type="button">
-                      open Images tab
+                      {t("open Images tab")}
                     </button>
                   </span>
                 </summary>
@@ -958,8 +1019,8 @@ export function SessionPanel({ sessionId }: { sessionId: string }) {
                 </div>
               </details>
             )}
-            {projection.cards.length === 0 && <p className="muted">Attached. Send a prompt to begin.</p>}
-            {query && filteredCards.length === 0 && <p className="muted">No entries match.</p>}
+            {projection.cards.length === 0 && <p className="muted">{t("Attached. Send a prompt to begin.")}</p>}
+            {query && filteredCards.length === 0 && <p className="muted">{t("No entries match.")}</p>}
           </div>
         </>
       )}
@@ -990,7 +1051,7 @@ export function SessionPanel({ sessionId }: { sessionId: string }) {
               <span
                 className="attachment-chip"
                 key={`${m.relativePath}-${index}`}
-                title={m.mode.mode === "path_reference" ? "The agent receives an environment-local path and reads the file itself." : "The file content is copied into the prompt with its path and hash."}
+                title={m.mode.mode === "path_reference" ? t("The agent receives an environment-local path and reads the file itself.") : t("The file content is copied into the prompt with its path and hash.")}
               >
                 <span className="mono small">@{m.relativePath}</span>
                 <button
@@ -998,9 +1059,9 @@ export function SessionPanel({ sessionId }: { sessionId: string }) {
                   onClick={() => updateMention(sessionId, index, { ...m, mode: m.mode.mode === "path_reference" ? { mode: "copied_content" } : { mode: "path_reference" } })}
                   type="button"
                 >
-                  {m.mode.mode === "path_reference" ? "as path" : `copied${m.mode.startLine ? ` ${m.mode.startLine}-${m.mode.endLine ?? ""}` : ""}`}
+                  {m.mode.mode === "path_reference" ? t("as path") : `${t("copied")}${m.mode.startLine ? ` ${m.mode.startLine}-${m.mode.endLine ?? ""}` : ""}`}
                 </button>
-                <button aria-label={`remove mention ${m.relativePath}`} className="link small" onClick={() => removeMention(sessionId, index)} type="button">
+                <button aria-label={t("remove mention {path}", { path: m.relativePath })} className="link small" onClick={() => removeMention(sessionId, index)} type="button">
                   ×
                 </button>
               </span>
@@ -1016,8 +1077,8 @@ export function SessionPanel({ sessionId }: { sessionId: string }) {
                     {a.kind === "image" && a.width && a.height ? ` · ${a.width}×${a.height}` : ""}
                   </span>
                 </span>
-                {!mediaOk[a.kind] && <span className="chip small chip-warn">runtime did not advertise {a.kind} prompts</span>}
-                <button aria-label={`remove attachment ${a.name}`} className="link small" onClick={() => removeAttachment(sessionId, a.id)} type="button">
+                {!mediaOk[a.kind] && <span className="chip small chip-warn">{a.kind === "image" ? t("runtime did not advertise image prompts") : t("runtime did not advertise audio prompts")}</span>}
+                <button aria-label={t("remove attachment {name}", { name: a.name })} className="link small" onClick={() => removeAttachment(sessionId, a.id)} type="button">
                   ×
                 </button>
               </span>
@@ -1026,16 +1087,16 @@ export function SessionPanel({ sessionId }: { sessionId: string }) {
         )}
         <div className="composer-wrap">
           {mention && (
-            <div aria-label="Mention a file" className="mention-popover" role="listbox">
+            <div aria-label={t("Mention a file")} className="mention-popover" role="listbox">
               <div className="row wrap small" style={{ padding: "4px 8px" }}>
-                <span className="muted">Mention @{mention.token}</span>
+                <span className="muted">{t("Mention @{token}", { token: mention.token })}</span>
                 <label className="check small">
-                  <input checked={mention.copy} onChange={(e) => setMention({ ...mention, copy: e.target.checked })} type="checkbox" /> copy content into the prompt (default: path reference)
+                  <input checked={mention.copy} onChange={(e) => setMention({ ...mention, copy: e.target.checked })} type="checkbox" /> {t("copy content into the prompt (default: path reference)")}
                 </label>
-                {mention.truncated && <span className="muted">more matches; keep typing</span>}
+                {mention.truncated && <span className="muted">{t("more matches; keep typing")}</span>}
               </div>
               <ul className="mention-list">
-                {mention.matches.length === 0 && <li className="mention-item muted small">No files match.</li>}
+                {mention.matches.length === 0 && <li className="mention-item muted small">{t("No files match.")}</li>}
                 {mention.matches.map((path, i) => (
                   <li
                     aria-selected={i === mention.index}
@@ -1052,7 +1113,7 @@ export function SessionPanel({ sessionId }: { sessionId: string }) {
             </div>
           )}
           <textarea
-            aria-label="Prompt"
+            aria-label={t("Prompt")}
             className="textarea"
             onChange={(event) => setDraft(sessionId, event.target.value)}
             onKeyDown={onKeyDown}
@@ -1061,10 +1122,12 @@ export function SessionPanel({ sessionId }: { sessionId: string }) {
               active
                 ? canSteer
                   ? steerFirst
-                    ? `Steer this turn (${sendKey}), or queue for the next (⌘${sendKey}). Type @ to mention a file.`
-                    : `Queue for the next turn (${sendKey}), or steer this one (⌘${sendKey}). Type @ to mention a file.`
-                  : `Queue for the next turn (${sendKey}). Type @ to mention a file.`
-                : `Prompt (${uiPrefs.enterSends ? "Enter to send, Shift+Enter for newline" : "Shift+Enter to send, Enter for newline"}). Type @ to mention a file; drop or paste images to attach.`
+                    ? t("Steer this turn ({key}), or queue for the next (⌘{key}). Type @ to mention a file.", { key: sendKey })
+                    : t("Queue for the next turn ({key}), or steer this one (⌘{key}). Type @ to mention a file.", { key: sendKey })
+                  : t("Queue for the next turn ({key}). Type @ to mention a file.", { key: sendKey })
+                : uiPrefs.enterSends
+                  ? t("Prompt (Enter to send, Shift+Enter for newline). Type @ to mention a file; drop or paste images to attach.")
+                  : t("Prompt (Shift+Enter to send, Enter for newline). Type @ to mention a file; drop or paste images to attach.")
             }
             ref={composerRef}
             rows={2}
@@ -1073,7 +1136,7 @@ export function SessionPanel({ sessionId }: { sessionId: string }) {
         </div>
         <div className="composer-row">
           <button
-            aria-label="Attach media"
+            aria-label={t("Attach media")}
             className="icon-button remote-hidden"
             disabled={!canSend}
             onClick={() =>
@@ -1082,17 +1145,17 @@ export function SessionPanel({ sessionId }: { sessionId: string }) {
                 .then((snapshots) => addAttachments(sessionId, snapshots))
                 .catch(setError)
             }
-            title="Attach PNG, JPEG, GIF, WebP, WAV or MP3 (8 files, 10 MiB each, 20 MiB total). Type @ to mention a file."
+            title={t("Attach PNG, JPEG, GIF, WebP, WAV or MP3 (8 files, 10 MiB each, 20 MiB total). Type @ to mention a file.")}
             type="button"
           >
             <IconPaperclip />
           </button>
           <ConfigPickers configOptions={configOptions} disabled={projection.process === "exited" || busy !== null} sessionId={sessionId} />
-          {!configOptions && <span className="chip small">the account's default model</span>}
+          {!configOptions && <span className="chip small">{t("the account's default model")}</span>}
           <TeamChip disabled={projection.process === "exited"} sessionId={sessionId} />
           <span className="composer-spacer" />
           {active && (
-            <button aria-label="Cancel turn" className="icon-button" onClick={() => void cancel(sessionId)} title="Cancel the current turn" type="button">
+            <button aria-label={t("Cancel turn")} className="icon-button" onClick={() => void cancel(sessionId)} title={t("Cancel the current turn")} type="button">
               <IconSquare />
             </button>
           )}
@@ -1103,24 +1166,24 @@ export function SessionPanel({ sessionId }: { sessionId: string }) {
                   className={`send-button ${steerFirst ? "" : "send-secondary"}`}
                   disabled={steerInFlight || !draft.trim()}
                   onClick={() => void steer(sessionId)}
-                  title={`Send into the running turn now${steerFirst ? ` (${sendKey})` : ` (⌘${sendKey})`}`}
+                  title={t("Send into the running turn now ({key})", { key: steerFirst ? sendKey : `⌘${sendKey}` })}
                   type="button"
                 >
-                  Steer
+                  {t("Steer")}
                 </button>
               )}
               <button
                 className={`send-button ${steerFirst ? "send-secondary" : ""}`}
                 disabled={!canSend || !hasInput}
                 onClick={() => void enqueue(sessionId)}
-                title={`Send when the running turn is over${steerFirst ? ` (⌘${sendKey})` : ` (${sendKey})`}`}
+                title={t("Send when the running turn is over ({key})", { key: steerFirst ? `⌘${sendKey}` : sendKey })}
                 type="button"
               >
-                Queue <IconArrowUp size={14} />
+                {t("Queue")} <IconArrowUp size={14} />
               </button>
             </>
           ) : (
-            <button aria-label="Send" className="send-button send-round" disabled={!canSend || !hasInput} onClick={sendAndFollow} title="Send" type="button">
+            <button aria-label={t("Send")} className="send-button send-round" disabled={!canSend || !hasInput} onClick={sendAndFollow} title={t("Send")} type="button">
               <IconArrowUp size={16} />
             </button>
           )}
@@ -1128,17 +1191,17 @@ export function SessionPanel({ sessionId }: { sessionId: string }) {
         </div>
         <div className="row wrap composer-meta">
           <button className="link small" onClick={() => void stop(sessionId)} type="button">
-            stop session
+            {t("stop session")}
           </button>
           {lastSubmission && (
             <span className="small muted">
-              last submission {String(lastSubmission[0]).slice(0, 8)}: {String(lastSubmission[1].state).replace("_", " ")}
+              {t("last submission {id}: {state}", { id: String(lastSubmission[0]).slice(0, 8), state: String(lastSubmission[1].state).replace("_", " ") })}
               {lastSubmission[1].message ? ` (${lastSubmission[1].message})` : ""}
             </span>
           )}
           {[...projection.steers.entries()].slice(-1).map(([id, state]) => (
             <span className="small muted" key={id}>
-              steer {id}: {state.replace("_", " ")}
+              {t("steer {id}: {state}", { id, state: state.replace("_", " ") })}
             </span>
           ))}
         </div>

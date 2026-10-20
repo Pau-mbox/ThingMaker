@@ -8,6 +8,7 @@
  * plan.
  */
 import { MAX_PLAN_DOCUMENT_BYTES } from "./odysseyPlan";
+import { t } from "./i18n";
 
 export type DocumentSummary = {
   /** The first `#` heading, or the file name with its extension dropped. */
@@ -54,13 +55,13 @@ export function summarize(text: string, filename: string): DocumentSummary {
     .replace(/[-_]+/g, " ")
     .trim();
   return {
-    suggestedTitle: (heading ?? fallback).slice(0, 120).trim() || "Imported plan",
+    suggestedTitle: (heading ?? fallback).slice(0, 120).trim() || t("Imported plan"),
     bytes,
     lines: lines.length,
     headings,
     tooLarge:
       bytes > MAX_PLAN_DOCUMENT_BYTES
-        ? `That document is ${Math.round(bytes / 1024)} KB. Big Thing hands the whole plan to the model in one turn, so it has to be under ${MAX_PLAN_DOCUMENT_BYTES / 1024} KB — point it at the plan itself rather than a whole folder of notes.`
+        ? t("That document is {size} KB. Big Thing hands the whole plan to the model in one turn, so it has to be under {limit} KB — point it at the plan itself rather than a whole folder of notes.", { size: Math.round(bytes / 1024), limit: MAX_PLAN_DOCUMENT_BYTES / 1024 })
         : null,
   };
 }

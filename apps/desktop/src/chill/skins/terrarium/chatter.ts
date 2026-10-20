@@ -1,9 +1,11 @@
 import type { Activity } from "./motion";
 import { chance } from "./motion";
+import { t } from "../../../i18n";
 
 /**
  * What helpers mutter now and then: whimsy, four words at most. It never
- * claims a real result — the inspection panel says what the work is.
+ * claims a real result — the inspection panel says what the work is. The
+ * lines are English here; the Spanish ones live in the chill catalog.
  */
 export const CHATTER: Record<Activity, readonly string[]> = {
   editing: [
@@ -52,10 +54,10 @@ export const CHATTER: Record<Activity, readonly string[]> = {
   waiting: ["Psst, your turn!", "Waiting patiently…", "Tap tap tap…", "Need a human…"],
 };
 
-/** The `count`th line a helper says while doing `activity`. */
+/** The `count`th line a helper says while doing `activity`, in the interface language. */
 export function chatterLine(activity: Activity, seed: number, count: number): string {
   const lines = CHATTER[activity];
-  return lines[Math.floor(chance(seed, count, 9) * lines.length)]!;
+  return t(lines[Math.floor(chance(seed, count, 9) * lines.length)]!);
 }
 
 /** Seconds until a helper speaks again: now and then, never continuously. */

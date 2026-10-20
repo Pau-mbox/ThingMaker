@@ -7,6 +7,7 @@
  * where work goes.
  */
 import { PROVIDER_LABELS, type Combo, type JobView, type Provider, type ProviderModel, type TeamPreset, type WorkerSlot } from "@thingmaker/contracts";
+import { t } from "./i18n";
 import type { Card } from "./projection";
 
 /** A worker to start from when the user adds one: the account's fastest
@@ -50,7 +51,7 @@ export function uniqueName(base: string, taken: string[]): string {
 
 /** `Codex · luna, Claude Code · sonnet` for a chip's title. */
 export function teamSummary(combo: Combo | undefined): string {
-  if (!combo || combo.workers.length === 0) return "No workers: the orchestrator works alone.";
+  if (!combo || combo.workers.length === 0) return t("No workers: the orchestrator works alone.");
   return combo.workers.map((worker) => `${worker.name} (${PROVIDER_LABELS[worker.provider]}${worker.model ? ` · ${worker.model}` : ""})`).join(", ");
 }
 
@@ -125,7 +126,7 @@ export function handoffBrief(cards: Card[], from: Provider, budget = 6000): stri
 export function newPreset(name: string, taken: string[]): TeamPreset {
   return {
     id: `preset-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`,
-    name: uniqueName(name.trim() || "New team", taken),
+    name: uniqueName(name.trim() || t("New team"), taken),
     orchestrator: { provider: "claude" },
     combo: { workers: [], nativeSubagents: false },
     updatedAt: Date.now(),

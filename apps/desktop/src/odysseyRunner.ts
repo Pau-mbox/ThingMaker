@@ -7,6 +7,7 @@
  * the countdown and ceilings the strip shows.
  */
 import type { MilestoneRecord, OdysseyRecord, UsageSnapshot } from "@thingmaker/contracts";
+import { t } from "./i18n";
 
 /** Percent of a usage window at which Big Thing parks rather than risk a turn. */
 export const USAGE_FLOOR_PERCENT = 98;
@@ -79,7 +80,7 @@ export function stallNotice(input: { reason: string; since: number | null; now: 
   if (since === null || !reason) return null;
   const waited = now - since;
   if (waited < limit) return null;
-  return `Big Thing has not been able to act for ${stallDuration(waited)}: ${reason}`;
+  return t("Big Thing has not been able to act for {duration}: {reason}", { duration: stallDuration(waited), reason });
 }
 
 export type UsageVerdict = { kind: "ok" } | { kind: "exhausted"; resumeAt: number | null; reason: string };
@@ -107,11 +108,20 @@ export function usageVerdict(usage: UsageSnapshot | null | undefined, floor = US
   // time is then whatever the windows report, and may be nothing.
   const relevant = spent.length > 0 ? spent : windows;
   const resets = relevant.map((entry) => entry.window.resetAtUnix).filter((value): value is number => typeof value === "number");
-  const reason =
-    spent.length > 0
-      ? `the ${spent.map((entry) => entry.name).join(" and ")} window${spent.length > 1 ? "s are" : " is"} at ${spent.map((entry) => `${entry.window.usedPercent}%`).join(" and ")}`
-      : "the provider reported the usage limit was reached";
+  const reason = spent.length > 0 ? spentReason(spent) : t("the provider reported the usage limit was reached");
   return { kind: "exhausted", resumeAt: resets.length > 0 ? Math.max(...resets) * 1000 : null, reason };
+}
+
+/** Which windows are spent, and how far, in words. */
+function spentReason(spent: { name: string; window: { usedPercent: number } }[]): string {
+  const [first, second] = spent;
+  if (!first) return "";
+  if (second) return t("the {first} and {second} windows are at {firstPercent}% and {secondPercent}%", { first: windowName(first.name), second: windowName(second.name), firstPercent: first.window.usedPercent, secondPercent: second.window.usedPercent });
+  return t("the {window} window is at {percent}%", { window: windowName(first.name), percent: first.window.usedPercent });
+}
+
+function windowName(name: string): string {
+  return name === "weekly" ? t("weekly") : name === "5-hour" ? t("5-hour") : name;
 }
 
 /** Whether Big Thing can settle this milestone itself, without asking anyone. */

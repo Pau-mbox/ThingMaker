@@ -7,6 +7,7 @@ import { useStore, sessionTitle, basenameOf as basename } from "../store";
 import { api } from "../ipc";
 import { ProviderBadge } from "./ProviderMark";
 import { windowName } from "./UsageLine";
+import { t } from "../i18n";
 import {
   IconChevron,
   IconDots,
@@ -24,7 +25,8 @@ import {
 } from "./icons";
 
 function AttentionDot({ kind, running, exited }: { kind: string; running: boolean; exited: boolean }) {
-  const title = kind === "needs_input" ? "needs your input" : kind === "completed" ? "finished" : kind === "failed" ? "failed or exited" : running ? "running" : exited ? "exited" : "idle";
+  const title =
+    kind === "needs_input" ? t("needs your input") : kind === "completed" ? t("finished") : kind === "failed" ? t("failed or exited") : running ? t("running") : exited ? t("exited") : t("idle");
   const cls = kind !== "none" ? `dot dot-${kind}` : running ? "dot dot-running" : exited ? "dot dot-exited" : "dot dot-idle";
   return <span aria-label={title} className={cls} title={title} />;
 }
@@ -34,7 +36,7 @@ function AttentionDot({ kind, running, exited }: { kind: string; running: boolea
 
 function storedLabel(id: string, title: string | undefined): string {
   if (title && title !== id) return title;
-  return `Session ${id.replace(/^(cx|tm)-/, "").slice(0, 8)}`;
+  return t("Session {id}", { id: id.replace(/^(cx|tm)-/, "").slice(0, 8) });
 }
 
 function relative(iso: string | undefined): string {
@@ -42,7 +44,7 @@ function relative(iso: string | undefined): string {
   const then = new Date(iso).getTime();
   if (Number.isNaN(then)) return "";
   const minutes = Math.round((Date.now() - then) / 60000);
-  if (minutes < 1) return "now";
+  if (minutes < 1) return t("now");
   if (minutes < 60) return `${minutes}m`;
   const hours = Math.round(minutes / 60);
   if (hours < 48) return `${hours}h`;
@@ -127,7 +129,7 @@ function SessionRow({ row, showProject, onMenu, renaming, onRename }: { row: Row
           }}
         >
           <input
-            aria-label={`Rename ${row.label}`}
+            aria-label={t("Rename {name}", { name: row.label })}
             className="input session-rename-input"
             onBlur={() => onRename(draft)}
             onChange={(event) => setDraft(event.target.value)}
@@ -137,7 +139,7 @@ function SessionRow({ row, showProject, onMenu, renaming, onRename }: { row: Row
                 onRename(null);
               }
             }}
-            placeholder="Session name (blank restores the original)"
+            placeholder={t("Session name (blank restores the original)")}
             ref={input}
             value={draft}
           />
@@ -156,7 +158,7 @@ function SessionRow({ row, showProject, onMenu, renaming, onRename }: { row: Row
         className={`session-row ${row.liveId ? "" : "stored"} ${active ? "selected" : ""}`}
         disabled={!row.liveId && !row.trusted}
         onClick={open}
-        title={row.liveId ? `${row.id}${shortcut}` : row.trusted ? `Resume ${row.id}` : "Trust the workspace to resume"}
+        title={row.liveId ? `${row.id}${shortcut}` : row.trusted ? t("Resume {id}", { id: row.id ?? "" }) : t("Trust the workspace to resume")}
         type="button"
       >
         {row.liveId ? (
@@ -170,31 +172,31 @@ function SessionRow({ row, showProject, onMenu, renaming, onRename }: { row: Row
           <span className="sidebar-title">{row.label}</span>
           {showProject && <span className="session-project">{row.project}</span>}
         </span>
-        <ProviderBadge provider={row.provider} title={`Runs on ${row.provider === "gemini" ? "Gemini (Antigravity)" : PROVIDER_LABELS[row.provider]}`} />
-        <span className="row-meta">{row.running ? "running" : row.exited ? "exited" : relative(row.updated)}</span>
+        <ProviderBadge provider={row.provider} title={t("Runs on {provider}", { provider: row.provider === "gemini" ? "Gemini (Antigravity)" : PROVIDER_LABELS[row.provider] })} />
+        <span className="row-meta">{row.running ? t("running") : row.exited ? t("exited") : relative(row.updated)}</span>
       </button>
       <span className="row-actions">
         <button
-          aria-label={row.pinned ? `Unpin ${row.label}` : `Pin ${row.label}`}
+          aria-label={row.pinned ? t("Unpin {name}", { name: row.label }) : t("Pin {name}", { name: row.label })}
           aria-pressed={row.pinned}
           className={`icon-button icon-button-xs row-action ${row.pinned ? "row-action-on" : ""}`}
           disabled={row.id === null}
           onClick={() => row.id && void pinSession(row.workspaceId, row.id, !row.pinned)}
-          title={row.id === null ? "Waiting for the agent to report this session's id" : row.pinned ? "Unpin from the top of the list" : "Pin to the top of the list"}
+          title={row.id === null ? t("Waiting for the agent to report this session's id") : row.pinned ? t("Unpin from the top of the list") : t("Pin to the top of the list")}
           type="button"
         >
           {row.pinned ? <IconPinFilled size={14} /> : <IconPin size={14} />}
         </button>
         <button
           aria-haspopup="menu"
-          aria-label={`Actions for ${row.label}`}
+          aria-label={t("Actions for {name}", { name: row.label })}
           className="icon-button icon-button-xs row-action"
           disabled={row.id === null}
           onClick={(event) => {
             const box = event.currentTarget.getBoundingClientRect();
             onMenu(row, { x: box.right, y: box.bottom });
           }}
-          title="Rename, pin, open folder"
+          title={t("Rename, pin, open folder")}
           type="button"
         >
           <IconDots size={14} />
@@ -244,24 +246,24 @@ function RowMenu({ row, at, onClose, onRename }: { row: Row; at: { x: number; y:
       style={{ left: Math.min(at.x, window.innerWidth - 200), top: Math.min(at.y, window.innerHeight - 170) }}
     >
       <button className="context-item" onClick={act(onRename)} role="menuitem" type="button">
-        Rename…
+        {t("Rename…")}
       </button>
       <button className="context-item" onClick={act(() => row.id && void pinSession(row.workspaceId, row.id, !row.pinned))} role="menuitem" type="button">
-        {row.pinned ? "Unpin" : "Pin to top"}
+        {row.pinned ? t("Unpin") : t("Pin to top")}
       </button>
       {!row.liveId && (
         <button className="context-item" onClick={act(() => row.id && void archiveSession(row.workspaceId, row.id, !row.archived))} role="menuitem" type="button">
-          {row.archived ? "Restore" : "Archive"}
+          {row.archived ? t("Restore") : t("Archive")}
         </button>
       )}
       {root && (
         <button className="context-item" onClick={act(() => void api.revealInFinder(root).catch(setError))} role="menuitem" type="button">
-          Open folder
+          {t("Open folder")}
         </button>
       )}
       {row.id && (
         <button className="context-item" onClick={act(() => void navigator.clipboard?.writeText(row.id as string))} role="menuitem" type="button">
-          Copy session id
+          {t("Copy session id")}
         </button>
       )}
     </div>
@@ -404,16 +406,16 @@ export function Sidebar() {
   const manyProjects = workspaces.length > 1;
 
   return (
-    <nav aria-label="Workspaces and sessions" className="sidebar">
+    <nav aria-label={t("Workspaces and sessions")} className="sidebar">
       <div className="sidebar-top" data-tauri-drag-region>
-        <button aria-label="Hide sidebar (⌘B)" className="icon-button remote-hidden" onClick={toggleSidebar} title="Hide sidebar (⌘B)" type="button">
+        <button aria-label={t("Hide sidebar (⌘B)")} className="icon-button remote-hidden" onClick={toggleSidebar} title={t("Hide sidebar (⌘B)")} type="button">
           <IconSidebar />
         </button>
         <span className="sidebar-brand" data-tauri-drag-region>
           <img className="brand-icon" src={`${import.meta.env.BASE_URL}thingmaker-icon.png`} alt="" draggable={false} />
           ThingMaker
         </span>
-        <button aria-label="Add workspace (⌘O)" className="icon-button remote-hidden" onClick={() => void addWorkspaceByPicker()} title="Add workspace (⌘O)" type="button">
+        <button aria-label={t("Add workspace (⌘O)")} className="icon-button remote-hidden" onClick={() => void addWorkspaceByPicker()} title={t("Add workspace (⌘O)")} type="button">
           <IconPlus />
         </button>
       </div>
@@ -423,9 +425,9 @@ export function Sidebar() {
           <button className="sidebar-empty" onClick={() => void addWorkspaceByPicker()} type="button">
             <IconFolder size={18} />
             <span>
-              <strong>Add a project folder</strong>
+              <strong>{t("Add a project folder")}</strong>
               <br />
-              <span className="muted small">Inspect it, trust it, then start a session.</span>
+              <span className="muted small">{t("Inspect it, trust it, then start a session.")}</span>
             </span>
           </button>
         )}
@@ -433,14 +435,14 @@ export function Sidebar() {
         {allPinned.length > 0 && (
           <section className="ws-group pinned-group">
             <div className="group-header">
-              <button aria-label={pinnedCollapsed ? "Expand" : "Collapse"} className="icon-button icon-button-xs" onClick={() => {
+              <button aria-label={pinnedCollapsed ? t("Expand") : t("Collapse")} className="icon-button icon-button-xs" onClick={() => {
                   setPinnedCollapsed(!pinnedCollapsed);
                   remember("thingmaker.sidebar.pinnedCollapsed", !pinnedCollapsed);
                 }} type="button">
                 <IconChevron open={!pinnedCollapsed} size={14} />
               </button>
               <span className="group-label">
-                <IconPinFilled size={12} /> Pinned
+                <IconPinFilled size={12} /> {t("Pinned")}
               </span>
               <span className="group-count">{allPinned.length}</span>
             </div>
@@ -470,7 +472,7 @@ export function Sidebar() {
           return (
             <section className="ws-group" key={workspace.id}>
               <div className={`ws-header ${selected ? "selected" : ""}`}>
-                <button aria-label={isCollapsed ? "Expand" : "Collapse"} className="icon-button icon-button-xs" onClick={() => {
+                <button aria-label={isCollapsed ? t("Expand") : t("Collapse")} className="icon-button icon-button-xs" onClick={() => {
                     const next = { ...collapsed, [workspace.id]: !isCollapsed };
                     setCollapsed(next);
                     remember("thingmaker.sidebar.collapsed", next);
@@ -482,33 +484,33 @@ export function Sidebar() {
                     <IconFolder size={14} />
                   </span>
                   <span className="sidebar-title">{project}</span>
-                  <span className={`trust-dot ${trusted ? "trust-ok" : "trust-warn"}`} title={inspection?.trustStale ? "configuration changed: re-review" : trusted ? "trusted local" : "not trusted yet"} />
+                  <span className={`trust-dot ${trusted ? "trust-ok" : "trust-warn"}`} title={inspection?.trustStale ? t("configuration changed: re-review") : trusted ? t("trusted local") : t("not trusted yet")} />
                 </button>
                 <span className="ws-actions">
                   <button
-                    aria-label="Refresh sessions"
+                    aria-label={t("Refresh sessions")}
                     className="icon-button icon-button-xs"
                     onClick={() => void loadRecords(workspace.id)}
-                    title="Refresh the session list"
+                    title={t("Refresh the session list")}
                     type="button"
                   >
                     <IconRefresh size={14} />
                   </button>
                   <button
-                    aria-label="New session"
+                    aria-label={t("New session")}
                     className="icon-button icon-button-xs"
                     disabled={!trusted}
                     onClick={() => void openSession(workspace.id, { mode: "new" })}
-                    title={trusted ? "New session (⌘N)" : "Trust the workspace to start a session"}
+                    title={trusted ? t("New session (⌘N)") : t("Trust the workspace to start a session")}
                     type="button"
                   >
                     <IconPlus size={14} />
                   </button>
                   <button
-                    aria-label="Remove workspace from the list"
+                    aria-label={t("Remove workspace from the list")}
                     className="icon-button icon-button-xs remote-hidden"
                     onClick={() => setRemoving({ id: workspace.id, name: project, live: liveCount })}
-                    title="Remove from ThingMaker (files and agent transcripts stay on disk)"
+                    title={t("Remove from ThingMaker (files and agent transcripts stay on disk)")}
                     type="button"
                   >
                     <IconX size={14} />
@@ -540,12 +542,12 @@ export function Sidebar() {
                         {children.length > 0 && row.id && (
                           <li className="session-li session-worker">
                             <button className="disclosure small" onClick={() => toggleTeam(row.id as string)} type="button">
-                              <IconChevron open={!!openTeams[row.id]} size={12} /> {children.length} worker{children.length === 1 ? "" : "s"}
-                              {running > 0 ? ` · ${running} running` : ""}
+                              <IconChevron open={!!openTeams[row.id]} size={12} /> {children.length === 1 ? t("1 worker") : t("{count} workers", { count: children.length })}
+                              {running > 0 ? ` · ${t("{count} running", { count: running })}` : ""}
                             </button>
                             {openTeams[row.id] && finished > 0 && (
                               <button className="link small sidebar-finished" onClick={() => setOpenFinished({ ...openFinished, [row.id as string]: !openFinished[row.id as string] })} type="button">
-                                {openFinished[row.id] ? "hide finished" : `show ${finished} finished`}
+                                {openFinished[row.id] ? t("hide finished") : t("show {count} finished", { count: finished })}
                               </button>
                             )}
                           </li>
@@ -554,17 +556,17 @@ export function Sidebar() {
                     );
                   })}
                   {unpinned.length === 0 && pinnedRows.length === 0 && archivedRows.length === 0 && (
-                    <li className="small muted sidebar-note">{trusted ? "No sessions yet." : "Select the workspace to open it."}</li>
+                    <li className="small muted sidebar-note">{trusted ? t("No sessions yet.") : t("Select the workspace to open it.")}</li>
                   )}
                   {unpinned.length === 0 && pinnedRows.length > 0 && (
                     <li className="small muted sidebar-note">
-                      {pinnedRows.length === 1 ? "Its only session is pinned above." : `All ${pinnedRows.length} sessions are pinned above.`}
+                      {pinnedRows.length === 1 ? t("Its only session is pinned above.") : t("All {count} sessions are pinned above.", { count: pinnedRows.length })}
                     </li>
                   )}
                   {archivedRows.length > 0 && (
                     <li>
                       <button className="disclosure" onClick={() => setShowHidden(!showHidden)} type="button">
-                        <IconChevron open={showHidden} size={12} /> Archived ({archivedRows.length})
+                        <IconChevron open={showHidden} size={12} /> {t("Archived ({count})", { count: archivedRows.length })}
                       </button>
                     </li>
                   )}
@@ -593,12 +595,19 @@ export function Sidebar() {
       {removing && (
         <div aria-modal="true" className="modal-backdrop" role="dialog">
           <div className="modal">
-            <h2>Remove {removing.name} from ThingMaker?</h2>
+            <h2>{t("Remove {name} from ThingMaker?", { name: removing.name })}</h2>
             <p className="small">
-              This forgets the workspace here: its trust decision, archive flags, review baselines and desktop records. The folder, its files and the agents' own
-              transcripts (~/.claude, ~/.codex) are not touched.
+              {t(
+                "This forgets the workspace here: its trust decision, archive flags, review baselines and desktop records. The folder, its files and the agents' own transcripts (~/.claude, ~/.codex) are not touched.",
+              )}
             </p>
-            {removing.live > 0 && <p className="small chip-warn">{removing.live} session(s) are still attached. Stop them first.</p>}
+            {removing.live > 0 && (
+              <p className="small chip-warn">
+                {removing.live === 1
+                  ? t("1 session is still attached. Stop it first.")
+                  : t("{count} sessions are still attached. Stop them first.", { count: removing.live })}
+              </p>
+            )}
             <div className="row wrap">
               <button
                 className="button button-warn"
@@ -609,10 +618,10 @@ export function Sidebar() {
                 }}
                 type="button"
               >
-                Remove workspace
+                {t("Remove workspace")}
               </button>
               <button className="button" onClick={() => setRemoving(null)} type="button">
-                Cancel
+                {t("Cancel")}
               </button>
             </div>
           </div>
@@ -625,9 +634,9 @@ export function Sidebar() {
           if (!snapshot?.primary) return null;
           const windows = [snapshot.primary, snapshot.secondary].filter((w): w is NonNullable<typeof w> => !!w);
           return (
-            <div className="status-line small muted" key={provider} title={`${PROVIDER_LABELS[provider]}${snapshot.planType ? ` (${snapshot.planType})` : ""}, account-wide. Details in a session's Context tab.`}>
-              {PROVIDER_LABELS[provider]} · {windows.map((w) => `${windowName(w.windowSeconds)} ${Math.max(0, 100 - Math.round(w.usedPercent))}% left`).join(" · ")}
-              {snapshot.limitReached ? " · limit reached" : ""}
+            <div className="status-line small muted" key={provider} title={t("{provider}, account-wide. Details in a session's Context tab.", { provider: `${PROVIDER_LABELS[provider]}${snapshot.planType ? ` (${snapshot.planType})` : ""}` })}>
+              {PROVIDER_LABELS[provider]} · {windows.map((w) => t("{window} {percent}% left", { window: windowName(w.windowSeconds), percent: Math.max(0, 100 - Math.round(w.usedPercent)) })).join(" · ")}
+              {snapshot.limitReached ? ` · ${t("limit reached")}` : ""}
             </div>
           );
         })}
@@ -639,16 +648,22 @@ export function Sidebar() {
               setView({ kind: "signin" });
               void loadProviders();
             }}
-            title={updatesOut > 0 ? `Providers (⌘,): ${updatesOut} update${updatesOut === 1 ? "" : "s"} available` : "Providers (⌘,)"}
+            title={
+              updatesOut === 1
+                ? t("Providers (⌘,): 1 update available")
+                : updatesOut > 1
+                  ? t("Providers (⌘,): {count} updates available", { count: updatesOut })
+                  : t("Providers (⌘,)")
+            }
             type="button"
           >
             <IconKey />
-            {updatesOut > 0 && <span aria-label="update available" className="badge-dot" />}
+            {updatesOut > 0 && <span aria-label={t("update available")} className="badge-dot" />}
           </button>
           <button
             className={`icon-button ${view.kind === "teams" ? "on" : ""}`}
             onClick={() => setView({ kind: "teams" })}
-            title="Teams: orchestrator and worker presets"
+            title={t("Teams: orchestrator and worker presets")}
             type="button"
           >
             <IconAgents />
@@ -659,7 +674,7 @@ export function Sidebar() {
               setView({ kind: "settings" });
               void loadSettings();
             }}
-            title="Settings (⌘;)"
+            title={t("Settings (⌘;)")}
             type="button"
           >
             <IconGear />

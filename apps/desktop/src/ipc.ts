@@ -129,10 +129,11 @@ import {
   type ProviderModel,
   type QuotaSnapshot,
 } from "@thingmaker/contracts";
+import { t } from "./i18n";
 
 function toDesktopError(error: unknown): DesktopError {
   if (isDesktopError(error)) return error;
-  const message = error instanceof Error ? error.message : typeof error === "string" ? error : "Unknown error";
+  const message = error instanceof Error ? error.message : typeof error === "string" ? error : t("Unknown error");
   return { code: "IO", message, retry: "user_action" };
 }
 

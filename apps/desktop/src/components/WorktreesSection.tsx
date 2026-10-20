@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import type { RepositoryInfo, WorktreeView } from "@thingmaker/contracts";
 import { api, toDesktopError } from "../ipc";
 import { useStore } from "../store";
+import { t } from "../i18n";
 
 /**
  * Worktrees for parallel writers (GIT-01..04). Created from an explicitly
@@ -42,8 +43,14 @@ export function WorktreesSection({ workspaceId }: { workspaceId: string }) {
     setMessage(null);
     try {
       const created = await api.worktreeCreate(workspaceId, branch.trim(), base, carry);
+      const where = { path: created.record.path, branch: created.record.branch, base: created.record.baseRef };
       setMessage(
-        `Created ${created.record.path} on ${created.record.branch} from ${created.record.baseRef}${carry ? ` (carried ${created.carriedPatchBytes} bytes of patch and ${created.carriedUntracked} untracked file(s))` : ""}. It is a separate workspace: review and trust it before starting sessions there.`,
+        carry
+          ? t(
+              "Created {path} on {branch} from {base} (carried {bytes} bytes of patch and {files} untracked file(s)). It is a separate workspace: review and trust it before starting sessions there.",
+              { ...where, bytes: created.carriedPatchBytes, files: created.carriedUntracked },
+            )
+          : t("Created {path} on {branch} from {base}. It is a separate workspace: review and trust it before starting sessions there.", where),
       );
       setBranch("");
       await load();
@@ -60,19 +67,23 @@ export function WorktreesSection({ workspaceId }: { workspaceId: string }) {
     try {
       const preview = await api.worktreeRemovePreview(workspaceId, worktreeId);
       if (preview.liveSessions.length > 0) {
-        setMessage(`${preview.liveSessions.length} live session(s) still use ${preview.path}. Stop them first.`);
+        setMessage(
+          preview.liveSessions.length === 1
+            ? t("1 live session still uses {path}. Stop it first.", { path: preview.path })
+            : t("{count} live sessions still use {path}. Stop them first.", { count: preview.liveSessions.length, path: preview.path }),
+        );
         return;
       }
       const details = [
-        `Path: ${preview.path}`,
-        `Branch: ${preview.branch} (the branch itself is kept)`,
-        preview.dirtyFiles.length ? `Modified files (snapshotted before removal): ${preview.dirtyFiles.join(", ")}` : "No modified tracked files.",
-        preview.untrackedFiles.length ? `Untracked files (snapshotted before removal): ${preview.untrackedFiles.join(", ")}` : "No untracked files.",
+        t("Path: {path}", { path: preview.path }),
+        t("Branch: {branch} (the branch itself is kept)", { branch: preview.branch }),
+        preview.dirtyFiles.length ? t("Modified files (snapshotted before removal): {files}", { files: preview.dirtyFiles.join(", ") }) : t("No modified tracked files."),
+        preview.untrackedFiles.length ? t("Untracked files (snapshotted before removal): {files}", { files: preview.untrackedFiles.join(", ") }) : t("No untracked files."),
       ].join("\n");
-      const ok = await api.confirmDialog({ title: "Remove worktree?", message: details, okLabel: "Remove worktree", cancelLabel: "Keep", warning: true });
+      const ok = await api.confirmDialog({ title: t("Remove worktree?"), message: details, okLabel: t("Remove worktree"), cancelLabel: t("Keep"), warning: true });
       if (!ok) return;
       const snapshot = await api.worktreeRemove(workspaceId, worktreeId);
-      setMessage(snapshot ? `Removed. Dirty and untracked content was saved as baseline ${snapshot.slice(0, 8)}.` : "Removed.");
+      setMessage(snapshot ? t("Removed. Dirty and untracked content was saved as baseline {id}.", { id: snapshot.slice(0, 8) }) : t("Removed."));
       await load();
     } catch (error) {
       report(error);
@@ -96,16 +107,18 @@ export function WorktreesSection({ workspaceId }: { workspaceId: string }) {
 
   return (
     <section>
-      <h3>Worktrees</h3>
+      <h3>{t("Worktrees")}</h3>
       <p className="small muted">
-        A worktree gives a parallel session its own working copy on its own branch. It isolates edits, not host access, and shares the
-        repository's metadata. Managed worktrees live under <span className="mono">{view?.managedRoot}</span>.
+        {t(
+          "A worktree gives a parallel session its own working copy on its own branch. It isolates edits, not host access, and shares the repository's metadata. Managed worktrees live under",
+        )}{" "}
+        <span className="mono">{view?.managedRoot}</span>.
       </p>
       <div className="row wrap">
-        <input aria-label="New branch name" className="input inline" onChange={(e) => setBranch(e.target.value)} placeholder="new-branch-name" value={branch} />
+        <input aria-label={t("New branch name")} className="input inline" onChange={(e) => setBranch(e.target.value)} placeholder="new-branch-name" value={branch} />
         <label className="small">
-          from{" "}
-          <select aria-label="Base ref" className="input inline" onChange={(e) => setBase(e.target.value)} value={base}>
+          {t("from")}{" "}
+          <select aria-label={t("Base ref")} className="input inline" onChange={(e) => setBase(e.target.value)} value={base}>
             {info.branches.map((b) => (
               <option key={b} value={b}>
                 {b}
@@ -113,11 +126,11 @@ export function WorktreesSection({ workspaceId }: { workspaceId: string }) {
             ))}
           </select>
         </label>
-        <label className="check small" title="Tracked changes are applied as a patch and untracked files copied. Nothing is stashed or reset in this checkout.">
-          <input checked={carry} onChange={(e) => setCarry(e.target.checked)} type="checkbox" /> carry uncommitted changes
+        <label className="check small" title={t("Tracked changes are applied as a patch and untracked files copied. Nothing is stashed or reset in this checkout.")}>
+          <input checked={carry} onChange={(e) => setCarry(e.target.checked)} type="checkbox" /> {t("carry uncommitted changes")}
         </label>
         <button className="button" disabled={busy || !branch.trim()} onClick={() => void create()} type="button">
-          Create worktree
+          {t("Create worktree")}
         </button>
       </div>
       {message && <p className="small muted">{message}</p>}
@@ -126,16 +139,16 @@ export function WorktreesSection({ workspaceId }: { workspaceId: string }) {
           <li className="row wrap" key={worktree.id}>
             <span className="mono small">{worktree.path}</span>
             <span className="chip small">{worktree.branch}</span>
-            <span className="small muted">from {worktree.baseRef}</span>
-            {worktree.pinned && <span className="chip small chip-active">pinned</span>}
+            <span className="small muted">{t("from {ref}", { ref: worktree.baseRef })}</span>
+            {worktree.pinned && <span className="chip small chip-active">{t("pinned")}</span>}
             <button className="link small" onClick={() => void addWorkspaceByPath(worktree.path)} type="button">
-              open as workspace
+              {t("open as workspace")}
             </button>
             <button className="link small" onClick={() => void pin(worktree.id, !worktree.pinned)} type="button">
-              {worktree.pinned ? "unpin" : "pin"}
+              {worktree.pinned ? t("unpin") : t("pin")}
             </button>
             <button className="link small" disabled={busy || worktree.pinned} onClick={() => void remove(worktree.id)} type="button">
-              remove…
+              {t("remove…")}
             </button>
           </li>
         ))}
@@ -144,8 +157,8 @@ export function WorktreesSection({ workspaceId }: { workspaceId: string }) {
           .map((g) => (
             <li className="row wrap" key={g.path}>
               <span className="mono small">{g.path}</span>
-              <span className="chip small">{g.branch ?? g.head ?? "detached"}</span>
-              <span className="small muted">not managed by the desktop</span>
+              <span className="chip small">{g.branch ?? g.head ?? t("detached")}</span>
+              <span className="small muted">{t("not managed by the desktop")}</span>
             </li>
           ))}
       </ul>

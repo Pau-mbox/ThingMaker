@@ -1,4 +1,5 @@
 import { Component, type ErrorInfo, type ReactNode } from "react";
+import { t } from "../i18n";
 
 type Props = { children: ReactNode; label: string; onReset?: () => void; fallback?: ReactNode };
 type State = { error: Error | null; info: string | null };
@@ -25,10 +26,12 @@ export class ErrorBoundary extends Component<Props, State> {
     if (this.props.fallback !== undefined) return this.props.fallback;
     return (
       <div className="panel" role="alert">
-        <h2>This view failed to render</h2>
+        <h2>{t("This view failed to render")}</h2>
         <p className="muted small">
-          The {this.props.label} hit a renderer defect. Agent sessions are unaffected; the native supervisor still owns them. Copy the
-          details below into a bug report, then remount the view.
+          {t(
+            "The {label} hit a renderer defect. Agent sessions are unaffected; the native supervisor still owns them. Copy the details below into a bug report, then remount the view.",
+            { label: this.props.label },
+          )}
         </p>
         <pre className="text log">{`${this.state.error.name}: ${this.state.error.message}\n${this.state.error.stack ?? ""}\n${this.state.info ?? ""}`}</pre>
         <button
@@ -39,7 +42,7 @@ export class ErrorBoundary extends Component<Props, State> {
           }}
           type="button"
         >
-          Remount view
+          {t("Remount view")}
         </button>
       </div>
     );

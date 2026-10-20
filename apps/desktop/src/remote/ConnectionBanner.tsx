@@ -5,6 +5,7 @@
  */
 import { useEffect, useState } from "react";
 import { bridge, type ConnectionState } from "./bridge";
+import { t } from "../i18n";
 
 export function ConnectionBanner() {
   const [state, setState] = useState<{ state: ConnectionState; message?: string | undefined }>({ state: "connecting" });
@@ -13,8 +14,8 @@ export function ConnectionBanner() {
   return (
     <div className={`banner remote-banner ${state.state === "denied" ? "banner-error" : "banner-busy"}`} role="status">
       {state.state === "denied"
-        ? (state.message ?? "This phone is not paired with the computer.")
-        : (state.message ?? (state.state === "closed" ? "Lost the computer — reconnecting…" : "Connecting to the computer…"))}
+        ? (state.message ?? t("This phone is not paired with the computer."))
+        : (state.message ?? (state.state === "closed" ? t("Lost the computer — reconnecting…") : t("Connecting to the computer…")))}
     </div>
   );
 }

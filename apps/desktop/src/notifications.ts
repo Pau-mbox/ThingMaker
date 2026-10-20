@@ -8,6 +8,7 @@
  */
 import { isPermissionGranted, requestPermission, sendNotification } from "@tauri-apps/plugin-notification";
 import type { NotificationSettings } from "@thingmaker/contracts";
+import { t } from "./i18n";
 import type { AttentionKind } from "./store";
 
 export function parseClock(value: string): number | null {
@@ -44,11 +45,11 @@ export function shouldNotify(
 export function notificationText(kind: AttentionKind, workspaceName: string): { title: string; body: string } {
   switch (kind) {
     case "completed":
-      return { title: "An agent finished a turn", body: `A session in ${workspaceName} is idle and ready for review.` };
+      return { title: t("An agent finished a turn"), body: t("A session in {workspace} is idle and ready for review.", { workspace: workspaceName }) };
     case "failed":
-      return { title: "A session needs attention", body: `A session in ${workspaceName} failed or exited.` };
+      return { title: t("A session needs attention"), body: t("A session in {workspace} failed or exited.", { workspace: workspaceName }) };
     case "needs_input":
-      return { title: "An agent is waiting for you", body: `A session in ${workspaceName} asked for a decision.` };
+      return { title: t("An agent is waiting for you"), body: t("A session in {workspace} asked for a decision.", { workspace: workspaceName }) };
     default:
       return { title: "ThingMaker", body: workspaceName };
   }

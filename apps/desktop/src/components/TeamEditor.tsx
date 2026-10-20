@@ -31,12 +31,14 @@ import {
 import { useStore } from "../store";
 import { newPreset, presetMatches, presetWorker, teamSummary, uniqueName } from "../team";
 import { ProviderBadge } from "./ProviderMark";
+import { fill } from "./BigThingTeam";
+import { t } from "../i18n";
 
 function quotaLine(quota: QuotaSnapshot | undefined): string | null {
   if (!quota) return null;
-  if (quota.status === "rejected") return "out of quota";
+  if (quota.status === "rejected") return t("out of quota");
   const used = quota.windows.map((window) => window.usedPercent).filter((value): value is number => value !== undefined);
-  return used.length > 0 ? `${Math.round(Math.max(...used))}% of its tightest window used` : null;
+  return used.length > 0 ? t("{percent}% of its tightest window used", { percent: Math.round(Math.max(...used)) }) : null;
 }
 
 /** Loads both providers' catalogs once for any editor on screen. */
@@ -53,12 +55,12 @@ function ModelSelect({ models, value, onChange, label }: { models: ProviderModel
   const known = models?.some((model) => model.id === value);
   return (
     <select aria-label={label} className="input select" onChange={(e) => onChange(e.target.value || undefined)} value={value ?? ""}>
-      <option value="">Account default</option>
+      <option value="">{t("Account default")}</option>
       {value && !known && <option value={value}>{value}</option>}
       {(models ?? []).map((model) => (
         <option key={model.id} value={model.id} title={model.description}>
           {model.name}
-          {model.needsCredits ? " (usage credits)" : ""}
+          {model.needsCredits ? ` ${t("(usage credits)")}` : ""}
         </option>
       ))}
     </select>
@@ -68,7 +70,7 @@ function ModelSelect({ models, value, onChange, label }: { models: ProviderModel
 function EffortSelect({ efforts, value, onChange, label }: { efforts: string[]; value: string | undefined; onChange: (effort: string | undefined) => void; label: string }) {
   return (
     <select aria-label={label} className="input select" disabled={efforts.length === 0 && !value} onChange={(e) => onChange(e.target.value || undefined)} value={value ?? ""}>
-      <option value="">Default</option>
+      <option value="">{t("Default")}</option>
       {value && !efforts.includes(value) && <option value={value}>{value}</option>}
       {efforts.map((effort) => (
         <option key={effort} value={effort}>
@@ -91,9 +93,9 @@ export function OrchestratorFields({ value, onChange }: { value: OrchestratorCho
   return (
     <div className="team-grid team-grid-orchestrator">
       <label className="field">
-        Provider
+        {t("Provider")}
         <select
-          aria-label="Orchestrator provider"
+          aria-label={t("Orchestrator provider")}
           className="input select"
           onChange={(e) => onChange({ provider: e.target.value as Provider })}
           value={value.provider}
@@ -106,9 +108,9 @@ export function OrchestratorFields({ value, onChange }: { value: OrchestratorCho
         </select>
       </label>
       <label className="field">
-        Model
+        {t("Model")}
         <ModelSelect
-          label="Orchestrator model"
+          label={t("Orchestrator model")}
           models={models}
           onChange={(model) => {
             const { model: _model, effort: _effort, ...rest } = value;
@@ -118,10 +120,10 @@ export function OrchestratorFields({ value, onChange }: { value: OrchestratorCho
         />
       </label>
       <label className="field">
-        Effort
+        {t("Effort")}
         <EffortSelect
           efforts={effortsFor(models, value.model)}
-          label="Orchestrator effort"
+          label={t("Orchestrator effort")}
           onChange={(effort) => {
             const { effort: _effort, ...rest } = value;
             onChange({ ...rest, ...(effort ? { effort } : {}) });
@@ -143,28 +145,28 @@ function WorkerCard({ worker, models, quota, onChange, onRemove }: { worker: Wor
   return (
     <li className="team-worker">
       <div className="team-worker-head">
-        <strong>{worker.name.trim() || "Unnamed worker"}</strong>
+        <strong>{worker.name.trim() || t("Unnamed worker")}</strong>
         <ProviderBadge provider={worker.provider} />
         <span className="composer-spacer" />
-        <button aria-label={`Remove ${worker.name || "worker"}`} className="button button-small" onClick={onRemove} type="button">
-          Remove
+        <button aria-label={t("Remove {name}", { name: worker.name || t("worker") })} className="button button-small" onClick={onRemove} type="button">
+          {t("Remove")}
         </button>
       </div>
       <div className="team-grid team-grid-worker">
         <label className="field">
-          Name
+          {t("Name")}
           <input
-            aria-label="Worker name"
+            aria-label={t("Worker name")}
             className="input"
             onChange={(e) => onChange({ ...worker, name: e.target.value })}
-            placeholder="what the orchestrator calls it"
+            placeholder={t("what the orchestrator calls it")}
             value={worker.name}
           />
         </label>
         <label className="field">
-          Provider
+          {t("Provider")}
           <select
-            aria-label="Worker provider"
+            aria-label={t("Worker provider")}
             className="input select"
             onChange={(e) => {
               const { model: _model, effort: _effort, ...rest } = worker;
@@ -180,9 +182,9 @@ function WorkerCard({ worker, models, quota, onChange, onRemove }: { worker: Wor
           </select>
         </label>
         <label className="field">
-          Model
+          {t("Model")}
           <ModelSelect
-            label="Worker model"
+            label={t("Worker model")}
             models={models}
             onChange={(model) => {
               const { model: _model, effort: _effort, ...rest } = worker;
@@ -193,10 +195,10 @@ function WorkerCard({ worker, models, quota, onChange, onRemove }: { worker: Wor
           />
         </label>
         <label className="field">
-          Effort
+          {t("Effort")}
           <EffortSelect
             efforts={effortsFor(models, worker.model)}
-            label="Worker effort"
+            label={t("Worker effort")}
             onChange={(effort) => {
               const { effort: _effort, ...rest } = worker;
               onChange({ ...rest, ...(effort ? { effort } : {}) });
@@ -206,7 +208,7 @@ function WorkerCard({ worker, models, quota, onChange, onRemove }: { worker: Wor
         </label>
       </div>
       <div className="field">
-        Good at
+        {t("Good at")}
         <div className="row wrap">
           {WORKER_CAPABILITIES.map((capability) => (
             <button
@@ -223,15 +225,15 @@ function WorkerCard({ worker, models, quota, onChange, onRemove }: { worker: Wor
         </div>
       </div>
       <label className="field">
-        When to use it
+        {t("When to use it")}
         <input
-          aria-label="When to use this worker"
+          aria-label={t("When to use this worker")}
           className="input"
           onChange={(e) => {
             const { note: _note, ...rest } = worker;
             onChange({ ...rest, ...(e.target.value ? { note: e.target.value } : {}) });
           }}
-          placeholder="Optional, read by the orchestrator: e.g. “all image and icon work”, “quick refactors and test runs”"
+          placeholder={t("Optional, read by the orchestrator: e.g. “all image and icon work”, “quick refactors and test runs”")}
           value={worker.note ?? ""}
         />
       </label>
@@ -249,8 +251,12 @@ export function WorkersEditor({ combo, onChange, orchestrator }: { combo: Combo;
     <div className="team-editor">
       {combo.workers.length === 0 ? (
         <p className="small muted">
-          No workers: the orchestrator works alone. Add one and the orchestrator can hand it tasks through its <code>team</code> tools — for example a Codex worker for images and quick
-          edits under a Claude orchestrator.
+          {fill(
+            t(
+              "No workers: the orchestrator works alone. Add one and the orchestrator can hand it tasks through its {tools} tools — for example a Codex worker for images and quick edits under a Claude orchestrator.",
+            ),
+            { tools: <code>team</code> },
+          )}
         </p>
       ) : (
         <ul className="team-workers">
@@ -269,15 +275,15 @@ export function WorkersEditor({ combo, onChange, orchestrator }: { combo: Combo;
       <div className="row wrap">
         {PROVIDERS.map((provider) => (
           <button className="button button-small" key={provider} onClick={() => onChange({ ...combo, workers: [...combo.workers, presetWorker(provider, catalogs[provider], names)] })} type="button">
-            + {PROVIDER_LABELS[provider]} worker
+            {t("+ {provider} worker", { provider: PROVIDER_LABELS[provider] })}
           </button>
         ))}
       </div>
-      {duplicate && <p className="small chip-warn-text">Two workers are called “{duplicate}”; the second will be renamed.</p>}
+      {duplicate && <p className="small chip-warn-text">{t("Two workers are called “{name}”; the second will be renamed.", { name: duplicate })}</p>}
       <label className="small row">
         <input checked={combo.nativeSubagents} onChange={(e) => onChange({ ...combo, nativeSubagents: e.target.checked })} type="checkbox" />
-        Also let the orchestrator start its own {PROVIDER_LABELS[orchestrator]} subagents
-        <span className="muted">— read when a session starts</span>
+        {t("Also let the orchestrator start its own {provider} subagents", { provider: PROVIDER_LABELS[orchestrator] })}
+        <span className="muted">{t("— read when a session starts")}</span>
       </label>
     </div>
   );
@@ -360,68 +366,72 @@ export function TeamPanel({ sessionId, onClose }: { sessionId: string; onClose: 
 
   return (
     <div aria-modal="true" className="modal-backdrop" onMouseDown={(event) => event.target === event.currentTarget && onClose()} role="dialog">
-      <div aria-label="Team" className="modal team-modal">
+      <div aria-label={t("Team")} className="modal team-modal">
         <div className="row">
-          <h2>Team</h2>
+          <h2>{t("Team")}</h2>
           <span className="small muted">{teamSummary(current.combo)}</span>
           <span className="composer-spacer" />
-          <button aria-label="Close" className="button button-small" onClick={onClose} type="button">
-            Close
+          <button aria-label={t("Close")} className="button button-small" onClick={onClose} type="button">
+            {t("Close")}
           </button>
         </div>
 
         <section className="team-section">
-          <h3>Preset</h3>
+          <h3>{t("Preset")}</h3>
           <div className="row wrap">
-            <select aria-label="Team preset" className="input select team-preset-select" onChange={(e) => pickPreset(e.target.value)} value={presetId}>
-              <option value="">{presets.length === 0 ? "No presets yet" : "Custom (this session's own)"}</option>
+            <select aria-label={t("Team preset")} className="input select team-preset-select" onChange={(e) => pickPreset(e.target.value)} value={presetId}>
+              <option value="">{presets.length === 0 ? t("No presets yet") : t("Custom (this session's own)")}</option>
               {presets.map((preset) => (
                 <option key={preset.id} value={preset.id}>
-                  {preset.name} — {PROVIDER_LABELS[preset.orchestrator.provider]}, {preset.combo.workers.length} worker{preset.combo.workers.length === 1 ? "" : "s"}
+                  {preset.combo.workers.length === 1
+                    ? t("{name} — {provider}, {count} worker", { name: preset.name, provider: PROVIDER_LABELS[preset.orchestrator.provider], count: 1 })
+                    : t("{name} — {provider}, {count} workers", { name: preset.name, provider: PROVIDER_LABELS[preset.orchestrator.provider], count: preset.combo.workers.length })}
                 </option>
               ))}
             </select>
             {selected && (
               <button className="button button-small" disabled={busy} onClick={() => void saveTeamPreset({ ...selected, orchestrator: draft.orchestrator, combo: tidyCombo(draft.combo) })} type="button">
-                Update “{selected.name}”
+                {t("Update “{name}”", { name: selected.name })}
               </button>
             )}
-            <input aria-label="New preset name" className="input team-preset-name" onChange={(e) => setNewName(e.target.value)} placeholder="New preset name" value={newName} />
+            <input aria-label={t("New preset name")} className="input team-preset-name" onChange={(e) => setNewName(e.target.value)} placeholder={t("New preset name")} value={newName} />
             <button className="button button-small" disabled={busy} onClick={() => void saveAsNew()} type="button">
-              Save as new preset
+              {t("Save as new preset")}
             </button>
           </div>
-          <p className="small muted">Picking a preset fills the fields below; nothing changes until you apply. Presets are managed in Teams, beside Settings.</p>
+          <p className="small muted">{t("Picking a preset fills the fields below; nothing changes until you apply. Presets are managed in Teams, beside Settings.")}</p>
         </section>
 
         <section className="team-section">
-          <h3>Orchestrator</h3>
+          <h3>{t("Orchestrator")}</h3>
           <OrchestratorFields onChange={(orchestrator) => setDraft({ ...draft, orchestrator })} value={draft.orchestrator} />
           {crossProvider ? (
             <p className="small chip-warn-text">
-              A {PROVIDER_LABELS[draft.orchestrator.provider]} orchestrator is a new session: applying hands off, with this team and a brief of the conversation in its composer. The
-              new orchestrator re-reads the context, which costs tokens.
+              {t(
+                "A {provider} orchestrator is a new session: applying hands off, with this team and a brief of the conversation in its composer. The new orchestrator re-reads the context, which costs tokens.",
+                { provider: PROVIDER_LABELS[draft.orchestrator.provider] },
+              )}
             </p>
           ) : (
-            <p className="small muted">Model and effort change in place; the conversation is kept.</p>
+            <p className="small muted">{t("Model and effort change in place; the conversation is kept.")}</p>
           )}
         </section>
 
         <section className="team-section">
-          <h3>Workers</h3>
+          <h3>{t("Workers")}</h3>
           <WorkersEditor combo={draft.combo} onChange={(combo) => setDraft({ ...draft, combo })} orchestrator={draft.orchestrator.provider} />
         </section>
 
         <div className="row team-footer">
           <button className="button button-primary" disabled={busy || !dirty} onClick={() => void apply()} type="button">
-            {crossProvider ? `Hand off to ${PROVIDER_LABELS[draft.orchestrator.provider]}` : "Apply to this session"}
+            {crossProvider ? t("Hand off to {provider}", { provider: PROVIDER_LABELS[draft.orchestrator.provider] }) : t("Apply to this session")}
           </button>
           {dirty && (
             <button className="button" onClick={() => setDraft(current)} type="button">
-              Discard changes
+              {t("Discard changes")}
             </button>
           )}
-          <span className="small muted">Workers apply to the next delegation; running jobs keep the worker they have.</span>
+          <span className="small muted">{t("Workers apply to the next delegation; running jobs keep the worker they have.")}</span>
         </div>
       </div>
     </div>
@@ -434,12 +444,12 @@ export function TeamChip({ sessionId, disabled }: { sessionId: string; disabled:
   const running = useStore((s) => (s.jobs[sessionId] ?? []).filter((job) => job.status === "starting" || job.status === "running").length);
   const [open, setOpen] = useState(false);
   if (!team) return null;
-  const label = team.workers.length === 0 ? "solo" : team.workers.map((worker) => worker.name).join(" + ");
+  const label = team.workers.length === 0 ? t("solo") : team.workers.map((worker) => worker.name).join(" + ");
   return (
     <>
-      <button className={`chip chip-button ${running > 0 ? "chip-active" : ""}`} disabled={disabled} onClick={() => setOpen(true)} title={`Team: ${teamSummary(team)}`} type="button">
-        team: {label}
-        {running > 0 ? ` · ${running} working` : ""}
+      <button className={`chip chip-button ${running > 0 ? "chip-active" : ""}`} disabled={disabled} onClick={() => setOpen(true)} title={t("Team: {summary}", { summary: teamSummary(team) })} type="button">
+        {t("team: {label}", { label })}
+        {running > 0 ? ` · ${t("{count} working", { count: running })}` : ""}
       </button>
       {open && <TeamPanel onClose={() => setOpen(false)} sessionId={sessionId} />}
     </>

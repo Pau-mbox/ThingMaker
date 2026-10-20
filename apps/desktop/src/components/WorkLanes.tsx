@@ -8,6 +8,7 @@
  */
 import { useEffect, useState } from "react";
 import type { JobView, MilestoneRecord, OdysseyStep, Provider } from "@thingmaker/contracts";
+import { t } from "../i18n";
 import { useStore } from "../store";
 import { matchAgentToTask, taskNumber } from "../odysseyTasks";
 import { ProviderBadge } from "./ProviderMark";
@@ -68,10 +69,10 @@ export function lanesFor(input: {
   if (orchestrator?.running) {
     lanes.push({
       key: "orchestrator",
-      who: "Orchestrator",
+      who: t("Orchestrator"),
       provider: orchestrator.provider,
       model: orchestrator.model,
-      task: orchestrator.milestone ?? "Its own turn",
+      task: orchestrator.milestone ?? t("Its own turn"),
       number: null,
       state: "working",
       note: null,
@@ -91,7 +92,7 @@ export function lanesFor(input: {
       task: match ? match.step.title : firstLine(job.task),
       number: match?.number ?? null,
       state: job.status === "waiting" ? "waiting" : job.status === "starting" ? "starting" : "working",
-      note: job.status === "waiting" ? (job.waitingReason ?? "waiting out a limit") : job.warm ? "kept its context from an earlier job" : null,
+      note: job.status === "waiting" ? (job.waitingReason ?? t("waiting out a limit")) : job.warm ? t("kept its context from an earlier job") : null,
       startedAt: job.startedAtUnixMs,
       toolCalls: job.toolCalls,
       session: job.workerSession ?? null,
@@ -109,7 +110,7 @@ export function lanesFor(input: {
       task: match ? match.step.title : firstLine(agent.task),
       number,
       state: agent.status === "starting" ? "starting" : "working",
-      note: "subagent",
+      note: t("subagent"),
       startedAt: agent.generationStartedAtUnixMs,
       toolCalls: null,
       session: null,
@@ -138,7 +139,7 @@ export function WorkLanes({ sessionId }: { sessionId: string }) {
           running,
           startedAt: session.turnStartedAt,
           toolCalls: [...projection.toolCalls.values()].filter((tool) => tool.status === "in_progress" || tool.status === "pending").length,
-          milestone: active >= 0 ? `Milestone ${active + 1}: ${milestones[active]?.title ?? ""}` : null,
+          milestone: active >= 0 ? t("Milestone {n}: {title}", { n: active + 1, title: milestones[active]?.title ?? "" }) : null,
         },
         jobs: jobs ?? [],
         agents: [...projection.inspector.agents.values()],
@@ -157,10 +158,10 @@ export function WorkLanes({ sessionId }: { sessionId: string }) {
   const parallel = lanes.filter((lane) => lane.key !== "orchestrator").length;
 
   return (
-    <section aria-label="Working now" className="card work-lanes">
+    <section aria-label={t("Working now")} className="card work-lanes">
       <header className="work-head">
-        <span className="work-title">Working now</span>
-        <span className="small muted">{parallel > 0 ? `${parallel} in parallel${running ? " beside the orchestrator" : ""}` : "the orchestrator alone"}</span>
+        <span className="work-title">{t("Working now")}</span>
+        <span className="small muted">{parallel > 0 ? (running ? t("{n} in parallel beside the orchestrator", { n: parallel }) : t("{n} in parallel", { n: parallel })) : t("the orchestrator alone")}</span>
       </header>
       <ul className="work-lane-list">
         {lanes.map((lane) => (
@@ -175,12 +176,12 @@ export function WorkLanes({ sessionId }: { sessionId: string }) {
               {lane.note && <span className="small muted"> · {lane.note}</span>}
             </span>
             <span className="work-lane-meta small muted">
-              {lane.toolCalls !== null && lane.toolCalls > 0 ? `${lane.toolCalls} tool${lane.toolCalls === 1 ? "" : "s"} · ` : ""}
+              {lane.toolCalls !== null && lane.toolCalls > 0 ? `${lane.toolCalls === 1 ? t("{n} tool", { n: lane.toolCalls }) : t("{n} tools", { n: lane.toolCalls })} · ` : ""}
               {lane.startedAt ? elapsed(now - lane.startedAt) : ""}
             </span>
             {lane.session ? (
               <button className="link small" onClick={() => selectSession(lane.session as string)} type="button">
-                Open
+                {t("Open")}
               </button>
             ) : (
               <span />

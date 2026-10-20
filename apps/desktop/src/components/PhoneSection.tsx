@@ -14,37 +14,38 @@ import { listen } from "@tauri-apps/api/event";
 import { REMOTE_EVENT, type ConnectionMode, type RemoteStatus } from "@thingmaker/contracts";
 import { api } from "../ipc";
 import { useStore } from "../store";
+import { t } from "../i18n";
 
 /** What the phone last said about an app it was sent. */
-const OFFER_STATE: Record<string, string> = {
-  sent: "sent — waiting for the phone",
-  downloading: "downloading to the phone",
-  confirm: "waiting for you to confirm on the phone",
-  installed: "installed",
-  failed: "not installed",
-  cancelled: "cancelled on the phone",
-};
+const OFFER_STATE = (): Record<string, string> => ({
+  sent: t("sent — waiting for the phone"),
+  downloading: t("downloading to the phone"),
+  confirm: t("waiting for you to confirm on the phone"),
+  installed: t("installed"),
+  failed: t("not installed"),
+  cancelled: t("cancelled on the phone"),
+});
 
 function when(at: number | null): string {
-  if (!at) return "never";
+  if (!at) return t("never");
   const minutes = Math.round((Date.now() - at) / 60_000);
-  if (minutes < 1) return "just now";
-  if (minutes < 60) return `${minutes}m ago`;
+  if (minutes < 1) return t("just now");
+  if (minutes < 60) return t("{minutes}m ago", { minutes });
   const hours = Math.round(minutes / 60);
-  return hours < 48 ? `${hours}h ago` : new Date(at).toLocaleDateString();
+  return hours < 48 ? t("{hours}h ago", { hours }) : new Date(at).toLocaleDateString();
 }
 
-const RELAY_STATE: Record<string, string> = {
-  off: "not connected",
-  connecting: "connecting…",
-  connected: "connected",
-  error: "can't connect",
-};
+const RELAY_STATE = (): Record<string, string> => ({
+  off: t("not connected"),
+  connecting: t("connecting…"),
+  connected: t("connected"),
+  error: t("can't connect"),
+});
 
-const MODE_LABEL: Record<ConnectionMode, string> = {
-  relay: "Through my Cloudflare relay",
-  direct: "Direct, through my own tunnel",
-};
+const MODE_LABEL = (): Record<ConnectionMode, string> => ({
+  relay: t("Through my Cloudflare relay"),
+  direct: t("Direct, through my own tunnel"),
+});
 
 /**
  * How the phone reaches this computer, and the details of that way: the
@@ -77,16 +78,16 @@ function ConnectionForm({ status, onSaved }: { status: RemoteStatus; onSaved: ()
     return (
       <div className="phone-relay">
         <p className="small">
-          {MODE_LABEL[status.mode]}: <span className="mono">{current}</span>
+          {MODE_LABEL()[status.mode]}: <span className="mono">{current}</span>
           {status.mode === "relay" ? (
             <>
               {" · "}
-              <span className={relay.state === "connected" ? "" : relay.state === "error" ? "chip-warn" : "muted"}>{RELAY_STATE[relay.state] ?? relay.state}</span>
+              <span className={relay.state === "connected" ? "" : relay.state === "error" ? "chip-warn" : "muted"}>{RELAY_STATE()[relay.state] ?? relay.state}</span>
             </>
           ) : (
-            <span className="muted"> · forwarded to {port}</span>
+            <span className="muted"> · {t("forwarded to {port}", { port })}</span>
           )}
-          {relay.access ? " · Cloudflare Access on" : status.mode === "relay" ? " · no Access token set" : ""}{" "}
+          {relay.access ? ` · ${t("Cloudflare Access on")}` : status.mode === "relay" ? ` · ${t("no Access token set")}` : ""}{" "}
           <button
             className="link small"
             onClick={() => {
@@ -96,7 +97,7 @@ function ConnectionForm({ status, onSaved }: { status: RemoteStatus; onSaved: ()
             }}
             type="button"
           >
-            change
+            {t("change")}
           </button>
           {status.mode === "relay" && relay.message && <span className="small muted"> — {relay.message}</span>}
         </p>
@@ -112,7 +113,7 @@ function ConnectionForm({ status, onSaved }: { status: RemoteStatus; onSaved: ()
           void save();
         }}
       >
-        <div className="row" role="radiogroup" aria-label="How the phone reaches this computer">
+        <div className="row" role="radiogroup" aria-label={t("How the phone reaches this computer")}>
           {(["relay", "direct"] as const).map((choice) => (
             <label className="check small" key={choice}>
               <input
@@ -124,50 +125,51 @@ function ConnectionForm({ status, onSaved }: { status: RemoteStatus; onSaved: ()
                 }}
                 type="radio"
               />{" "}
-              {MODE_LABEL[choice]}
+              {MODE_LABEL()[choice]}
             </label>
           ))}
         </div>
         {mode === "relay" ? (
           <p className="small muted">
-            Deploy the relay once with <span className="mono">pnpm relay:deploy</span> (it asks you to sign in to Cloudflare), turn on Cloudflare Access in the
-            Worker&rsquo;s Access tab with a service token, and paste the details here. This computer only connects out. The README has the steps.
+            {t("Deploy the relay once with")} <span className="mono">pnpm relay:deploy</span>{" "}
+            {t("(it asks you to sign in to Cloudflare), turn on Cloudflare Access in the Worker\u2019s Access tab with a service token, and paste the details here. This computer only connects out. The README has the steps.")}
           </p>
         ) : (
           <p className="small muted">
-            This computer listens on <span className="mono">{port}</span> (this computer only). Expose that port at an HTTPS address with your own tunnel — for
-            example <span className="mono">cloudflared tunnel --url http://{port}</span>, <span className="mono">tailscale funnel {status.port}</span>, or an SSH
-            reverse forward to a server — and paste the public address. Cloudflare Access in front of it is optional. The README has the steps.
+            {t("This computer listens on")} <span className="mono">{port}</span>{" "}
+            {t("(this computer only). Expose that port at an HTTPS address with your own tunnel — for example")}{" "}
+            <span className="mono">cloudflared tunnel --url http://{port}</span>, <span className="mono">tailscale funnel {status.port}</span>,{" "}
+            {t("or an SSH reverse forward to a server — and paste the public address. Cloudflare Access in front of it is optional. The README has the steps.")}
           </p>
         )}
         <input
-          aria-label={mode === "relay" ? "Relay address" : "Tunnel address"}
+          aria-label={mode === "relay" ? t("Relay address") : t("Tunnel address")}
           className="input"
           onChange={(event) => setUrl(event.target.value)}
           placeholder={mode === "relay" ? "https://thingmaker-relay.you.workers.dev" : "https://thingmaker.example.com"}
           value={url}
         />
-        <input aria-label="Access client ID" className="input" onChange={(event) => setId(event.target.value)} placeholder={relay.access ? "Access client ID (saved)" : mode === "relay" ? "Access client ID" : "Access client ID (optional)"} value={id} />
+        <input aria-label={t("Access client ID")} className="input" onChange={(event) => setId(event.target.value)} placeholder={relay.access ? t("Access client ID (saved)") : mode === "relay" ? t("Access client ID") : t("Access client ID (optional)")} value={id} />
         <input
-          aria-label="Access client secret"
+          aria-label={t("Access client secret")}
           className="input"
           onChange={(event) => setSecret(event.target.value)}
-          placeholder={relay.access ? "Access client secret (saved)" : mode === "relay" ? "Access client secret" : "Access client secret (optional)"}
+          placeholder={relay.access ? t("Access client secret (saved)") : mode === "relay" ? t("Access client secret") : t("Access client secret (optional)")}
           type="password"
           value={secret}
         />
         <div className="row">
           <button className="button button-small button-primary" disabled={!url.trim()} type="submit">
-            Save
+            {t("Save")}
           </button>
           {current && (
             <button className="button button-small" onClick={() => setEditing(false)} type="button">
-              Cancel
+              {t("Cancel")}
             </button>
           )}
           {relay.access && (
             <button className="link small" onClick={() => void api.remoteClearAccess().then(onSaved).catch((error: unknown) => setError(error))} type="button">
-              forget the Access token
+              {t("forget the Access token")}
             </button>
           )}
         </div>
@@ -232,14 +234,14 @@ export function PhoneSection() {
 
   return (
     <section className="phone-section">
-      <h3>Phone</h3>
+      <h3>{t("Phone")}</h3>
       <p className="small muted">
-        Follow and control this computer&rsquo;s sessions and Big Things from the ThingMaker app on your Android phone, from anywhere. Choose how the phone
-        reaches this computer: through your own relay on Cloudflare (this computer only connects out) or directly through your own tunnel. Each phone gets its
-        own key, which you can revoke here. Sign-ins, provider settings, the terminal, git and file writes stay on this computer.
+        {t(
+          "Follow and control this computer\u2019s sessions and Big Things from the ThingMaker app on your Android phone, from anywhere. Choose how the phone reaches this computer: through your own relay on Cloudflare (this computer only connects out) or directly through your own tunnel. Each phone gets its own key, which you can revoke here. Sign-ins, provider settings, the terminal, git and file writes stay on this computer.",
+        )}
       </p>
       <label className="check">
-        <input checked={status.enabled} onChange={(event) => run(() => api.remoteSetEnabled(event.target.checked))} type="checkbox" /> Allow phone access
+        <input checked={status.enabled} onChange={(event) => run(() => api.remoteSetEnabled(event.target.checked))} type="checkbox" /> {t("Allow phone access")}
       </label>
 
       {status.enabled && (
@@ -251,20 +253,20 @@ export function PhoneSection() {
               <div className="phone-qr" dangerouslySetInnerHTML={{ __html: pairing.qrSvg }} />
               <div>
                 <p className="small">
-                  In the ThingMaker app on your phone, tap <strong>Pair with a computer</strong> and scan this code. Or type the code:
+                  {t("In the ThingMaker app on your phone, tap")} <strong>{t("Pair with a computer")}</strong> {t("and scan this code. Or type the code:")}
                 </p>
                 <p className="mono phone-code">{pairing.code.replace(/(.{5})/, "$1 ")}</p>
                 <p className="small muted">
-                  Good for {Math.floor(left / 60)}:{String(left % 60).padStart(2, "0")}, once.
+                  {t("Good for {time}, once.", { time: `${Math.floor(left / 60)}:${String(left % 60).padStart(2, "0")}` })}
                 </p>
                 <button className="button button-small" onClick={() => run(api.remotePairCancel)} type="button">
-                  Cancel
+                  {t("Cancel")}
                 </button>
               </div>
             </div>
           ) : (
-            <button className="button" disabled={!reachable} onClick={() => run(api.remotePairStart)} title={reachable ? undefined : status.mode === "relay" ? "Connect this computer to its relay first" : "Set the tunnel\u2019s address first"} type="button">
-              Pair a phone
+            <button className="button" disabled={!reachable} onClick={() => run(api.remotePairStart)} title={reachable ? undefined : status.mode === "relay" ? t("Connect this computer to its relay first") : t("Set the tunnel\u2019s address first")} type="button">
+              {t("Pair a phone")}
             </button>
           )}
 
@@ -272,18 +274,18 @@ export function PhoneSection() {
             <ul className="phone-devices">
               {status.devices.map((device) => (
                 <li key={device.id}>
-                  <span className={`phone-dot ${device.connected ? "phone-dot-on" : ""}`} title={device.connected ? "Connected now" : "Not connected"} />
+                  <span className={`phone-dot ${device.connected ? "phone-dot-on" : ""}`} title={device.connected ? t("Connected now") : t("Not connected")} />
                   <strong>{device.name}</strong>
                   <span className="small muted">
-                    {device.connected ? "connected" : `last seen ${when(device.lastSeen)}`} · paired {new Date(device.pairedAt).toLocaleDateString()}
+                    {device.connected ? t("connected") : t("last seen {when}", { when: when(device.lastSeen) })} · {t("paired {date}", { date: new Date(device.pairedAt).toLocaleDateString() })}
                   </span>
                   {device.connected && (
-                    <button className="link small" onClick={() => void sendApk(device.id)} title="Install an Android app on this phone: it asks you to confirm there" type="button">
-                      Send an app…
+                    <button className="link small" onClick={() => void sendApk(device.id)} title={t("Install an Android app on this phone: it asks you to confirm there")} type="button">
+                      {t("Send an app…")}
                     </button>
                   )}
                   <button className="link small" onClick={() => run(() => api.remoteDeviceRevoke(device.id))} type="button">
-                    Revoke
+                    {t("Revoke")}
                   </button>
                 </li>
               ))}
@@ -296,7 +298,7 @@ export function PhoneSection() {
                 <li key={offer.id}>
                   <span className="mono">{offer.name}</span>
                   <span className={`small ${offer.state === "failed" ? "chip-warn" : "muted"}`}>
-                    {OFFER_STATE[offer.state] ?? offer.state}
+                    {OFFER_STATE()[offer.state] ?? offer.state}
                     {offer.message ? ` — ${offer.message}` : ""}
                   </span>
                 </li>

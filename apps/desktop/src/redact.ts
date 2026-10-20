@@ -5,6 +5,7 @@
  * before saving. Patterns favour recall for common token shapes and
  * `NAME=value` assignments whose name looks secret-bearing.
  */
+import { t } from "./i18n";
 
 export type Redaction = { label: string; count: number };
 
@@ -22,6 +23,28 @@ const PATTERNS: { label: string; regex: RegExp }[] = [
   },
 ];
 
+/** A pattern's name in the interface's language; the redacted text keeps the English one. */
+function shownLabel(label: string): string {
+  switch (label) {
+    case "OpenAI-style key":
+      return t("OpenAI-style key");
+    case "GitHub token":
+      return t("GitHub token");
+    case "AWS access key":
+      return t("AWS access key");
+    case "Slack token":
+      return t("Slack token");
+    case "Bearer token":
+      return t("Bearer token");
+    case "private key block":
+      return t("private key block");
+    case "secret-looking assignment":
+      return t("secret-looking assignment");
+    default:
+      return label;
+  }
+}
+
 export function redactText(text: string): { text: string; redactions: Redaction[] } {
   let output = text;
   const redactions: Redaction[] = [];
@@ -36,7 +59,7 @@ export function redactText(text: string): { text: string; redactions: Redaction[
       }
       return `[REDACTED ${label}]`;
     });
-    if (count > 0) redactions.push({ label, count });
+    if (count > 0) redactions.push({ label: shownLabel(label), count });
   }
   return { text: output, redactions };
 }

@@ -7,9 +7,37 @@ import { SKINS, resolveSkin, skinOptions } from "./skins/registry";
 import type { ChillRenderer, ChillAudio } from "./skins/types";
 import { ageLabel, EMPTY, projectsOf, type Selection } from "./model";
 import { DEFAULT_PREFS, readPrefs, type ChillPrefs } from "./preferences";
+import { t } from "../i18n";
 import "./chill.css";
 
 type Preview = { snapshot: ActivitySnapshot; workspaces: WorkspaceRecord[] };
+
+/** A reported value in words, or as reported when it is not one we know. */
+function said(value: string, words: Record<string, string>): string {
+  return words[value] ?? value;
+}
+const actorStatus = (status: string) =>
+  said(status, {
+    working: t("working"),
+    starting: t("starting"),
+    waiting: t("waiting"),
+    attention: t("needs attention"),
+    failed: t("failed"),
+    idle: t("idle"),
+    unknown: t("unknown"),
+  });
+const fileOperation = (operation: string) =>
+  said(operation, {
+    edit: t("edited"),
+    write: t("written"),
+    create: t("created"),
+    delete: t("deleted"),
+    rename: t("renamed"),
+    read: t("read"),
+    search: t("searched"),
+  });
+const sessionAttention = (attention: string) =>
+  said(attention, { failed: t("failed"), needs_input: t("needs input") });
 type IconName =
   | "exit"
   | "sound"
@@ -168,7 +196,7 @@ export default function ChillView({
                 status: ["working", "starting"].includes(a.status)
                   ? "unknown"
                   : a.status,
-                reason: "Connection interrupted; showing last reported state",
+                reason: t("Connection interrupted; showing last reported state"),
               })),
             },
       ),
@@ -441,7 +469,7 @@ export default function ChillView({
         sound.current?.setVolume(prefs.volume);
         patch({ sound: !!sound.current });
       } catch {
-        setActionError("Audio is unavailable");
+        setActionError(t("Audio is unavailable"));
       }
     }
   };
@@ -450,11 +478,14 @@ export default function ChillView({
     setSelection(null);
   };
   const status = !connected
-    ? "Activity connection interrupted"
+    ? t("Activity connection interrupted")
     : (actionError ??
       (needsAttention
-        ? "Work needs attention"
-        : `${projects.length} projects, ${active} active agents`));
+        ? t("Work needs attention")
+        : t("{projects} projects, {active} active agents", {
+            projects: projects.length,
+            active,
+          })));
   const StillLife = skin.StillLife;
   return (
     <section
@@ -463,10 +494,10 @@ export default function ChillView({
       data-preview={preview ? "sample-activity" : undefined}
     >
       <header className="chill-header">
-        <nav className="chill-controls" aria-label="Chill controls">
+        <nav className="chill-controls" aria-label={t("Chill controls")}>
           {SKINS.length > 1 && (
             <button
-              aria-label={`Change skin, current ${skin.label}`}
+              aria-label={t("Change skin, current {skin}", { skin: skin.label })}
               onClick={() =>
                 patch({
                   skinId: SKINS[(SKINS.indexOf(skin) + 1) % SKINS.length]!.id,
@@ -503,8 +534,8 @@ export default function ChillView({
           <button
             aria-label={
               prefs.freeze
-                ? "Resume scenery"
-                : "Freeze scenery; jobs keep running"
+                ? t("Resume scenery")
+                : t("Freeze scenery; jobs keep running")
             }
             aria-pressed={prefs.freeze}
             onClick={() => patch({ freeze: !prefs.freeze })}
@@ -512,14 +543,14 @@ export default function ChillView({
             <Icon name={prefs.freeze ? "play" : "pause"} />
           </button>
           <button
-            aria-label={prefs.sound ? "Mute ambience" : "Enable ambience"}
+            aria-label={prefs.sound ? t("Mute ambience") : t("Enable ambience")}
             aria-pressed={prefs.sound}
             onClick={toggleSound}
           >
             <Icon name={prefs.sound ? "sound" : "silent"} />
           </button>
           <button
-            aria-label="Economy rendering"
+            aria-label={t("Economy rendering")}
             aria-pressed={prefs.economy}
             onClick={() => patch({ economy: !prefs.economy })}
           >
@@ -532,11 +563,11 @@ export default function ChillView({
               max="1"
               step="0.05"
               value={prefs.volume}
-              aria-label="Ambience volume"
+              aria-label={t("Ambience volume")}
               onChange={(e) => patch({ volume: Number(e.target.value) })}
             />
           )}
-          <button aria-label="Back to work" onClick={onExit}>
+          <button aria-label={t("Back to work")} onClick={onExit}>
             <Icon name="exit" />
           </button>
         </nav>
@@ -550,9 +581,9 @@ export default function ChillView({
           />
         </div>
       )}
-      <nav className="chill-navigation" aria-label="Scene navigation">
+      <nav className="chill-navigation" aria-label={t("Scene navigation")}>
         {(focus || selection) && (
-          <button aria-label="Whole scene" onClick={overview}>
+          <button aria-label={t("Whole scene")} onClick={overview}>
             <Icon name="overview" />
           </button>
         )}
@@ -560,8 +591,8 @@ export default function ChillView({
           <button
             aria-label={
               prefs.pins.includes(selectedFile.id)
-                ? "Unpin selected file"
-                : "Pin selected file"
+                ? t("Unpin selected file")
+                : t("Pin selected file")
             }
             aria-pressed={prefs.pins.includes(selectedFile.id)}
             onClick={() =>
@@ -577,7 +608,7 @@ export default function ChillView({
         )}
         {shownProject && (
           <button
-            aria-label={`Hide ${shownProject.name} from Chill`}
+            aria-label={t("Hide {name} from Chill", { name: shownProject.name })}
             onClick={() => {
               overview();
               patch({ hidden: [...prefs.hidden, shownProject.id].slice(-500) });
@@ -588,14 +619,14 @@ export default function ChillView({
           </button>
         )}
         {selection && (
-          <button aria-label="Open selected work" onClick={openSource}>
+          <button aria-label={t("Open selected work")} onClick={openSource}>
             <Icon name="source" />
           </button>
         )}
         {projects.length > pageSize && (
           <>
             <button
-              aria-label="Previous scene"
+              aria-label={t("Previous scene")}
               disabled={page === 0}
               onClick={() => {
                 overview();
@@ -605,7 +636,7 @@ export default function ChillView({
               <Icon name="left" />
             </button>
             <button
-              aria-label="Next scene"
+              aria-label={t("Next scene")}
               disabled={(page + 1) * pageSize >= projects.length}
               onClick={() => {
                 overview();
@@ -626,18 +657,18 @@ export default function ChillView({
           <Icon name="attention" />
         </button>
       )}
-      <div className="sr-only" aria-label="Activity inspection">
+      <div className="sr-only" aria-label={t("Activity inspection")}>
         {projects.map((p) => (
           <div key={p.id}>
             <button
-              aria-label={`Focus project ${p.name}`}
+              aria-label={t("Focus project {name}", { name: p.name })}
               onFocus={() => select({ kind: "project", id: p.id })}
               onClick={() => select({ kind: "project", id: p.id })}
             />
             {p.actors.map((a) => (
               <button
                 key={a.id}
-                aria-label={`${a.name}, ${a.provider}, ${a.model ?? "model not reported"}, ${a.status}, ${a.task}, ${a.reason ?? ""}`}
+                aria-label={`${a.name}, ${a.provider}, ${a.model ?? t("model not reported")}, ${actorStatus(a.status)}, ${a.task}, ${a.reason ?? ""}`}
                 onFocus={() => select({ kind: "actor", id: a.id })}
                 onClick={() => select({ kind: "actor", id: a.id })}
               />
@@ -645,7 +676,7 @@ export default function ChillView({
             {p.files.map((f) => (
               <button
                 key={f.id}
-                aria-label={`${f.path}, ${f.operation}, ${ageLabel(f.touchedAt, now)}${f.external ? ", external" : ""}`}
+                aria-label={`${f.path}, ${fileOperation(f.operation)}, ${ageLabel(f.touchedAt, now)}${f.external ? `, ${t("external")}` : ""}`}
                 onFocus={() => select({ kind: "file", id: f.id })}
                 onClick={() => select({ kind: "file", id: f.id })}
               />
@@ -655,7 +686,7 @@ export default function ChillView({
         {otherAttention.map(([id, s]) => (
           <button
             key={id}
-            aria-label={`${sessionTitle(s)}, ${s.attention}`}
+            aria-label={`${sessionTitle(s)}, ${sessionAttention(s.attention)}`}
             onClick={() => void navigate(id, s.workspaceId)}
           />
         ))}

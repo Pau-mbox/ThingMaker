@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type PointerEvent } from "react";
 import { asConfigOptions, isConfigOptionGroup, isEffortOption, PROVIDER_LABELS, PROVIDERS, type ConfigOptionChoice, type Provider, type SessionConfigOption } from "@thingmaker/contracts";
+import { t } from "../i18n";
 import { useStore } from "../store";
 import { presetMatches } from "../team";
 import { IconBolt, IconCheck, IconChevron } from "./icons";
@@ -49,14 +50,15 @@ function ProviderSwitch({ sessionId, onSwitched }: { sessionId: string; onSwitch
   if (!provider) return null;
   const preset = presets.find((candidate) => presetMatches(candidate, provider, team));
   const why = (other: Provider): string | null => {
-    if (preset) return `This session runs the team preset “${preset.name}”, led by ${PROVIDER_LABELS[provider]}. Change the team to switch.`;
-    if (running) return "Wait for the running turn to finish.";
+    if (preset) return t("This session runs the team preset “{preset}”, led by {provider}. Change the team to switch.", { preset: preset.name, provider: PROVIDER_LABELS[provider] });
+    if (running) return t("Wait for the running turn to finish.");
     const info = providers?.find((candidate) => candidate.provider === other);
-    if (info && (!info.resolved || info.auth?.loggedIn === false)) return `${PROVIDER_LABELS[other]} is ${info.resolved ? "not signed in" : "not installed"}.`;
+    if (info && (!info.resolved || info.auth?.loggedIn === false))
+      return info.resolved ? t("{provider} is not signed in.", { provider: PROVIDER_LABELS[other] }) : t("{provider} is not installed.", { provider: PROVIDER_LABELS[other] });
     return null;
   };
   return (
-    <div className="model-menu-providers" role="group" aria-label="Provider">
+    <div className="model-menu-providers" role="group" aria-label={t("Provider")}>
       {PROVIDERS.map((other) => {
         const blocked = other === provider ? null : why(other);
         return (
@@ -70,7 +72,7 @@ function ProviderSwitch({ sessionId, onSwitched }: { sessionId: string; onSwitch
               onSwitched();
               void handOff(sessionId, other);
             }}
-            title={other === provider ? `This session runs on ${PROVIDER_LABELS[other]}` : (blocked ?? `Continue in a new ${PROVIDER_LABELS[other]} session, briefed from this one`)}
+            title={other === provider ? t("This session runs on {provider}", { provider: PROVIDER_LABELS[other] }) : (blocked ?? t("Continue in a new {provider} session, briefed from this one", { provider: PROVIDER_LABELS[other] }))}
             type="button"
           >
             {PROVIDER_LABELS[other]}
@@ -100,11 +102,11 @@ function ModelList({ option, onPick, sessionId, onSwitched }: { option: SessionC
   return (
     <div className="model-menu-list">
       <ProviderSwitch onSwitched={onSwitched} sessionId={sessionId} />
-      <div className="model-menu-caption">Select model</div>
+      <div className="model-menu-caption">{t("Select model")}</div>
       {all.length > FILTER_FROM && (
-        <input aria-label="Filter models" autoFocus className="input model-menu-filter" onChange={(e) => setFilter(e.target.value)} placeholder={`Filter ${all.length} models…`} value={filter} />
+        <input aria-label={t("Filter models")} autoFocus className="input model-menu-filter" onChange={(e) => setFilter(e.target.value)} placeholder={t("Filter {n} models…", { n: all.length })} value={filter} />
       )}
-      <div className="model-menu-scroll" role="listbox" aria-label="Model">
+      <div className="model-menu-scroll" role="listbox" aria-label={t("Model")}>
         {groups.map(([group, list]) => (
           <div key={group || "-"}>
             {group && <div className="model-menu-group">{group}</div>}
@@ -119,7 +121,7 @@ function ModelList({ option, onPick, sessionId, onSwitched }: { option: SessionC
             ))}
           </div>
         ))}
-        {groups.length === 0 && <div className="model-menu-group">No model matches</div>}
+        {groups.length === 0 && <div className="model-menu-group">{t("No model matches")}</div>}
       </div>
     </div>
   );
@@ -151,11 +153,11 @@ function EffortSlider({ levels, index, onPick, disabled }: { levels: ConfigOptio
   return (
     <div
       aria-disabled={disabled}
-      aria-label="Reasoning effort"
+      aria-label={t("Reasoning effort")}
       aria-valuemax={levels.length - 1}
       aria-valuemin={0}
       aria-valuenow={Math.max(shown, 0)}
-      aria-valuetext={levels[shown]?.name ?? "Default"}
+      aria-valuetext={levels[shown]?.name ?? t("Default")}
       className={`effort-slider ${shown < 0 ? "effort-slider-unset" : ""}`}
       onKeyDown={disabled ? undefined : onKey}
       onPointerDown={(event: PointerEvent<HTMLDivElement>) => {
@@ -249,16 +251,16 @@ export function ModelMenu({
           setView(effort || fast ? "main" : "models");
           setOpen(!open);
         }}
-        title={modelNow?.group ? `${modelNow.choice.name} · ${modelNow.group}` : "Model and reasoning effort"}
+        title={modelNow?.group ? `${modelNow.choice.name} · ${modelNow.group}` : t("Model and reasoning effort")}
         type="button"
       >
         {fastEnabled && <IconBolt className="model-chip-bolt" size={12} />}
-        <span className="model-chip-model">{modelNow?.choice.name ?? "Model"}</span>
+        <span className="model-chip-model">{modelNow?.choice.name ?? t("Model")}</span>
         {effortNow && <span className="model-chip-effort">{effortNow.choice.name}</span>}
         <IconChevron open size={11} />
       </button>
       {open && (
-        <span className="model-menu" role="dialog" aria-label="Model and effort">
+        <span className="model-menu" role="dialog" aria-label={t("Model and effort")}>
           {view === "models" && model ? (
             <ModelList
               onPick={(value) => {
@@ -275,11 +277,11 @@ export function ModelMenu({
               <div className="model-menu-head">
                 {fast ? (
                   <button
-                    aria-label="Fast mode"
+                    aria-label={t("Fast mode")}
                     aria-pressed={fastEnabled}
                     className={`model-menu-icon ${fastEnabled ? "model-menu-icon-on" : ""}`}
                     onClick={() => set(fast, fastEnabled ? "off" : "on")}
-                    title={`Fast mode ${fastEnabled ? "on" : "off"}${fast.description ? ` — ${fast.description}` : ""}`}
+                    title={`${fastEnabled ? t("Fast mode on") : t("Fast mode off")}${fast.description ? ` — ${fast.description}` : ""}`}
                     type="button"
                   >
                     <IconBolt size={15} />
@@ -288,10 +290,10 @@ export function ModelMenu({
                   <span className="model-menu-icon-slot" />
                 )}
                 <div className="model-menu-title">
-                  <span className="model-menu-effort">{effortNow?.choice.name ?? (effort ? "Default" : (modelNow?.choice.name ?? "Model"))}</span>
+                  <span className="model-menu-effort">{effortNow?.choice.name ?? (effort ? t("Default") : (modelNow?.choice.name ?? t("Model")))}</span>
                   {model && (
                     <button className="model-menu-model" onClick={() => setView("models")} type="button">
-                      {modelNow?.choice.name ?? "Choose a model"}
+                      {modelNow?.choice.name ?? t("Choose a model")}
                       <IconChevron size={11} />
                     </button>
                   )}
@@ -311,7 +313,7 @@ export function ModelMenu({
 export function ConfigPickers({ sessionId, configOptions, disabled }: { sessionId: string; configOptions: unknown; disabled: boolean }) {
   const setConfigOption = useStore((s) => s.setConfigOption);
   const options = asConfigOptions(configOptions);
-  if (options.length === 0) return <span className="small muted">The agent advertised no live config options for this session.</span>;
+  if (options.length === 0) return <span className="small muted">{t("The agent advertised no live config options for this session.")}</span>;
   const model = options.find((option) => option.configId === "model");
   const effort = options.find((option) => isEffortOption(option.configId));
   const fast = options.find((option) => option.configId === FAST_ID);
@@ -328,8 +330,8 @@ export function ConfigPickers({ sessionId, configOptions, disabled }: { sessionI
         if (option.configId === "mode") {
           const current = choices(option).find((c) => c.choice.value === option.currentValue);
           return (
-            <span className="chip small" key={option.configId} title="Set by the workspace's trust: trusted workspaces accept edits, others plan">
-              mode: {current?.choice.name ?? String(option.currentValue ?? "unset")}
+            <span className="chip small" key={option.configId} title={t("Set by the workspace's trust: trusted workspaces accept edits, others plan")}>
+              {t("mode: {mode}", { mode: current?.choice.name ?? String(option.currentValue ?? t("unset")) })}
             </span>
           );
         }
@@ -338,7 +340,7 @@ export function ConfigPickers({ sessionId, configOptions, disabled }: { sessionI
         if (all.length === 0) {
           return (
             <span className="chip small" key={option.configId} title={option.description}>
-              {option.name}: {String(option.currentValue ?? "unset")}
+              {option.name}: {String(option.currentValue ?? t("unset"))}
             </span>
           );
         }

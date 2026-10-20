@@ -20,6 +20,7 @@ import { checkpointPaths } from "../odysseyReport";
 import { staleActivity } from "../odysseyRunner";
 import { windowName } from "./UsageLine";
 import { IconAgents, IconAlertCircle, IconBox, IconBranch, IconCheckCircle, IconChevron, IconCode, IconMessage, IconTerminal } from "./icons";
+import { t } from "../i18n";
 
 function elapsed(ms: number): string {
   const seconds = Math.floor(Math.max(0, ms) / 1000);
@@ -41,8 +42,16 @@ export function describeModel(agent: Pick<AgentNode, "harness" | "model">): stri
   if (agent.model) return `${agent.harness} · ${agent.model}`;
   // Null means the runtime reported no selection, so the harness chose — which
   // is a real answer, not missing data.
-  return `${agent.harness} · default`;
+  return `${agent.harness} · ${t("default")}`;
 }
+
+/** A running tool's or subagent's status as shown; the status stays the runtime's. */
+const STATUS_LABEL: Record<string, string> = {
+  pending: t("pending"),
+  in_progress: t("in progress"),
+  working: t("working"),
+  starting: t("starting"),
+};
 
 /** The tail of the agent's latest message: the cheapest "what is it doing". */
 function latestLine(cards: { kind: string }[]): { text: string; thinking: boolean } | null {
@@ -103,10 +112,10 @@ export function RunMonitor({ sessionId, view }: { sessionId: string; view: Odyss
     <div className="odyssey-monitor">
       <div className="odyssey-monitor-head">
         {stale ? <span className="activity-stale-dot" /> : <span className="spinner" />}
-        <strong className="small">{milestone ? `Milestone ${index + 1}/${view.milestones.length} · ${milestone.title}` : "Working"}</strong>
+        <strong className="small">{milestone ? t("Milestone {number}/{total} · {title}", { number: index + 1, total: view.milestones.length, title: milestone.title }) : t("Working")}</strong>
         {startedAt !== null && <span className="small muted">{elapsed(now - startedAt)}</span>}
         <button className="link small" onClick={() => setSessionTab("transcript")} type="button">
-          in transcript →
+          {t("in transcript →")}
         </button>
       </div>
 
@@ -114,8 +123,8 @@ export function RunMonitor({ sessionId, view }: { sessionId: string; view: Odyss
         {tools.map((tool) => (
           <li key={tool.toolCallId ?? tool.title ?? Math.random()}>
             <IconTerminal size={12} />
-            <span className="small">{tool.title ?? tool.name ?? "tool call"}</span>
-            <span className="small muted">{tool.status}</span>
+            <span className="small">{tool.title ?? tool.name ?? t("tool call")}</span>
+            <span className="small muted">{(tool.status && STATUS_LABEL[tool.status]) ?? tool.status}</span>
           </li>
         ))}
         {agents.map((agent) => (
@@ -127,7 +136,7 @@ export function RunMonitor({ sessionId, view }: { sessionId: string; view: Odyss
                 session's own picker. */}
             <span className="small muted mono">{describeModel(agent)}</span>
             <span className="small muted">
-              {agent.status} · {elapsed(now - agent.generationStartedAtUnixMs)}
+              {STATUS_LABEL[agent.status] ?? agent.status} · {elapsed(now - agent.generationStartedAtUnixMs)}
             </span>
             {agent.task && <span className="small muted odyssey-monitor-task">{agent.task}</span>}
           </li>
@@ -135,7 +144,7 @@ export function RunMonitor({ sessionId, view }: { sessionId: string; view: Odyss
         {detached.map(([call]) => (
           <li key={call}>
             <IconCode size={12} />
-            <span className="small">background call</span>
+            <span className="small">{t("background call")}</span>
             <span className="small mono muted">{call}</span>
           </li>
         ))}
@@ -143,12 +152,12 @@ export function RunMonitor({ sessionId, view }: { sessionId: string; view: Odyss
 
       {stale && (
         <p className="small chip-warn odyssey-monitor-line">
-          Nothing has been reported for {elapsed(stale.silentMs)}. What is listed above probably ended without saying so.
+          {t("Nothing has been reported for {time}. What is listed above probably ended without saying so.", { time: elapsed(stale.silentMs) })}
         </p>
       )}
       {line && (
         <p className="small muted odyssey-monitor-line" title={line.text}>
-          {line.thinking ? "thinking: " : ""}
+          {line.thinking ? `${t("thinking:")} ` : ""}
           {line.text}
         </p>
       )}
@@ -160,16 +169,16 @@ export function RunMonitor({ sessionId, view }: { sessionId: string; view: Odyss
 type KindStyle = { label: string; icon: (props: { size?: number }) => ReactElement; tone?: "warn" };
 
 const KIND: Record<string, KindStyle> = {
-  briefing: { label: "briefed", icon: IconMessage },
-  continuation: { label: "continued", icon: IconMessage },
-  plan: { label: "plan", icon: IconBox },
-  checkpoint: { label: "checkpoint", icon: IconBranch },
-  report: { label: "reported", icon: IconMessage },
-  check: { label: "check", icon: IconCheckCircle },
-  wait: { label: "waiting", icon: IconAlertCircle, tone: "warn" },
-  resume: { label: "resumed", icon: IconCheckCircle },
-  guard: { label: "guard", icon: IconAlertCircle, tone: "warn" },
-  state: { label: "state", icon: IconCode },
+  briefing: { label: t("briefed"), icon: IconMessage },
+  continuation: { label: t("continued"), icon: IconMessage },
+  plan: { label: t("plan"), icon: IconBox },
+  checkpoint: { label: t("checkpoint"), icon: IconBranch },
+  report: { label: t("reported"), icon: IconMessage },
+  check: { label: t("check"), icon: IconCheckCircle },
+  wait: { label: t("waiting"), icon: IconAlertCircle, tone: "warn" },
+  resume: { label: t("resumed"), icon: IconCheckCircle },
+  guard: { label: t("guard"), icon: IconAlertCircle, tone: "warn" },
+  state: { label: t("state"), icon: IconCode },
 };
 
 function HistoryRow({ entry }: { entry: OdysseyJournalEntry }) {
@@ -233,8 +242,8 @@ export function SpendModelNote({ odysseyId, refreshKey }: { odysseyId: string; r
   }, [odysseyId, refreshKey]);
   if (!model) return null;
   return (
-    <p className="small muted odyssey-spend" title={`${model.samples} samples, ${model.pairs} usable pairs`}>
-      Spend model: {model.note}
+    <p className="small muted odyssey-spend" title={t("{samples} samples, {pairs} usable pairs", { samples: model.samples, pairs: model.pairs })}>
+      {t("Spend model: {note}", { note: model.note })}
     </p>
   );
 }
@@ -256,15 +265,19 @@ export function RunHistory({ journal }: { journal: OdysseyJournalEntry[] }) {
   return (
     <section className="card odyssey-history">
       <header className="work-head">
-        <span className="work-title">History</span>
+        <span className="work-title">{t("History")}</span>
         {checkpoints > 0 && (
           <button className="link small" onClick={() => setAll(!all)} type="button">
-            {all ? "hide checkpoints" : `show ${checkpoints} checkpoint${checkpoints === 1 ? "" : "s"}`}
+            {all
+              ? t("hide checkpoints")
+              : checkpoints === 1
+                ? t("show {count} checkpoint", { count: 1 })
+                : t("show {count} checkpoints", { count: checkpoints })}
           </button>
         )}
       </header>
       {shown.length === 0 ? (
-        <p className="small muted">Nothing recorded yet.</p>
+        <p className="small muted">{t("Nothing recorded yet.")}</p>
       ) : (
         <ol className="odyssey-history-list">
           {shown.map((entry) => (
@@ -306,9 +319,9 @@ export function UsageWindows({ usage, agent = "codex" }: { usage: UsageSnapshot 
   if (!usage || windows.length === 0) {
     return (
       <p className="small muted">
-        Usage has not been sampled.{" "}
+        {t("Usage has not been sampled.")}{" "}
         <button className="link small" onClick={() => void refresh()} type="button">
-          check now
+          {t("check now")}
         </button>
       </p>
     );
@@ -322,8 +335,8 @@ export function UsageWindows({ usage, agent = "codex" }: { usage: UsageSnapshot 
         return (
           <div className="odyssey-usage-row" key={window.windowSeconds}>
             <span className="small muted">{windowName(window.windowSeconds)}</span>
-            <span className={`small ${left === 0 ? "chip-warn-text" : ""}`}>{left}% left</span>
-            {reset && <span className="small muted">resets {reset}</span>}
+            <span className={`small ${left === 0 ? "chip-warn-text" : ""}`}>{t("{percent}% left", { percent: left })}</span>
+            {reset && <span className="small muted">{t("resets {time}", { time: reset })}</span>}
           </div>
         );
       })}
@@ -331,16 +344,16 @@ export function UsageWindows({ usage, agent = "codex" }: { usage: UsageSnapshot 
         <span className="small muted">
           {agent === "claude" && usage.limitReached ? (
             <>
-              refused {elapsed(now - usage.fetchedAtUnixMs)} ago
+              {t("refused {time} ago", { time: elapsed(now - usage.fetchedAtUnixMs) })}
               {/* Said plainly, because this account reports no percentage at
                   all: the bar above is what the refusal implied, not a
                   reading, and the run retries without waiting for the clock. */}
-              {" · this is what the refusal said, not a measurement; the run tries again every few minutes"}
+              {` · ${t("this is what the refusal said, not a measurement; the run tries again every few minutes")}`}
             </>
           ) : (
             <>
-              sampled {elapsed(now - usage.fetchedAtUnixMs)} ago
-              {usage.limitReached ? " · the provider reported the limit was reached" : ""}
+              {t("sampled {time} ago", { time: elapsed(now - usage.fetchedAtUnixMs) })}
+              {usage.limitReached ? ` · ${t("the provider reported the limit was reached")}` : ""}
             </>
           )}
         </span>
@@ -353,7 +366,7 @@ export function UsageWindows({ usage, agent = "codex" }: { usage: UsageSnapshot 
           }}
           type="button"
         >
-          {checking ? "checking…" : "check now"}
+          {checking ? t("checking…") : t("check now")}
         </button>
       </div>
     </div>

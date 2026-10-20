@@ -7,6 +7,7 @@
  * records them; this module only derives and formats what the screen shows.
  */
 import type { MilestoneRecord, OdysseyStep } from "@thingmaker/contracts";
+import { t } from "./i18n";
 
 /** A task's state for the screen: `waiting` is derived, never stored. */
 export type TaskStatus = "pending" | "waiting" | "in_progress" | "done" | "blocked";
@@ -21,11 +22,11 @@ export function taskStatus(step: Pick<OdysseyStep, "state" | "dependsOn">, sibli
 }
 
 export const TASK_STATUS_LABEL: Record<TaskStatus, string> = {
-  pending: "To do",
-  waiting: "Waiting",
-  in_progress: "In progress",
-  done: "Done",
-  blocked: "Blocked",
+  pending: t("To do"),
+  waiting: t("Waiting"),
+  in_progress: t("In progress"),
+  done: t("Done"),
+  blocked: t("Blocked"),
 };
 
 /** `6.3`: the milestone's number and the task's place in it, both 1-based. */
@@ -49,8 +50,8 @@ export function taskProgress(milestones: Pick<MilestoneRecord, "steps">[]): { do
 
 /** Who is on a task, for a column: the observed harness and model, else the name, else nothing. */
 export function taskOwner(step: Pick<OdysseyStep, "agentName" | "harness" | "model">): string | null {
-  if (step.model) return `${step.harness ?? "harness"} · ${step.model}`;
-  if (step.harness) return `${step.harness} · default`;
+  if (step.model) return `${step.harness ?? t("harness")} · ${step.model}`;
+  if (step.harness) return t("{harness} · default", { harness: step.harness });
   return step.agentName ?? null;
 }
 

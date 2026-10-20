@@ -3,6 +3,7 @@ import type { DirEntry, EditorProfile, FileRead } from "@thingmaker/contracts";
 import { api, toDesktopError } from "../ipc";
 import { useStore } from "../store";
 import { IS_REMOTE } from "../remote/mode";
+import { t } from "../i18n";
 
 const CodeEditor = lazy(() => import("./MonacoEditor"));
 
@@ -14,11 +15,11 @@ function formatBytes(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MiB`;
 }
 
-const EDITORS: { id: EditorProfile; label: string }[] = [
-  { id: "vscode", label: "VS Code" },
-  { id: "cursor", label: "Cursor" },
-  { id: "rider", label: "Rider" },
-  { id: "system", label: "System editor" },
+const EDITORS: { id: EditorProfile; label: () => string }[] = [
+  { id: "vscode", label: () => "VS Code" },
+  { id: "cursor", label: () => "Cursor" },
+  { id: "rider", label: () => "Rider" },
+  { id: "system", label: () => t("System editor") },
 ];
 
 /**
@@ -69,7 +70,11 @@ export function FilesPane({ workspaceId }: { workspaceId: string }) {
       setSelected(read);
       setDraft(read.content);
       setDirty(false);
-      setNotice(read.truncated ? `Showing the first ${read.returnedLines} of ${read.totalLines} lines; editing is disabled for partial reads.` : null);
+      setNotice(
+        read.truncated
+          ? t("Showing the first {shown} of {total} lines; editing is disabled for partial reads.", { shown: read.returnedLines, total: read.totalLines })
+          : null,
+      );
     } catch (error) {
       setError(error);
     }
@@ -84,11 +89,13 @@ export function FilesPane({ workspaceId }: { workspaceId: string }) {
       setSelected(reread);
       setDraft(reread.content);
       setDirty(false);
-      setNotice(`Saved ${outcome.relativePath} (${formatBytes(outcome.bytes)}).`);
+      setNotice(t("Saved {path} ({size}).", { path: outcome.relativePath, size: formatBytes(outcome.bytes) }));
     } catch (error) {
       const desktopError = toDesktopError(error);
       if (desktopError.code === "CONFLICT") {
-        setNotice("The file changed on disk since you opened it (agent or another editor). Your edit was not written. Reload to see the current content; your text stays in the editor.");
+        setNotice(
+          t("The file changed on disk since you opened it (agent or another editor). Your edit was not written. Reload to see the current content; your text stays in the editor."),
+        );
       } else {
         setError(desktopError);
       }
@@ -116,7 +123,7 @@ export function FilesPane({ workspaceId }: { workspaceId: string }) {
             className={`tree-item ${entry.ignored ? "muted" : ""} ${selected?.relativePath === entry.relativePath ? "selected" : ""}`}
             onClick={() => (isDir ? void toggleDir(entry) : entry.kind === "file" ? void openFile(entry.relativePath) : undefined)}
             style={{ paddingLeft: 8 + depth * 14 }}
-            title={`${entry.relativePath}${entry.ignored ? " (ignored)" : ""}`}
+            title={entry.ignored ? t("{path} (ignored)", { path: entry.relativePath }) : entry.relativePath}
             type="button"
           >
             <span className="tree-glyph">{isDir ? (node?.open ? "▾" : "▸") : entry.kind === "symlink" ? "↪" : "·"}</span>
@@ -135,41 +142,41 @@ export function FilesPane({ workspaceId }: { workspaceId: string }) {
       <aside className="tree-pane">
         <div className="row">
           <label className="check small">
-            <input checked={showIgnored} onChange={(e) => setShowIgnored(e.target.checked)} type="checkbox" /> show ignored
+            <input checked={showIgnored} onChange={(e) => setShowIgnored(e.target.checked)} type="checkbox" /> {t("show ignored")}
           </label>
           <button className="link small" onClick={() => void loadRoot()} type="button">
-            refresh
+            {t("refresh")}
           </button>
         </div>
-        {rootEntries === null ? <p className="small muted">Loading…</p> : <ul className="tree">{renderEntries(rootEntries, 0)}</ul>}
-        <p className="small muted">Ignore rules hide entries here only; agents still see every file.</p>
+        {rootEntries === null ? <p className="small muted">{t("Loading…")}</p> : <ul className="tree">{renderEntries(rootEntries, 0)}</ul>}
+        <p className="small muted">{t("Ignore rules hide entries here only; agents still see every file.")}</p>
       </aside>
       <section className="viewer-pane">
-        {!selected && <p className="muted">Select a file to view it.</p>}
+        {!selected && <p className="muted">{t("Select a file to view it.")}</p>}
         {selected && (
           <>
             <div className="row wrap">
               <span className="mono">{selected.relativePath}</span>
               <span className="chip small">{formatBytes(selected.bytes)}</span>
-              <span className="chip small">{selected.totalLines} lines</span>
+              <span className="chip small">{selected.totalLines === 1 ? t("1 line") : t("{count} lines", { count: selected.totalLines })}</span>
               {selected.crlf && <span className="chip small">CRLF</span>}
-              {selected.binary && <span className="chip small chip-warn">binary</span>}
-              <span className="chip small mono" title="Content hash used for checked saves">
+              {selected.binary && <span className="chip small chip-warn">{t("binary")}</span>}
+              <span className="chip small mono" title={t("Content hash used for checked saves")}>
                 {selected.contentHash.slice(0, 12)}
               </span>
               <button className="button small" onClick={() => void openFile(selected.relativePath)} type="button">
-                Reload
+                {t("Reload")}
               </button>
               {/* From the phone, files are read, not written or opened on the computer's screen. */}
               {!IS_REMOTE && (
                 <>
                   <button className="button small button-primary" disabled={!dirty || saving || !editable} onClick={() => void save()} type="button">
-                    {saving ? "Saving…" : dirty ? "Save (checked)" : "Saved"}
+                    {saving ? t("Saving…") : dirty ? t("Save (checked)") : t("Saved")}
                   </button>
-                  <span className="small muted">open in</span>
+                  <span className="small muted">{t("open in")}</span>
                   {EDITORS.map((editor) => (
                     <button className="link small" key={editor.id} onClick={() => void openExternal(editor.id)} type="button">
-                      {editor.label}
+                      {editor.label()}
                     </button>
                   ))}
                 </>
@@ -177,7 +184,7 @@ export function FilesPane({ workspaceId }: { workspaceId: string }) {
             </div>
             {notice && <p className="small muted">{notice}</p>}
             {selected.binary ? (
-              <p className="muted">Binary content is not shown. Open it in an external application.</p>
+              <p className="muted">{t("Binary content is not shown. Open it in an external application.")}</p>
             ) : (
               <Suspense fallback={<textarea className="textarea editor" readOnly value={draft} />}>
                 <CodeEditor

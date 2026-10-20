@@ -6,6 +6,7 @@
  * the result as an estimate rather than being counted as a miss.
  */
 import type { UsageTotals } from "@thingmaker/contracts";
+import { t } from "./i18n";
 
 export type CacheEfficiency = {
   /** Input tokens the provider did not serve from cache. */
@@ -40,5 +41,5 @@ export function cacheEfficiency(totals: UsageTotals | undefined): CacheEfficienc
 }
 
 export function percent(share: number | null): string {
-  return share === null ? "unknown" : `${(share * 100).toFixed(1)}%`;
+  return share === null ? t("unknown") : `${(share * 100).toFixed(1)}%`;
 }

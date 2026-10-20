@@ -10,6 +10,7 @@
  */
 import { useEffect, useState } from "react";
 import type { DiffReport } from "@thingmaker/contracts";
+import { t } from "../i18n";
 import { api } from "../ipc";
 import { useStore } from "../store";
 import type { EditedFile, TestRun } from "../toolSummary";
@@ -20,12 +21,32 @@ function signedCounts(additions: number, deletions: number) {
     <>
       {additions > 0 && <span className="diff-add">+{additions}</span>}
       {deletions > 0 && <span className="diff-del">−{deletions}</span>}
-      {additions === 0 && deletions === 0 && <span className="muted">no line changes</span>}
+      {additions === 0 && deletions === 0 && <span className="muted">{t("no line changes")}</span>}
     </>
   );
 }
 
 const KIND_MARK: Record<string, string> = { added: "A", modified: "M", deleted: "D", renamed: "R", mode_changed: "T" };
+
+/** A file change's kind, in words. */
+function kindWord(kind: string): string {
+  switch (kind) {
+    case "added":
+      return t("added");
+    case "modified":
+      return t("modified");
+    case "edited":
+      return t("edited");
+    case "deleted":
+      return t("deleted");
+    case "renamed":
+      return t("renamed");
+    case "mode_changed":
+      return t("mode changed");
+    default:
+      return kind.replace("_", " ");
+  }
+}
 
 /**
  * A path with the directory truncating and the file name kept whole: the file
@@ -93,36 +114,36 @@ export function CodeChangesCard({ workspaceId, sessionId, refreshKey }: { worksp
         <span className="work-glyph">
           <IconCode size={14} />
         </span>
-        <span className="work-title">Code changes</span>
+        <span className="work-title">{t("Code changes")}</span>
         <span className="work-meta">
-          {report.files.length} file{report.files.length === 1 ? "" : "s"} changed
+          {report.files.length === 1 ? t("{n} file changed", { n: report.files.length }) : t("{n} files changed", { n: report.files.length })}
         </span>
         <span className="work-counts">{signedCounts(additions, deletions)}</span>
         <button className="button button-small" onClick={() => setSessionTab("changes")} type="button">
-          View diff
+          {t("View diff")}
         </button>
       </header>
       <ul className="work-files">
         {shown.map((file) => (
           <li key={file.path}>
-            <span className={`file-kind kind-${file.kind}`} title={file.kind.replace("_", " ")}>
+            <span className={`file-kind kind-${file.kind}`} title={kindWord(file.kind)}>
               {KIND_MARK[file.kind] ?? "?"}
             </span>
-            <FilePath path={file.path} {...(file.renamedFrom ? { title: `${file.path} (renamed from ${file.renamedFrom})` } : {})} />
-            <span className="work-counts">{file.binary ? <span className="muted">binary</span> : signedCounts(file.additions, file.deletions)}</span>
+            <FilePath path={file.path} {...(file.renamedFrom ? { title: t("{path} (renamed from {from})", { path: file.path, from: file.renamedFrom }) } : {})} />
+            <span className="work-counts">{file.binary ? <span className="muted">{t("binary")}</span> : signedCounts(file.additions, file.deletions)}</span>
           </li>
         ))}
         {hidden > 0 && (
           <li>
             <button className="link small" onClick={() => setExpanded(true)} type="button">
-              {hidden} more file{hidden === 1 ? "" : "s"}
+              {hidden === 1 ? t("{n} more file", { n: hidden }) : t("{n} more files", { n: hidden })}
             </button>
           </li>
         )}
       </ul>
       <p className="work-foot small muted">
         {report.label}
-        {report.truncated ? " · truncated by the diff limits" : ""}
+        {report.truncated ? ` · ${t("truncated by the diff limits")}` : ""}
       </p>
     </section>
   );
@@ -142,30 +163,30 @@ export function TestsCard({ run, millis }: { run: TestRun; millis: number | null
     <section className={`card work-card ${run.ok ? "work-ok" : "work-fail"}`}>
       <header className="work-head">
         <span className={`work-glyph ${run.ok ? "glyph-ok" : "glyph-fail"}`}>{run.ok ? <IconCheckCircle size={14} /> : <IconAlertCircle size={14} />}</span>
-        <span className="work-title">Tests</span>
+        <span className="work-title">{t("Tests")}</span>
         <span className="work-meta">
           {counts ? (
-            <span title={`read from the runner output: ${counts.evidence}`}>
-              {counts.passed}/{total} passed
-              {counts.failed > 0 ? `, ${counts.failed} failed` : ""}
+            <span title={t("read from the runner output: {evidence}", { evidence: counts.evidence })}>
+              {t("{passed}/{total} passed", { passed: counts.passed, total: total ?? "?" })}
+              {counts.failed > 0 ? `, ${t("{n} failed", { n: counts.failed })}` : ""}
             </span>
           ) : (
-            <span title={`exit code ${run.exitCode}; the runner printed no count`}>{run.ok ? "passed" : "failed"}</span>
+            <span title={t("exit code {code}; the runner printed no count", { code: String(run.exitCode) })}>{run.ok ? t("passed") : t("failed")}</span>
           )}
         </span>
         {millis !== null && <span className="work-counts muted">{millis >= 1000 ? `${(millis / 1000).toFixed(millis >= 10_000 ? 0 : 1)}s` : `${millis}ms`}</span>}
         {run.output && (
           <button className="button button-small" onClick={() => setShowOutput(!showOutput)} type="button">
-            {showOutput ? "Hide output" : "View output"}
+            {showOutput ? t("Hide output") : t("View output")}
           </button>
         )}
       </header>
       {run.command && (
-        <p className="work-command mono small" title="the command this tool call ran">
+        <p className="work-command mono small" title={t("the command this tool call ran")}>
           {run.command}
         </p>
       )}
-      {!run.ok && !counts && <p className="small muted">Exit code {run.exitCode}. The runner printed no summary line, so no count is shown.</p>}
+      {!run.ok && !counts && <p className="small muted">{t("Exit code {code}. The runner printed no summary line, so no count is shown.", { code: String(run.exitCode) })}</p>}
       {showOutput && <pre className="text work-output">{run.output}</pre>}
     </section>
   );
@@ -177,11 +198,11 @@ export function EditedFilesList({ files }: { files: EditedFile[] }) {
     <ul className="work-files work-files-inline">
       {files.map((file) => (
         <li key={`${file.status}-${file.path}`}>
-          <span className={`file-kind kind-${file.status === "edited" ? "modified" : file.status}`} title={file.status}>
+          <span className={`file-kind kind-${file.status === "edited" ? "modified" : file.status}`} title={kindWord(file.status)}>
             {KIND_MARK[file.status === "edited" ? "modified" : file.status] ?? "?"}
           </span>
           <FilePath path={file.path} />
-          <span className="work-counts muted">{file.status}</span>
+          <span className="work-counts muted">{kindWord(file.status)}</span>
         </li>
       ))}
     </ul>

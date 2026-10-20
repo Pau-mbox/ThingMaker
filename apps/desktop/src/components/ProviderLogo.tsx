@@ -4,11 +4,12 @@
  * set wherever they appear together.
  */
 import { PROVIDER_LABELS, type Provider } from "@thingmaker/contracts";
+import { t } from "../i18n";
 
 export function ProviderLogo({ provider, size = 40 }: { provider: Provider; size?: number }) {
   return (
     <img
-      alt={`${PROVIDER_LABELS[provider]} logo`}
+      alt={t("{provider} logo", { provider: PROVIDER_LABELS[provider] })}
       className="provider-logo"
       draggable={false}
       height={size}

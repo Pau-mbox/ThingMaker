@@ -9,13 +9,15 @@
  *
  * The Rust engine reads the ask line; this module only labels its kinds.
  */
+import { t } from "./i18n";
+
 export const ASK_KINDS = ["ambiguity", "architecture", "conflict", "failure", "permission"] as const;
 export type AskKind = (typeof ASK_KINDS)[number];
 
 export const ASK_KIND_LABEL: Record<AskKind, string> = {
-  ambiguity: "Ambiguous requirement",
-  architecture: "Architectural fork",
-  conflict: "Conflicting constraints",
-  failure: "Repeated failure",
-  permission: "Permission needed",
+  ambiguity: t("Ambiguous requirement"),
+  architecture: t("Architectural fork"),
+  conflict: t("Conflicting constraints"),
+  failure: t("Repeated failure"),
+  permission: t("Permission needed"),
 };

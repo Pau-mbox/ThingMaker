@@ -1,3 +1,5 @@
+import { t } from "./i18n";
+
 export type ToolImage = { data?: string; mimeType?: string; uri?: string };
 
 /** Separate image bytes from diagnostic text, including nested ACP/MCP results. */
@@ -28,7 +30,7 @@ export function toolImages(value: unknown): { detail: unknown; images: ToolImage
         ...(typeof mime === "string" ? { mimeType: mime } : {}),
         ...(typeof uri === "string" ? { uri } : {}),
       });
-      return "[image shown below]";
+      return t("[image shown below]");
     }
     return Object.fromEntries(Object.entries(record).map(([key, child]) => [key, walk(child)]));
   };

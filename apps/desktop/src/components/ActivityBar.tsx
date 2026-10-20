@@ -10,6 +10,7 @@
  * from runtime reports; nothing is inferred from silence.
  */
 import { useEffect, useState } from "react";
+import { t } from "../i18n";
 import { useStore, windowDelta } from "../store";
 import { staleActivity } from "../odysseyRunner";
 import { stepDoing, stepOf } from "../toolSteps";
@@ -78,13 +79,13 @@ export function ActivityBar({ sessionId, onOpenAgents }: { sessionId: string; on
 
   const phase = foreground
     ? projection.foreground === "cancelling"
-      ? "Cancelling"
+      ? t("Cancelling")
       : projection.foreground === "awaiting_user"
-        ? "Waiting for your input"
+        ? t("Waiting for your input")
         : runningTools.length > 0
-          ? "Running tools"
-          : "Thinking"
-    : "Working in the background";
+          ? t("Running tools")
+          : t("Thinking")
+    : t("Working in the background");
 
   // What the turn is doing, in the transcript's words, and how much it has
   // done: a long "Thinking" otherwise says nothing at all.
@@ -96,11 +97,13 @@ export function ActivityBar({ sessionId, onOpenAgents }: { sessionId: string; on
     if (card?.kind === "tool") turnSteps += 1;
   }
   const counts = [
-    doing ? `${stepDoing(stepOf(doing, roots.split("\n").filter(Boolean)))}${runningTools.length > 1 ? ` (+${runningTools.length - 1} more)` : ""}` : null,
-    foreground && turnSteps > 0 ? `${turnSteps} step${turnSteps === 1 ? "" : "s"} so far` : null,
-    agents.length > 0 ? `${agents.length} background agent${agents.length === 1 ? "" : "s"}` : null,
-    detached.length > 0 ? `${detached.length} detached` : null,
-    openJobs.length > 0 ? `${openJobs.length} worker job${openJobs.length === 1 ? "" : "s"}${waitingJobs > 0 ? ` (${waitingJobs} waiting out a limit)` : ""}` : null,
+    doing ? `${stepDoing(stepOf(doing, roots.split("\n").filter(Boolean)))}${runningTools.length > 1 ? ` (${t("+{n} more", { n: runningTools.length - 1 })})` : ""}` : null,
+    foreground && turnSteps > 0 ? (turnSteps === 1 ? t("{n} step so far", { n: turnSteps }) : t("{n} steps so far", { n: turnSteps })) : null,
+    agents.length > 0 ? (agents.length === 1 ? t("{n} background agent", { n: agents.length }) : t("{n} background agents", { n: agents.length })) : null,
+    detached.length > 0 ? t("{n} detached", { n: detached.length }) : null,
+    openJobs.length > 0
+      ? `${openJobs.length === 1 ? t("{n} worker job", { n: openJobs.length }) : t("{n} worker jobs", { n: openJobs.length })}${waitingJobs > 0 ? ` ${t("({n} waiting out a limit)", { n: waitingJobs })}` : ""}`
+      : null,
   ].filter(Boolean);
 
   const lastRuntime = [...projection.cards].reverse().find((c) => c.kind === "runtime");
@@ -110,23 +113,23 @@ export function ActivityBar({ sessionId, onOpenAgents }: { sessionId: string; on
     <div aria-live="off" className={`activity ${foreground ? "" : "activity-background"}`} role="status">
       <div className="activity-head">
         {stale ? <span className="activity-stale-dot" /> : <span className="spinner" />}
-        <strong>{stale ? "Reported running, but silent" : phase}</strong>
+        <strong>{stale ? t("Reported running, but silent") : phase}</strong>
         {startedAt && <span className="muted small activity-clock">{elapsed(now - startedAt)}</span>}
         <span className="muted small activity-counts">
-          {stale ? `nothing has been reported for ${elapsed(stale.silentMs)}; it probably ended without saying so` : counts.join(" · ")}
+          {stale ? t("nothing has been reported for {time}; it probably ended without saying so", { time: elapsed(stale.silentMs) }) : counts.join(" · ")}
         </span>
         {stale && (
           <button className="link small" onClick={() => clearStaleActivity(sessionId)} type="button">
-            Clear
+            {t("Clear")}
           </button>
         )}
         {agents.length + detached.length + openJobs.length > 0 && (
           <button className="link small" onClick={onOpenAgents} type="button">
-            Agents
+            {t("Agents")}
           </button>
         )}
         {detail && (
-          <button aria-expanded={open} className="icon-button icon-button-xs" onClick={() => setOpen(!open)} title={open ? "Hide detail" : "Show what is running"} type="button">
+          <button aria-expanded={open} className="icon-button icon-button-xs" onClick={() => setOpen(!open)} title={open ? t("Hide detail") : t("Show what is running")} type="button">
             <IconChevron open={open} size={14} />
           </button>
         )}
@@ -135,12 +138,12 @@ export function ActivityBar({ sessionId, onOpenAgents }: { sessionId: string; on
         <ul className="activity-list">
           {runningTools.slice(-4).map((tool) => (
             <li key={tool.toolCallId ?? tool.title ?? "tool"}>
-              <span className="chip small">{tool.toolKind ?? tool.name ?? "tool"}</span> <span>{tool.title ?? tool.name ?? tool.toolCallId}</span>
+              <span className="chip small">{tool.toolKind ?? tool.name ?? t("tool")}</span> <span>{tool.title ?? tool.name ?? tool.toolCallId}</span>
             </li>
           ))}
           {agents.slice(-4).map((agent) => (
             <li key={agent.id}>
-              <span className="chip small">{agent.status}</span> <span>{agent.name}</span> <span className="muted small">{agent.task.length > 90 ? `${agent.task.slice(0, 90)}…` : agent.task}</span>
+              <span className="chip small">{agent.status === "starting" ? t("starting") : agent.status === "working" ? t("working") : agent.status}</span> <span>{agent.name}</span> <span className="muted small">{agent.task.length > 90 ? `${agent.task.slice(0, 90)}…` : agent.task}</span>
             </li>
           ))}
         </ul>
@@ -148,7 +151,7 @@ export function ActivityBar({ sessionId, onOpenAgents }: { sessionId: string; on
       {open && !detail && lastRuntime?.kind === "runtime" && <p className="small muted activity-last">{lastRuntime.text}</p>}
       {open && session.usage.turnStart && session.usage.latest && (
         <UsageLine
-          label="Codex usage this turn"
+          label={t("Codex usage this turn")}
           primary={windowDelta(session.usage.turnStart.primary, session.usage.latest.primary)}
           secondary={windowDelta(session.usage.turnStart.secondary, session.usage.latest.secondary)}
           sampling={session.usage.sampling}

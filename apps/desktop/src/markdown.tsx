@@ -8,6 +8,7 @@
  * degrades to plain paragraphs rather than guessing.
  */
 import { Fragment, type ReactNode } from "react";
+import { t } from "./i18n";
 
 export type Block =
   | { type: "heading"; level: number; text: string }
@@ -141,15 +142,15 @@ export function renderInline(text: string, onLink?: LinkHandler, onImage?: Image
     else if (match[6]) out.push(<del key={key}>{renderInline(token.slice(2, -2), onLink)}</del>);
     else if (match[7]) {
       const parts = /!\[([^\]]*)\]\(([^)]*)\)/.exec(token);
-      const alt = parts?.[1] ?? "image";
+      const alt = parts?.[1] ?? t("image");
       const src = (parts?.[2] ?? "").trim();
       const custom = onImage?.(src, alt);
       out.push(
         custom ? (
           <span key={key}>{custom}</span>
         ) : (
-          <span className="chip small" key={key} title="remote images in messages are not fetched">
-            image: {alt}
+          <span className="chip small" key={key} title={t("remote images in messages are not fetched")}>
+            {t("image: {alt}", { alt })}
           </span>
         ),
       );
@@ -216,10 +217,10 @@ export function Markdown({
             return (
               <div className="codeblock" key={index}>
                 <div className="codeblock-bar">
-                  <span className="small muted">{block.language || "code"}</span>
+                  <span className="small muted">{block.language || t("code")}</span>
                   {onCopyCode && (
                     <button className="link small" onClick={() => onCopyCode(block.code)} type="button">
-                      copy
+                      {t("copy")}
                     </button>
                   )}
                 </div>

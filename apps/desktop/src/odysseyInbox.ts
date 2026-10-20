@@ -11,6 +11,7 @@
  */
 import type { AmendmentRecord, MilestoneRecord, OdysseyJournalEntry, OdysseyRecord, PlanChangeRecord, QuestionRecord } from "@thingmaker/contracts";
 import { MAX_TELLS } from "./odysseyAmend";
+import { t } from "./i18n";
 
 /** Consecutive failed checks on one milestone before it is a decision, not a retry. */
 export const REPEATED_FAILURES = 3;
@@ -47,7 +48,7 @@ export function inboxItems(input: {
     // The newest guard or blocked report, whichever came last: a report of
     // `blocked` carries the agent's own reason, which is the one to read.
     const cause = journal.find((entry) => entry.kind === "guard" || (entry.kind === "report" && /blocked$/.test(entry.summary)));
-    const reason = cause?.kind === "report" ? `The agent reported milestone ${cause.summary.replace(/\D/g, "")} blocked: ${cause.detail ?? ""}`.trim() : (cause?.summary ?? "The run is blocked.");
+    const reason = cause?.kind === "report" ? t("The agent reported milestone {number} blocked: {detail}", { number: cause.summary.replace(/\D/g, ""), detail: cause.detail ?? "" }).trim() : (cause?.summary ?? t("The run is blocked."));
     items.push({ kind: "blocked", id: "blocked", at: cause?.at ?? now, reason });
   }
 

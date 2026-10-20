@@ -4,7 +4,24 @@
  * restores focus to the element that had it.
  */
 import { useEffect, useMemo, useRef, useState } from "react";
-import { SESSION_TABS, basenameOf, sessionTitle, useStore } from "../store";
+import { SESSION_TABS, basenameOf, sessionTitle, useStore, type SessionTab } from "../store";
+import { t } from "../i18n";
+
+/** A session tab by the name its button shows. */
+function tabName(tab: SessionTab): string {
+  switch (tab) {
+    case "transcript": return t("Transcript");
+    case "agents": return t("Agents");
+    case "odyssey": return "Big Thing";
+    case "terminal": return t("Terminal");
+    case "files": return t("Files");
+    case "changes": return t("Changes");
+    case "context": return t("Context");
+    case "artifacts": return t("Artifacts");
+    case "images": return t("Images");
+    default: return tab;
+  }
+}
 
 type Action = { id: string; label: string; hint?: string | undefined; run: () => void };
 
@@ -30,38 +47,38 @@ export function CommandPalette() {
 
   const actions = useMemo<Action[]>(() => {
     const list: Action[] = [
-      { id: "view.chill", label: state.chillMode ? "Leave Chill mode" : "Enter Chill mode", hint: "⌘⇧C", run: () => state.setChillMode(!state.chillMode) },
-      { id: "workspace.add", label: "Add workspace…", hint: "⌘O", run: () => void state.addWorkspaceByPicker() },
-      { id: "view.signin", label: "Provider sign-in", hint: "⌘,", run: () => { state.setView({ kind: "signin" }); void state.loadProviders(); } },
-      { id: "view.settings", label: "Settings", hint: "⌘;", run: () => { state.setView({ kind: "settings" }); void state.loadSettings(); } },
-      { id: "view.teams", label: "Teams (orchestrator and worker presets)", run: () => state.setView({ kind: "teams" }) },
-      { id: "view.integrations", label: "Integration configuration (MCP, plugins, skills, harnesses)", hint: "⌘I", run: () => state.setView({ kind: "integrations" }) },
-      { id: "view.welcome", label: "Welcome", run: () => state.setView({ kind: "welcome" }) },
+      { id: "view.chill", label: state.chillMode ? t("Leave Chill mode") : t("Enter Chill mode"), hint: "⌘⇧C", run: () => state.setChillMode(!state.chillMode) },
+      { id: "workspace.add", label: t("Add workspace…"), hint: "⌘O", run: () => void state.addWorkspaceByPicker() },
+      { id: "view.signin", label: t("Provider sign-in"), hint: "⌘,", run: () => { state.setView({ kind: "signin" }); void state.loadProviders(); } },
+      { id: "view.settings", label: t("Settings"), hint: "⌘;", run: () => { state.setView({ kind: "settings" }); void state.loadSettings(); } },
+      { id: "view.teams", label: t("Teams (orchestrator and worker presets)"), run: () => state.setView({ kind: "teams" }) },
+      { id: "view.integrations", label: t("Integration configuration (MCP, plugins, skills, harnesses)"), hint: "⌘I", run: () => state.setView({ kind: "integrations" }) },
+      { id: "view.welcome", label: t("Welcome"), run: () => state.setView({ kind: "welcome" }) },
     ];
     for (const workspace of state.workspaces) {
-      list.push({ id: `ws.${workspace.id}`, label: `Open workspace ${basenameOf(workspace.displayPath)}`, hint: workspace.displayPath, run: () => void state.selectWorkspace(workspace.id) });
+      list.push({ id: `ws.${workspace.id}`, label: t("Open workspace {name}", { name: basenameOf(workspace.displayPath) }), hint: workspace.displayPath, run: () => void state.selectWorkspace(workspace.id) });
       const inspection = state.inspections[workspace.id];
       if (inspection?.record.trustState === "trusted_local" && !inspection.trustStale) {
-        list.push({ id: `ws.new.${workspace.id}`, label: `New session in ${basenameOf(workspace.displayPath)}`, hint: "⌘N when selected", run: () => void state.openSession(workspace.id, { mode: "new" }) });
+        list.push({ id: `ws.new.${workspace.id}`, label: t("New session in {name}", { name: basenameOf(workspace.displayPath) }), hint: t("⌘N when selected"), run: () => void state.openSession(workspace.id, { mode: "new" }) });
       }
     }
     state.sessionOrder.forEach((id, position) => {
       const session = state.sessions[id];
       if (!session) return;
-      list.push({ id: `session.${id}`, label: `Switch to session ${sessionTitle(session)}`, hint: position < 9 ? `⌘${position + 1}` : undefined, run: () => state.selectSession(id) });
+      list.push({ id: `session.${id}`, label: t("Switch to session {title}", { title: sessionTitle(session) }), hint: position < 9 ? `⌘${position + 1}` : undefined, run: () => state.selectSession(id) });
     });
     if (state.view.kind === "session") {
       const id = state.view.sessionId;
       const session = state.sessions[id];
       if (session) {
-        list.push({ id: "session.focus", label: "Focus composer", hint: "⌘L", run: () => state.focusComposer() });
-        list.push({ id: "session.cancel", label: "Cancel current turn", run: () => void state.cancel(id) });
-        list.push({ id: "session.stop", label: "Stop session (asks first when work is live)", run: () => void state.stop(id) });
-        list.push({ id: "session.refresh", label: "Refresh from snapshot", run: () => void state.refreshSnapshot(id) });
-        list.push({ id: "session.search", label: "Search transcript", hint: "⌘F", run: () => state.setTranscriptSearchOpen(true) });
-        list.push({ id: "session.export", label: "Export transcript as Markdown…", run: () => void state.exportTranscript(id) });
+        list.push({ id: "session.focus", label: t("Focus composer"), hint: "⌘L", run: () => state.focusComposer() });
+        list.push({ id: "session.cancel", label: t("Cancel current turn"), run: () => void state.cancel(id) });
+        list.push({ id: "session.stop", label: t("Stop session (asks first when work is live)"), run: () => void state.stop(id) });
+        list.push({ id: "session.refresh", label: t("Refresh from snapshot"), run: () => void state.refreshSnapshot(id) });
+        list.push({ id: "session.search", label: t("Search transcript"), hint: "⌘F", run: () => state.setTranscriptSearchOpen(true) });
+        list.push({ id: "session.export", label: t("Export transcript as Markdown…"), run: () => void state.exportTranscript(id) });
         for (const tab of SESSION_TABS) {
-          list.push({ id: `tab.${tab}`, label: `Show ${tab} tab`, run: () => state.setSessionTab(tab) });
+          list.push({ id: `tab.${tab}`, label: t("Show the {tab} tab", { tab: tabName(tab) }), run: () => state.setSessionTab(tab) });
         }
       }
     }
@@ -83,7 +100,7 @@ export function CommandPalette() {
   };
   return (
     <div aria-modal="true" className="modal-backdrop palette-backdrop" onClick={() => setOpen(false)} role="dialog">
-      <div aria-label="Command palette" className="palette" onClick={(e) => e.stopPropagation()} role="document">
+      <div aria-label={t("Command palette")} className="palette" onClick={(e) => e.stopPropagation()} role="document">
         <input
           aria-activedescendant={filtered[index] ? `palette-${filtered[index].id}` : undefined}
           aria-autocomplete="list"
@@ -109,14 +126,14 @@ export function CommandPalette() {
               setOpen(false);
             }
           }}
-          placeholder="Type a command…"
+          placeholder={t("Type a command…")}
           ref={inputRef}
           role="combobox"
           aria-expanded="true"
           value={query}
         />
         <ul className="palette-list" id="palette-list" role="listbox">
-          {filtered.length === 0 && <li className="muted small palette-item">No matching commands</li>}
+          {filtered.length === 0 && <li className="muted small palette-item">{t("No matching commands")}</li>}
           {filtered.slice(0, 40).map((action, i) => (
             <li
               aria-selected={i === index}

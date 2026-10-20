@@ -8,6 +8,7 @@
  */
 import { useState } from "react";
 import type { PlanContent, PlanEntry } from "@thingmaker/contracts";
+import { t } from "../i18n";
 import { Markdown } from "../markdown";
 import { IconCheck, IconChevron, IconX } from "./icons";
 
@@ -19,7 +20,9 @@ function statusOf(entry: PlanEntry): Status {
   return "pending";
 }
 
-const STATUS_WORD: Record<Status, string> = { completed: "done", in_progress: "in progress", pending: "to do" };
+function statusWord(status: Status): string {
+  return status === "completed" ? t("done") : status === "in_progress" ? t("in progress") : t("to do");
+}
 
 export type PlanProgress = { done: number; total: number; current: PlanEntry | null; next: PlanEntry | null };
 
@@ -58,8 +61,8 @@ function PlanItems({ entries }: { entries: PlanEntry[] }) {
               {status === "completed" && <IconCheck size={10} />}
             </span>
             <span className="plan-text">{entry.content}</span>
-            {entry.priority === "high" && <span className="chip small plan-priority">high</span>}
-            <span className="sr-only">, {STATUS_WORD[status]}</span>
+            {entry.priority === "high" && <span className="chip small plan-priority">{t("high")}</span>}
+            <span className="sr-only">, {statusWord(status)}</span>
           </li>
         );
       })}
@@ -72,11 +75,11 @@ export function PlanCard({ plan }: { plan: PlanContent }) {
   return (
     <div className="card card-plan">
       <div className="plan-head small">
-        <strong>Plan</strong>
+        <strong>{t("Plan")}</strong>
         {progress && (
           <span className="muted">
             {" "}
-            · {progress.done} of {progress.total} done
+            · {t("{done} of {total} done", { done: progress.done, total: progress.total })}
           </span>
         )}
       </div>
@@ -87,7 +90,7 @@ export function PlanCard({ plan }: { plan: PlanContent }) {
       ) : plan.planType === "file" ? (
         <span className="mono small">{plan.uri}</span>
       ) : (
-        <span className="small muted">a plan of a kind this version does not draw ({plan.originalType})</span>
+        <span className="small muted">{t("a plan of a kind this version does not draw ({type})", { type: plan.originalType })}</span>
       )}
     </div>
   );
@@ -106,18 +109,18 @@ export function PlanBar({ plan, active }: { plan: PlanContent; active: boolean }
   const signature = JSON.stringify(plan.entries.map((entry) => [entry.content, entry.status ?? null]));
   const finished = progress.done === progress.total;
   if (hidden === signature || (finished && !active)) return null;
-  const headline = progress.current?.content ?? (finished ? "All steps done" : progress.next ? `Next: ${progress.next.content}` : "");
+  const headline = progress.current?.content ?? (finished ? t("All steps done") : progress.next ? t("Next: {step}", { step: progress.next.content }) : "");
   return (
     <div className="plan-bar">
       <div className="plan-bar-row">
-        <button aria-expanded={open} className="plan-bar-head" onClick={() => setOpen(!open)} title={open ? "Fold the plan" : "Show every step"} type="button">
+        <button aria-expanded={open} className="plan-bar-head" onClick={() => setOpen(!open)} title={open ? t("Fold the plan") : t("Show every step")} type="button">
           <IconChevron open={open} size={12} />
           <span className="plan-bar-count">
-            Plan {progress.done}/{progress.total}
+            {t("Plan {done}/{total}", { done: progress.done, total: progress.total })}
           </span>
           <span className="plan-bar-current">{headline}</span>
         </button>
-        <button aria-label="Hide the plan until it changes" className="icon-button icon-button-xs" onClick={() => setHidden(signature)} title="Hide until the plan changes" type="button">
+        <button aria-label={t("Hide the plan until it changes")} className="icon-button icon-button-xs" onClick={() => setHidden(signature)} title={t("Hide until the plan changes")} type="button">
           <IconX size={12} />
         </button>
       </div>

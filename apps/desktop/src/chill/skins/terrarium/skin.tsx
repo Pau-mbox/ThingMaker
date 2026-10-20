@@ -1,3 +1,4 @@
+import { t } from "../../../i18n";
 import type { ChillSkin } from "../types";
 import { ambience } from "./audio";
 import { toTerrarium } from "./model";
@@ -6,30 +7,37 @@ import "./terrarium.css";
 
 export const terrariumSkin: ChillSkin = {
   id: "terrarium",
-  label: "Cyber terrarium",
-  pageSize: { desktop: 6, compact: 1 },
-  terms: {
-    world: "garden",
-    project: "plant",
-    projects: "plants",
-    actor: "helper",
-    actors: "helpers",
-    file: "leaf",
-    files: "leaves",
-    journal: "Garden journal",
+  // Read when shown, so the words follow the interface language.
+  get label() {
+    return t("Cyber terrarium");
   },
-  settings: [
-    {
-      key: "light",
-      label: "Light",
-      defaultValue: "dusk",
-      choices: [
-        { value: "dusk", label: "Soft dusk" },
-        { value: "moonlight", label: "Moonlight" },
-        { value: "sunrise", label: "Warm sunrise" },
-      ],
-    },
-  ],
+  pageSize: { desktop: 6, compact: 1 },
+  get terms() {
+    return {
+      world: t("garden"),
+      project: t("plant"),
+      projects: t("plants"),
+      actor: t("helper"),
+      actors: t("helpers"),
+      file: t("leaf"),
+      files: t("leaves"),
+      journal: t("Garden journal"),
+    };
+  },
+  get settings() {
+    return [
+      {
+        key: "light",
+        label: t("Light"),
+        defaultValue: "dusk",
+        choices: [
+          { value: "dusk", label: t("Soft dusk") },
+          { value: "moonlight", label: t("Moonlight") },
+          { value: "sunrise", label: t("Warm sunrise") },
+        ],
+      },
+    ];
+  },
   appearance: (options) => `terrarium-${options.light}`,
   async createRenderer(host, prefs, select, onUnavailable) {
     const { Terrarium } = await import("./Terrarium");
@@ -67,7 +75,7 @@ export const terrariumSkin: ChillSkin = {
       {projects.map((p) => (
         <button
           key={p.id}
-          aria-label={`Focus project ${p.name}`}
+          aria-label={t("Focus project {name}", { name: p.name })}
           onClick={() => select({ kind: "project", id: p.id })}
         >
           <svg viewBox="0 0 100 160" width="90" height="145" aria-hidden="true">

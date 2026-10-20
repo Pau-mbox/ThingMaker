@@ -7,6 +7,7 @@
  */
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { ArtifactContent, ArtifactRecord } from "@thingmaker/contracts";
+import { t } from "../i18n";
 import { api } from "../ipc";
 import { useStore } from "../store";
 
@@ -27,7 +28,7 @@ function Thumb({ record, onOpen }: { record: ArtifactRecord; onOpen: (content: A
   const src = content?.dataBase64 ? `data:${record.mime};base64,${content.dataBase64}` : null;
   return (
     <button className="gallery-tile" disabled={!content} onClick={() => content && onOpen(content)} title={record.logicalPath} type="button">
-      {src ? <img alt={record.logicalPath} src={src} /> : <span className="gallery-placeholder small muted">{content?.unavailable ?? "loading…"}</span>}
+      {src ? <img alt={record.logicalPath} src={src} /> : <span className="gallery-placeholder small muted">{content?.unavailable ?? t("loading…")}</span>}
       <span className="gallery-caption">
         <span className="mono small">{record.logicalPath.split("/").pop()}</span>
         <span className="small muted">
@@ -59,7 +60,7 @@ export function ImagesPane({ sessionId }: { sessionId: string }) {
     try {
       const outcome = await api.artifactsRefresh(workspaceId, agentSessionId);
       setRecords(outcome.artifacts.filter((a) => a.viewer === "image"));
-      setNote(outcome.newVersions > 0 ? `${outcome.newVersions} new image version(s)` : null);
+      setNote(outcome.newVersions > 0 ? t("{n} new image version(s)", { n: outcome.newVersions }) : null);
     } catch (error) {
       setError(error);
     } finally {
@@ -87,19 +88,28 @@ export function ImagesPane({ sessionId }: { sessionId: string }) {
     <div className="images-pane">
       <div className="row wrap">
         <button className="button button-small" disabled={busy} onClick={() => void scan()} type="button">
-          {busy ? "Scanning…" : "Rescan"}
+          {busy ? t("Scanning…") : t("Rescan")}
         </button>
         <label className="check small">
-          <input checked={showAllVersions} onChange={(e) => setShowAllVersions(e.target.checked)} type="checkbox" /> show every version
+          <input checked={showAllVersions} onChange={(e) => setShowAllVersions(e.target.checked)} type="checkbox" /> {t("show every version")}
         </label>
         <span className="small muted">
-          {shown.length} image{shown.length === 1 ? "" : "s"}
-          {note ? ` · ${note}` : ""} · files produced in this workspace since the session baseline, plus images the agent reported producing
+          {shown.length === 1 ? t("{n} image", { n: shown.length }) : t("{n} images", { n: shown.length })}
+          {note ? ` · ${note}` : ""} · {t("files produced in this workspace since the session baseline, plus images the agent reported producing")}
         </span>
       </div>
       {shown.length === 0 && !busy && (
         <p className="muted small">
-          No images yet. Generated files that land in the workspace (for example <span className="mono">output/imagegen/*.png</span>) appear here after the turn settles.
+          {(() => {
+            const [before, after] = t("No images yet. Generated files that land in the workspace (for example {example}) appear here after the turn settles.").split("{example}");
+            return (
+              <>
+                {before}
+                <span className="mono">output/imagegen/*.png</span>
+                {after}
+              </>
+            );
+          })()}
         </p>
       )}
       <div className="gallery">
@@ -114,15 +124,15 @@ export function ImagesPane({ sessionId }: { sessionId: string }) {
             <div className="row wrap">
               <span className="mono small">{open.record.logicalPath}</span>
               <span className="chip small">v{open.record.version}</span>
-              <span className={`chip small ${open.record.provenance === "observed" ? "chip-warn" : ""}`}>{open.record.provenance.replace("_", "-")}</span>
+              <span className={`chip small ${open.record.provenance === "observed" ? "chip-warn" : ""}`}>{open.record.provenance === "observed" ? t("observed") : t("runtime-reported")}</span>
               <span className="small muted">
                 {open.width}×{open.height} · {(open.record.bytes / 1024).toFixed(0)} KiB · blake3 {open.record.contentHash.slice(0, 12)} · {new Date(open.record.createdAt).toLocaleString()}
               </span>
               <button className="button button-small" onClick={() => void openUrl(`file://${open.record.sourcePath}`)} type="button">
-                Open externally
+                {t("Open externally")}
               </button>
               <button className="button button-small" onClick={() => setOpen(null)} type="button">
-                Close
+                {t("Close")}
               </button>
             </div>
           </div>

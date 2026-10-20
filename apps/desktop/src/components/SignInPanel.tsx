@@ -13,21 +13,33 @@ import type { Provider, ProviderInfo, ProviderModel } from "@thingmaker/contract
 import { ProviderLogo } from "./ProviderLogo";
 import { PROVIDER_LABELS } from "@thingmaker/contracts";
 import { api } from "../ipc";
-import { useStore } from "../store";
+import { useStore, type SignInRun } from "../store";
+import { t } from "../i18n";
 import { windowName } from "./UsageLine";
 
 /** What each provider is, in one line, for someone choosing between them. */
-const BLURB: Record<Provider, string> = {
-  claude: "Claude Code, through its ACP adapter (claude-agent-acp). Signs in with your Claude Pro, Max, Team or Enterprise plan.",
-  codex: "Codex, through its app-server. Signs in with your ChatGPT plan.",
-  gemini:
+const BLURB = (): Record<Provider, string> => ({
+  claude: t("Claude Code, through its ACP adapter (claude-agent-acp). Signs in with your Claude Pro, Max, Team or Enterprise plan."),
+  codex: t("Codex, through its app-server. Signs in with your ChatGPT plan."),
+  gemini: t(
     "Gemini (and the other models in your Antigravity quota) through Antigravity's own CLI, agy. It shares the Antigravity app's sign-in. A worker or a plain session: it cannot lead a team. In a trusted workspace it runs with agy's --dangerously-skip-permissions, so it may edit files and run commands without asking.",
-};
+  ),
+});
 
 /** Providers whose sign-in lives in another app rather than a flow here. */
-const SIGNS_IN_ELSEWHERE: Partial<Record<Provider, string>> = {
-  gemini: "Sign in or switch accounts in the Antigravity app, or run `agy` once in a terminal.",
-};
+const SIGNS_IN_ELSEWHERE = (): Partial<Record<Provider, string>> => ({
+  gemini: t("Sign in or switch accounts in the Antigravity app, or run `agy` once in a terminal."),
+});
+
+/** Where a sign-in run is, as the person reads it. */
+const SIGN_IN_STATE = (): Record<SignInRun["state"], string> => ({
+  starting: t("starting"),
+  running: t("running"),
+  success: t("success"),
+  failed: t("failed"),
+  cancelled: t("cancelled"),
+  timed_out: t("timed out"),
+});
 
 function ProviderCard({ info }: { info: ProviderInfo }) {
   const signIn = useStore((s) => s.signIn);
@@ -59,26 +71,26 @@ function ProviderCard({ info }: { info: ProviderInfo }) {
       <div className="provider-body">
         <div className="row wrap">
           <strong className="provider-name">{info.label}</strong>
-          {!info.resolved && <span className="chip small chip-warn">not found</span>}
+          {!info.resolved && <span className="chip small chip-warn">{t("not found")}</span>}
           {auth?.loggedIn === true && (
             <span className="chip small chip-active">
-              signed in{auth.account ? ` as ${auth.account}` : ""}
+              {auth.account ? t("signed in as {account}", { account: auth.account }) : t("signed in")}
               {auth.plan ? ` · ${auth.plan}` : ""}
             </span>
           )}
-          {auth?.loggedIn === false && <span className="chip small chip-warn">not signed in</span>}
+          {auth?.loggedIn === false && <span className="chip small chip-warn">{t("not signed in")}</span>}
           {auth?.problem && <span className="chip small">{auth.problem}</span>}
           {quota?.primary && (
-            <span className="chip small" title="As the provider last reported it">
+            <span className="chip small" title={t("As the provider last reported it")}>
               {[quota.primary, quota.secondary]
                 .filter((w): w is NonNullable<typeof w> => !!w)
-                .map((w) => `${windowName(w.windowSeconds)} ${Math.max(0, 100 - Math.round(w.usedPercent))}% left`)
+                .map((w) => t("{window} {percent}% left", { window: windowName(w.windowSeconds), percent: Math.max(0, 100 - Math.round(w.usedPercent)) }))
                 .join(" · ")}
-              {quota.limitReached ? " · limit reached" : ""}
+              {quota.limitReached ? ` · ${t("limit reached")}` : ""}
             </span>
           )}
         </div>
-        <p className="small muted">{BLURB[info.provider]}</p>
+        <p className="small muted">{BLURB()[info.provider]}</p>
         {info.resolved ? (
           <p className="small muted mono">
             {info.resolved.program} {info.resolved.prefixArgs.join(" ")} <span className="chip small">{info.resolved.source}</span>
@@ -86,28 +98,28 @@ function ProviderCard({ info }: { info: ProviderInfo }) {
         ) : (
           <p className="small chip-warn">{info.problem}</p>
         )}
-        {SIGNS_IN_ELSEWHERE[info.provider] && <p className="small muted">{SIGNS_IN_ELSEWHERE[info.provider]}</p>}
+        {SIGNS_IN_ELSEWHERE()[info.provider] && <p className="small muted">{SIGNS_IN_ELSEWHERE()[info.provider]}</p>}
         <VersionRow provider={info.provider} />
         <div className="row wrap">
-          {SIGNS_IN_ELSEWHERE[info.provider] ? null : auth?.loggedIn ? (
+          {SIGNS_IN_ELSEWHERE()[info.provider] ? null : auth?.loggedIn ? (
             <button className="button" disabled={!info.resolved || running || !!(signIn && signIn.state === "running")} onClick={() => void switchAccount(info.provider)} type="button">
-              Switch account
+              {t("Switch account")}
             </button>
           ) : (
             <button className="button button-primary" disabled={!info.resolved || running || !!(signIn && signIn.state === "running")} onClick={() => void startSignIn(info.provider)} type="button">
-              Sign in with subscription
+              {t("Sign in with subscription")}
             </button>
           )}
           {running && (
             <button className="button button-warn" onClick={() => void cancelSignIn()} type="button">
-              Cancel sign-in
+              {t("Cancel sign-in")}
             </button>
           )}
           <button className="button" onClick={() => void loadProviders()} type="button">
-            Check again
+            {t("Check again")}
           </button>
           <button className="button" disabled={!info.resolved || loadingModels} onClick={() => void listModels()} type="button">
-            {loadingModels ? "Asking…" : "List models"}
+            {loadingModels ? t("Asking…") : t("List models")}
           </button>
         </div>
         {models && (
@@ -115,13 +127,13 @@ function ProviderCard({ info }: { info: ProviderInfo }) {
             {models.map((model) => (
               <li className="small" key={model.id}>
                 <strong>{model.name}</strong> <span className="mono muted">{model.id}</span>
-                {model.isDefault && <span className="chip small">default</span>}
-                {model.needsCredits && <span className="chip small chip-warn">uses credits beyond the plan</span>}
-                {model.efforts.length > 0 && <span className="muted"> · effort {model.efforts.join(", ")}</span>}
+                {model.isDefault && <span className="chip small">{t("default")}</span>}
+                {model.needsCredits && <span className="chip small chip-warn">{t("uses credits beyond the plan")}</span>}
+                {model.efforts.length > 0 && <span className="muted"> · {t("effort {levels}", { levels: model.efforts.join(", ") })}</span>}
                 {model.description && <span className="muted"> · {model.description}</span>}
               </li>
             ))}
-            {models.length === 0 && <li className="small muted">The account listed no models; it is probably not signed in.</li>}
+            {models.length === 0 && <li className="small muted">{t("The account listed no models; it is probably not signed in.")}</li>}
           </ul>
         )}
       </div>
@@ -143,9 +155,9 @@ export function VersionRow({ provider }: { provider: Provider }) {
   if (!version) return null;
   const updating = update.running === provider;
   const status = version.updateAvailable
-    ? `${version.latest} is out`
+    ? t("{version} is out", { version: version.latest ?? "" })
     : version.latest
-      ? "up to date"
+      ? t("up to date")
       : version.canUpdate
         ? null
         : version.how;
@@ -153,7 +165,7 @@ export function VersionRow({ provider }: { provider: Provider }) {
     <div className="provider-version">
       <div className="row wrap small">
         <span>
-          Version <span className="mono">{version.installed ?? "unknown"}</span>
+          {t("Version")} <span className="mono">{version.installed ?? t("unknown")}</span>
         </span>
         {status && <span className={version.updateAvailable ? "chip small chip-active" : "muted"}>{status}</span>}
         {/* A program whose newest release cannot be asked for (agy) gets a
@@ -164,17 +176,18 @@ export function VersionRow({ provider }: { provider: Provider }) {
             className={`button small ${version.updateAvailable ? "button-primary" : ""}`}
             disabled={update.running !== null}
             onClick={() => void updateProvider(provider)}
-            title={`Runs ${version.how}`}
+            title={t("Runs {command}", { command: version.how })}
             type="button"
           >
-            {updating ? "Updating…" : version.updateAvailable ? `Update to ${version.latest}` : "Update"}
+            {updating ? t("Updating…") : version.updateAvailable ? t("Update to {version}", { version: version.latest ?? "" }) : t("Update")}
           </button>
         )}
       </div>
       {version.updateAvailable && version.tested && version.latest && version.latest !== version.tested && (
         <p className="small muted">
-          ThingMaker was last checked against {version.tested}. Newer releases usually work; if a session misbehaves after updating, say so and it gets
-          checked.
+          {t("ThingMaker was last checked against {version}. Newer releases usually work; if a session misbehaves after updating, say so and it gets checked.", {
+            version: version.tested,
+          })}
         </p>
       )}
       {version.problem && <p className="small muted">{version.problem}</p>}
@@ -199,14 +212,15 @@ export function SignInPanel() {
 
   return (
     <div className="panel">
-      <h2>Providers</h2>
+      <h2>{t("Providers")}</h2>
       <p className="small muted">
-        Each provider runs its own official program with its own sign-in, on your subscription. The desktop never sees a token: sign-in happens in the provider&rsquo;s
-        own flow, in your browser, and each program keeps its credentials in its own store.
+        {t(
+          "Each provider runs its own official program with its own sign-in, on your subscription. The desktop never sees a token: sign-in happens in the provider\u2019s own flow, in your browser, and each program keeps its credentials in its own store.",
+        )}
       </p>
 
       {!providers ? (
-        <p className="muted small">Asking each provider…</p>
+        <p className="muted small">{t("Asking each provider…")}</p>
       ) : (
         <ul className="providers">
           {providers.map((info) => (
@@ -218,7 +232,7 @@ export function SignInPanel() {
       {signIn && (
         <section className="card">
           <h3>
-            Sign-in · {PROVIDER_LABELS[signIn.provider]} · {signIn.state.replace("_", " ")}
+            {t("Sign-in")} · {PROVIDER_LABELS[signIn.provider]} · {SIGN_IN_STATE()[signIn.state] ?? signIn.state}
           </h3>
           {signIn.urls.length > 0 && (
             <div className="row wrap">
@@ -226,14 +240,14 @@ export function SignInPanel() {
                 <span className="row" key={url}>
                   <span className="mono small url">{url}</span>
                   <button className="button small" onClick={() => void openUrl(url)} type="button">
-                    Open in browser
+                    {t("Open in browser")}
                   </button>
                 </span>
               ))}
             </div>
           )}
-          {signIn.state === "running" && signIn.urls.length > 0 && <p className="small muted">Complete the sign-in in your browser; the program exits when it is done.</p>}
-          <pre className="text log">{signIn.lines.map((line) => `${line.stream === "stderr" ? "! " : "  "}${line.text}`).join("\n") || "(no output yet)"}</pre>
+          {signIn.state === "running" && signIn.urls.length > 0 && <p className="small muted">{t("Complete the sign-in in your browser; the program exits when it is done.")}</p>}
+          <pre className="text log">{signIn.lines.map((line) => `${line.stream === "stderr" ? "! " : "  "}${line.text}`).join("\n") || t("(no output yet)")}</pre>
         </section>
       )}
     </div>

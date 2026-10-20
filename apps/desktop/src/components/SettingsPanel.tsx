@@ -43,22 +43,26 @@ function SupportBundleSection() {
   };
   return (
     <section>
-      <h3>Support bundle</h3>
+      <h3>{t("Support bundle")}</h3>
       <p className="small muted">
-        Generated locally: app, runtime and schema versions, OS family, anonymized live-session state, uncertain-submission count, recent warning and error log
-        lines (home directory collapsed) and notification settings. Excluded: prompts, transcripts, environment variables, tokens. Nothing is uploaded; you review
-        the redacted text and save it yourself.
+        {t(
+          "Generated locally: app, runtime and schema versions, OS family, anonymized live-session state, uncertain-submission count, recent warning and error log lines (home directory collapsed) and notification settings. Excluded: prompts, transcripts, environment variables, tokens. Nothing is uploaded; you review the redacted text and save it yourself.",
+        )}
       </p>
       <div className="row wrap">
         <button className="button" onClick={() => void generate()} type="button">
-          Generate preview
+          {t("Generate preview")}
         </button>
         {preview && (
           <>
             <button className="button button-primary" onClick={() => void save()} type="button">
-              Save…
+              {t("Save…")}
             </button>
-            <span className="small muted">{preview.redactions} secret-looking value(s) redacted</span>
+            <span className="small muted">
+              {preview.redactions === 1
+                ? t("1 secret-looking value redacted")
+                : t("{count} secret-looking values redacted", { count: preview.redactions })}
+            </span>
           </>
         )}
       </div>
@@ -96,18 +100,18 @@ function StorageSection() {
   };
   return (
     <section>
-      <h3>Storage and retention</h3>
+      <h3>{t("Storage and retention")}</h3>
       {!report ? (
-        <p className="muted small">Inspecting…</p>
+        <p className="muted small">{t("Inspecting…")}</p>
       ) : (
         <>
           <p className="small muted mono">{report.dataDir}</p>
           <table className="config-table">
             <thead>
               <tr>
-                <th>Area</th>
-                <th>Size</th>
-                <th>Retention</th>
+                <th>{t("Area")}</th>
+                <th>{t("Size")}</th>
+                <th>{t("Retention")}</th>
               </tr>
             </thead>
             <tbody>
@@ -121,8 +125,8 @@ function StorageSection() {
             </tbody>
           </table>
           <p className="small muted">
-            {report.attachments} attachment(s), {report.artifactVersions} artifact content hash(es). Defaults: seven days for desktop logs, thirty days for
-            unreferenced caches, never for agent history or exported artifacts.
+            {t("{attachments} attachment(s), {hashes} artifact content hash(es).", { attachments: report.attachments, hashes: report.artifactVersions })}{" "}
+            {t("Defaults: seven days for desktop logs, thirty days for unreferenced caches, never for agent history or exported artifacts.")}
           </p>
           {report.notes.map((n) => (
             <p className="small muted" key={n}>
@@ -131,16 +135,16 @@ function StorageSection() {
           ))}
           <div className="row wrap">
             <button className="button" onClick={() => void preview()} type="button">
-              Preview cleanup
+              {t("Preview cleanup")}
             </button>
             <button className="button" onClick={() => void load()} type="button">
-              Refresh sizes
+              {t("Refresh sizes")}
             </button>
           </div>
           {candidates && (
             <div className="card">
               {candidates.length === 0 ? (
-                <p className="small muted">Nothing is past retention.</p>
+                <p className="small muted">{t("Nothing is past retention.")}</p>
               ) : (
                 <>
                   <ul className="call-list">
@@ -163,7 +167,7 @@ function StorageSection() {
                     ))}
                   </ul>
                   <button className="button button-warn" disabled={checked.size === 0} onClick={() => void run()} type="button">
-                    Delete {checked.size} selected
+                    {t("Delete {count} selected", { count: checked.size })}
                   </button>
                 </>
               )}
@@ -231,7 +235,7 @@ export function SettingsPanel() {
   if (!settings) {
     return (
       <div className="panel">
-        <p className="muted">Loading settings…</p>
+        <p className="muted">{t("Loading settings…")}</p>
       </div>
     );
   }
@@ -247,33 +251,34 @@ export function SettingsPanel() {
 
   return (
     <div className="panel">
-      <h2>Settings</h2>
+      <h2>{t("Settings")}</h2>
 
       <section>
-        <h3>Composer and keyboard</h3>
+        <h3>{t("Composer and keyboard")}</h3>
         <label className="check">
-          <input checked={uiPrefs.enterSends} onChange={(e) => void setUiPrefs({ enterSends: e.target.checked })} type="checkbox" /> Enter sends, Shift+Enter inserts a newline
-          (unchecked inverts both)
+          <input checked={uiPrefs.enterSends} onChange={(e) => void setUiPrefs({ enterSends: e.target.checked })} type="checkbox" />{" "}
+          {t("Enter sends, Shift+Enter inserts a newline (unchecked inverts both)")}
         </label>
         <div className="field">
-          <span>While the agent is working, the send key</span>
+          <span>{t("While the agent is working, the send key")}</span>
           <div className="row wrap">
             <label className="check">
-              <input checked={(uiPrefs.followUp ?? "queue") === "queue"} name="follow-up" onChange={() => void setUiPrefs({ followUp: "queue" })} type="radio" /> queues the
-              prompt for when the turn is over
+              <input checked={(uiPrefs.followUp ?? "queue") === "queue"} name="follow-up" onChange={() => void setUiPrefs({ followUp: "queue" })} type="radio" />{" "}
+              {t("queues the prompt for when the turn is over")}
             </label>
             <label className="check">
-              <input checked={uiPrefs.followUp === "steer"} name="follow-up" onChange={() => void setUiPrefs({ followUp: "steer" })} type="radio" /> steers it into the
-              running turn
+              <input checked={uiPrefs.followUp === "steer"} name="follow-up" onChange={() => void setUiPrefs({ followUp: "steer" })} type="radio" />{" "}
+              {t("steers it into the running turn")}
             </label>
           </div>
           <span className="small muted">
-            ⌘ with the send key does the other. Steering needs an agent that supports it (Claude Code and Codex do); otherwise the prompt is queued. A queue
-            sends by itself after a turn that finished, and pauses after one that was cancelled or failed.
+            {t(
+              "⌘ with the send key does the other. Steering needs an agent that supports it (Claude Code and Codex do); otherwise the prompt is queued. A queue sends by itself after a turn that finished, and pauses after one that was cancelled or failed.",
+            )}
           </span>
         </div>
         <label className="check">
-          Transcript page size{" "}
+          {t("Transcript page size")}{" "}
           <input
             className="input inline"
             max={500}
@@ -282,27 +287,29 @@ export function SettingsPanel() {
             type="number"
             value={uiPrefs.transcriptPage}
           />{" "}
-          <span className="small muted">entries rendered at once; earlier entries load on request</span>
+          <span className="small muted">{t("entries rendered at once; earlier entries load on request")}</span>
         </label>
         <p className="small muted">
-          Shortcuts: ⌘K command palette, ⌘O add workspace, ⌘N new session, ⌘1-9 switch sessions, ⌘L focus composer, ⌘F search transcript, ⌘I integrations, ⌘,
-          sign-in, ⌘; settings.
+          {t(
+            "Shortcuts: ⌘K command palette, ⌘O add workspace, ⌘N new session, ⌘1-9 switch sessions, ⌘L focus composer, ⌘F search transcript, ⌘I integrations, ⌘, sign-in, ⌘; settings.",
+          )}
         </p>
       </section>
 
       <section>
-        <h3>Session defaults</h3>
+        <h3>{t("Session defaults")}</h3>
         <p className="small muted">
-          Changing the model or effort in a session makes that choice the default for sessions started afterwards (it is passed to the agent at launch; the agent's
-          config.toml is not modified).
+          {t(
+            "Changing the model or effort in a session makes that choice the default for sessions started afterwards (it is passed to the agent at launch; the agent's config.toml is not modified).",
+          )}
         </p>
         <div className="row wrap">
-          <span className="chip small">model: {sessionDefaults.model ?? "the account's default"}</span>
-          {sessionDefaults.provider && <span className="chip small">provider: {sessionDefaults.provider}</span>}
-          <span className="chip small">effort: {sessionDefaults.reasoningEffort ?? "default"}</span>
+          <span className="chip small">{t("model: {model}", { model: sessionDefaults.model ?? t("the account's default") })}</span>
+          {sessionDefaults.provider && <span className="chip small">{t("provider: {provider}", { provider: sessionDefaults.provider })}</span>}
+          <span className="chip small">{t("effort: {effort}", { effort: sessionDefaults.reasoningEffort ?? t("default") })}</span>
           {(sessionDefaults.model || sessionDefaults.reasoningEffort) && (
             <button className="button button-small" onClick={() => void resetSessionDefaults()} type="button">
-              Reset to the account's defaults
+              {t("Reset to the account's defaults")}
             </button>
           )}
         </div>
@@ -311,16 +318,17 @@ export function SettingsPanel() {
       <section>
         <h3>Big Thing</h3>
         <p className="small muted">
-          Defaults for a new goal (docs/plans/odyssey.md). A goal keeps whatever ceiling it was created with, so raising these never loosens a goal that is
-          already running.
+          {t(
+            "Defaults for a new goal (docs/plans/odyssey.md). A goal keeps whatever ceiling it was created with, so raising these never loosens a goal that is already running.",
+          )}
         </p>
         {/* The orchestrator's own model, which is not the same choice as the
             subagent floor in Integrations and must not share a control with
             it (docs/plans/odyssey.md §12.9). */}
         <label className="field">
-          <span className="small">Model when Claude runs the goal</span>
+          <span className="small">{t("Model when Claude runs the goal")}</span>
           <select
-            aria-label="Model when Claude runs the goal"
+            aria-label={t("Model when Claude runs the goal")}
             className="select"
             onChange={(e) => update({ claudeOrchestratorModel: e.target.value })}
             value={settings?.claudeOrchestratorModel ?? CLAUDE_ORCHESTRATOR_MODEL}
@@ -328,20 +336,21 @@ export function SettingsPanel() {
             {claudeModels.map((choice) => (
               <option key={choice.value} value={choice.value}>
                 {choice.name}
-                {choice.needsCredits ? " · uses credits" : ""}
+                {choice.needsCredits ? ` · ${t("uses credits")}` : ""}
               </option>
             ))}
           </select>
           <span className="small muted">
-            For new Claude sessions and goals, unless a team preset or the session picks another. Fable is the default; a session that cannot select it
-            (the adapter does not list it, or the account cannot use it) falls back to Opus — a working run on another model beats no run.
-            {claudeModelsProblem ? ` The catalog could not be read (${claudeModelsProblem}), so this is the built-in list.` : ""}
+            {t(
+              "For new Claude sessions and goals, unless a team preset or the session picks another. Fable is the default; a session that cannot select it (the adapter does not list it, or the account cannot use it) falls back to Opus — a working run on another model beats no run.",
+            )}
+            {claudeModelsProblem ? ` ${t("The catalog could not be read ({problem}), so this is the built-in list.", { problem: claudeModelsProblem })}` : ""}
           </span>
         </label>
         <label className="field">
-          <span className="small">Effort when Claude runs the goal</span>
+          <span className="small">{t("Effort when Claude runs the goal")}</span>
           <select
-            aria-label="Effort when Claude runs the goal"
+            aria-label={t("Effort when Claude runs the goal")}
             className="select"
             onChange={(e) => update({ claudeOrchestratorEffort: e.target.value })}
             value={settings?.claudeOrchestratorEffort ?? CLAUDE_ORCHESTRATOR_EFFORT}
@@ -352,10 +361,10 @@ export function SettingsPanel() {
               </option>
             ))}
           </select>
-          <span className="small muted">A long-horizon run is mostly planning and reading, which is what effort buys.</span>
+          <span className="small muted">{t("A long-horizon run is mostly planning and reading, which is what effort buys.")}</span>
         </label>
         <label className="field">
-          <span className="small">Continuation limit for a new goal</span>
+          <span className="small">{t("Continuation limit for a new goal")}</span>
           <input
             className="input"
             inputMode="numeric"
@@ -365,10 +374,10 @@ export function SettingsPanel() {
             }}
             value={settings?.odysseyMaxContinuations ?? 10}
           />
-          <span className="small muted">Big Thing stops after this many continuations whatever state the goal is in. Keep it low until you have watched a full run.</span>
+          <span className="small muted">{t("Big Thing stops after this many continuations whatever state the goal is in. Keep it low until you have watched a full run.")}</span>
         </label>
         <label className="field">
-          <span className="small">Token budget for a new goal</span>
+          <span className="small">{t("Token budget for a new goal")}</span>
           <input
             className="input"
             inputMode="numeric"
@@ -386,10 +395,10 @@ export function SettingsPanel() {
               const value = Number.parseInt(trimmed, 10);
               if (Number.isFinite(value) && value > 0) update({ odysseyTokenBudget: value });
             }}
-            placeholder="no budget"
+            placeholder={t("no budget")}
             value={settings?.odysseyTokenBudget ?? ""}
           />
-          <span className="small muted">Paid input and output, counted from the agent's own transcript. Blank means no ceiling; the spend is still recorded.</span>
+          <span className="small muted">{t("Paid input and output, counted from the agent's own transcript. Blank means no ceiling; the spend is still recorded.")}</span>
         </label>
       </section>
 
@@ -407,56 +416,58 @@ export function SettingsPanel() {
       </section>
 
       <section>
-        <h3>Accessibility</h3>
+        <h3>{t("Accessibility")}</h3>
         <label className="check">
-          <input checked={uiPrefs.reducedMotion === "reduce"} onChange={(e) => void setUiPrefs({ reducedMotion: e.target.checked ? "reduce" : "system" })} type="checkbox" /> Reduce motion
-          regardless of the system setting
+          <input checked={uiPrefs.reducedMotion === "reduce"} onChange={(e) => void setUiPrefs({ reducedMotion: e.target.checked ? "reduce" : "system" })} type="checkbox" />{" "}
+          {t("Reduce motion regardless of the system setting")}
         </label>
         <p className="small muted">
-          The system reduced-motion and increased-contrast preferences are honoured automatically. Streamed tokens are not announced; screen readers hear settled
-          turns, input requests and helper exits. All actions are reachable from the keyboard and the command palette.
+          {t(
+            "The system reduced-motion and increased-contrast preferences are honoured automatically. Streamed tokens are not announced; screen readers hear settled turns, input requests and helper exits. All actions are reachable from the keyboard and the command palette.",
+          )}
         </p>
       </section>
 
       <section>
-        <h3>Notifications</h3>
+        <h3>{t("Notifications")}</h3>
         <p className="small muted">
-          Alerts distinguish finished, failed and needs-input sessions. Their text never includes prompt or code content. The operating
-          system permission is requested the first time an alert is actually shown.
+          {t(
+            "Alerts distinguish finished, failed and needs-input sessions. Their text never includes prompt or code content. The operating system permission is requested the first time an alert is actually shown.",
+          )}
         </p>
         <label className="check">
-          <input checked={settings.enabled} onChange={(e) => update({ enabled: e.target.checked })} type="checkbox" /> Enable notifications
+          <input checked={settings.enabled} onChange={(e) => update({ enabled: e.target.checked })} type="checkbox" /> {t("Enable notifications")}
         </label>
         <label className="check">
-          <input checked={settings.notifyCompleted} disabled={!settings.enabled} onChange={(e) => update({ notifyCompleted: e.target.checked })} type="checkbox" /> Turn
-          finished
+          <input checked={settings.notifyCompleted} disabled={!settings.enabled} onChange={(e) => update({ notifyCompleted: e.target.checked })} type="checkbox" />{" "}
+          {t("Turn finished")}
         </label>
         <label className="check">
-          <input checked={settings.notifyFailed} disabled={!settings.enabled} onChange={(e) => update({ notifyFailed: e.target.checked })} type="checkbox" /> Turn failed
-          or helper exited
+          <input checked={settings.notifyFailed} disabled={!settings.enabled} onChange={(e) => update({ notifyFailed: e.target.checked })} type="checkbox" />{" "}
+          {t("Turn failed or helper exited")}
         </label>
         <label className="check">
-          <input checked={settings.notifyNeedsInput} disabled={!settings.enabled} onChange={(e) => update({ notifyNeedsInput: e.target.checked })} type="checkbox" /> An agent
-          asked for input
+          <input checked={settings.notifyNeedsInput} disabled={!settings.enabled} onChange={(e) => update({ notifyNeedsInput: e.target.checked })} type="checkbox" />{" "}
+          {t("An agent asked for input")}
         </label>
         <div className="row wrap">
           <label className="small">
-            Quiet hours from{" "}
+            {t("Quiet hours from")}{" "}
             <input className="input inline" disabled={!settings.enabled} onChange={(e) => update({ quietHoursStart: e.target.value })} type="time" value={settings.quietHoursStart} />
           </label>
           <label className="small">
-            to <input className="input inline" disabled={!settings.enabled} onChange={(e) => update({ quietHoursEnd: e.target.value })} type="time" value={settings.quietHoursEnd} />
+            {t("to")} <input className="input inline" disabled={!settings.enabled} onChange={(e) => update({ quietHoursEnd: e.target.value })} type="time" value={settings.quietHoursEnd} />
           </label>
-          <span className="small muted">(same start and end means no quiet hours)</span>
+          <span className="small muted">{t("(same start and end means no quiet hours)")}</span>
         </div>
         <button className="button" disabled={!settings.enabled} onClick={() => void testNotification()} type="button">
-          Send test notification
+          {t("Send test notification")}
         </button>
       </section>
 
       <section>
-        <h3>Muted workspaces</h3>
-        {workspaces.length === 0 && <p className="small muted">No workspaces yet.</p>}
+        <h3>{t("Muted workspaces")}</h3>
+        {workspaces.length === 0 && <p className="small muted">{t("No workspaces yet.")}</p>}
         {workspaces.map((workspace) => (
           <label className="check" key={workspace.id}>
             <input checked={settings.mutedWorkspaceIds.includes(workspace.id)} onChange={() => toggleMuted(workspace.id)} type="checkbox" /> {basenameOf(workspace.displayPath)}{" "}
@@ -468,15 +479,16 @@ export function SettingsPanel() {
       <KeepAwakeSection onChange={update} settings={settings} />
 
       <section>
-        <h3>Closing the window</h3>
+        <h3>{t("Closing the window")}</h3>
         <p className="small muted">
-          Closing the last window never silently stops local work. Choose what happens: keep sessions running in the tray, quit and
-          stop them, or ask every time.
+          {t(
+            "Closing the last window never silently stops local work. Choose what happens: keep sessions running in the tray, quit and stop them, or ask every time.",
+          )}
         </p>
         {(["ask", "tray", "quit"] as const).map((behavior) => (
           <label className="check" key={behavior}>
             <input checked={settings.closeBehavior === behavior} name="closeBehavior" onChange={() => update({ closeBehavior: behavior })} type="radio" />{" "}
-            {behavior === "ask" ? "Ask each time" : behavior === "tray" ? "Keep running in the tray" : "Quit and stop local tasks"}
+            {behavior === "ask" ? t("Ask each time") : behavior === "tray" ? t("Keep running in the tray") : t("Quit and stop local tasks")}
           </label>
         ))}
       </section>
@@ -511,23 +523,24 @@ function KeepAwakeSection({ settings, onChange }: { settings: NotificationSettin
   }, [settings.keepAwake, settings.keepAwakeOnBattery]);
   return (
     <section>
-      <h3>While agents work</h3>
+      <h3>{t("While agents work")}</h3>
       <label className="check">
-        <input checked={settings.keepAwake} onChange={(e) => onChange({ keepAwake: e.target.checked })} type="checkbox" /> Keep this computer awake while sessions, Big Things or
-        team jobs are working
+        <input checked={settings.keepAwake} onChange={(e) => onChange({ keepAwake: e.target.checked })} type="checkbox" />{" "}
+        {t("Keep this computer awake while sessions, Big Things or team jobs are working")}
       </label>
       <label className="check">
-        <input checked={settings.keepAwakeOnBattery} disabled={!settings.keepAwake} onChange={(e) => onChange({ keepAwakeOnBattery: e.target.checked })} type="checkbox" /> On
-        battery too
+        <input checked={settings.keepAwakeOnBattery} disabled={!settings.keepAwake} onChange={(e) => onChange({ keepAwakeOnBattery: e.target.checked })} type="checkbox" />{" "}
+        {t("On battery too")}
       </label>
       <p className="small muted">
-        Only idle sleep is held off: the display still sleeps, and manual sleep and lid actions still follow system settings. A Big Thing parked until a limit resets counts as working, so
-        it is awake to carry on.
+        {t(
+          "Only idle sleep is held off: the display still sleeps, and manual sleep and lid actions still follow system settings. A Big Thing parked until a limit resets counts as working, so it is awake to carry on.",
+        )}
       </p>
       {status && (
         <p className="small" role="status">
           {status.reason}
-          {status.onBattery !== null && <span className="muted"> ({status.onBattery ? "on battery" : "plugged in"})</span>}
+          {status.onBattery !== null && <span className="muted"> ({status.onBattery ? t("on battery") : t("plugged in")})</span>}
         </p>
       )}
     </section>

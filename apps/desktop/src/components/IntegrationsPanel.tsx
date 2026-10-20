@@ -13,12 +13,16 @@ import type { ConfigFile, ConfigTarget, ContextSources, InstructionFileName, Ski
 import { PROVIDER_LABELS } from "@thingmaker/contracts";
 import { api } from "../ipc";
 import { basenameOf, useStore } from "../store";
+import { t } from "../i18n";
 
 import { SkillImport } from "./SkillImport";
 import { RuntimeEnvSection } from "./RuntimeEnvSection";
 import { McpSection } from "./McpSection";
 
 const CodeEditor = lazy(() => import("./MonacoEditor"));
+
+/** A skill scope as the person reads it. */
+const scopeLabel = (scope: SkillScope) => (scope === "project" ? t("project") : t("user"));
 
 /** Which provider reads which instruction file, and why both exist. */
 const INSTRUCTION_FILES: { file: InstructionFileName; readBy: string }[] = [
@@ -55,7 +59,7 @@ function FileEditor({ target, title, onSaved }: { target: ConfigTarget; title: s
     if (!file) return;
     try {
       const outcome = await api.configWriteFile(target, file.contentHash ?? null, draft);
-      setStatus(`Saved to ${outcome.path}. Agents read it when a session starts, so it applies to the next session, not the running one.`);
+      setStatus(t("Saved to {path}. Agents read it when a session starts, so it applies to the next session, not the running one.", { path: outcome.path }));
       setValidation(null);
       onSaved();
       await load();
@@ -64,19 +68,19 @@ function FileEditor({ target, title, onSaved }: { target: ConfigTarget; title: s
     }
   };
 
-  if (!file) return <p className="muted small">Loading {title}…</p>;
+  if (!file) return <p className="muted small">{t("Loading {title}…", { title })}</p>;
   const dirty = draftTouched && draft !== file.content;
   return (
     <div className="config-editor">
       <div className="row wrap">
         <strong>{title}</strong>
         <span className="mono small muted">{file.path}</span>
-        {!file.exists && <span className="chip small">does not exist yet</span>}
+        {!file.exists && <span className="chip small">{t("does not exist yet")}</span>}
         <button className="button button-small" disabled={!dirty} onClick={() => void save()} type="button">
-          Save (hash-checked, backup kept)
+          {t("Save (hash-checked, backup kept)")}
         </button>
         <button className="button button-small" onClick={() => void load()} type="button">
-          Reload
+          {t("Reload")}
         </button>
       </div>
       {validation && validation.length > 0 && (
@@ -90,7 +94,7 @@ function FileEditor({ target, title, onSaved }: { target: ConfigTarget; title: s
       )}
       {status && <p className="small">{status}</p>}
       <div className="config-editor-body">
-        <Suspense fallback={<p className="muted small">Loading editor…</p>}>
+        <Suspense fallback={<p className="muted small">{t("Loading editor…")}</p>}>
           <CodeEditor
             onChange={(value) => {
               setDraft(value);
@@ -131,8 +135,8 @@ export function IntegrationsPanel() {
       const removed = await api.skillRemove(removing.scope, removing.scope === "project" ? workspaceId : null, removing.directoryName, keepBackup);
       setRemovalNote(
         removed.backup
-          ? `Removed ${removed.directoryName}; a copy was kept at ${removed.backup}. Sessions started from now on no longer list it.`
-          : `Deleted ${removed.directoryName} permanently. Sessions started from now on no longer list it.`,
+          ? t("Removed {name}; a copy was kept at {backup}. Sessions started from now on no longer list it.", { name: removed.directoryName, backup: removed.backup })
+          : t("Deleted {name} permanently. Sessions started from now on no longer list it.", { name: removed.directoryName }),
       );
       setRemoving(null);
       await reload();
@@ -152,15 +156,16 @@ export function IntegrationsPanel() {
 
   return (
     <div className="panel integrations">
-      <h2>Integrations</h2>
+      <h2>{t("Integrations")}</h2>
       <p className="small muted">
-        What every agent reads when a session starts in a workspace. Saving changes a file; it applies to sessions started afterwards. Nothing here talks to an
-        agent or spends tokens.
+        {t(
+          "What every agent reads when a session starts in a workspace. Saving changes a file; it applies to sessions started afterwards. Nothing here talks to an agent or spends tokens.",
+        )}
       </p>
 
       <div className="row wrap">
         <label className="small">
-          Workspace{" "}
+          {t("Workspace")}{" "}
           <select className="input inline" onChange={(e) => setWorkspaceId(e.target.value)} value={workspaceId ?? ""}>
             {workspaces.map((w) => (
               <option key={w.id} value={w.id}>
@@ -172,21 +177,22 @@ export function IntegrationsPanel() {
       </div>
 
       <section>
-        <h3>Instruction files</h3>
+        <h3>{t("Instruction files")}</h3>
         <p className="small muted">
-          Each provider reads its own file from the workspace root and its parents. Keep the shared conventions in one and point the other at it, so every agent
-          on the project starts from the same rules.
+          {t(
+            "Each provider reads its own file from the workspace root and its parents. Keep the shared conventions in one and point the other at it, so every agent on the project starts from the same rules.",
+          )}
         </p>
         <ul className="call-list">
           {INSTRUCTION_FILES.map(({ file, readBy }) => (
             <li className="card" key={file}>
               <div className="row wrap">
                 <strong className="mono">{file}</strong>
-                <span className="chip small">read by {readBy}</span>
-                {!present(file) && <span className="chip small muted">not in this workspace yet</span>}
+                <span className="chip small">{t("read by {provider}", { provider: readBy })}</span>
+                {!present(file) && <span className="chip small muted">{t("not in this workspace yet")}</span>}
                 {workspaceId && (
                   <button className="button button-small" onClick={() => setEditor({ target: { kind: "instructions", workspaceId, file }, title: file })} type="button">
-                    {present(file) ? "Edit" : "Create"}
+                    {present(file) ? t("Edit") : t("Create")}
                   </button>
                 )}
               </div>
@@ -199,61 +205,66 @@ export function IntegrationsPanel() {
         <section>
           <FileEditor onSaved={() => void reload()} target={editor.target} title={editor.title} />
           <button className="link" onClick={() => setEditor(null)} type="button">
-            close editor
+            {t("close editor")}
           </button>
         </section>
       )}
 
       <section>
-        <h3>Skills</h3>
+        <h3>{t("Skills")}</h3>
         <p className="small muted">
-          Project skills (.agents/skills) shadow user skills (~/.agents/skills) with the same name. Claude Code and Codex both read these folders, list the
-          skills when a session starts and load one when the task calls for it, so new skills apply to new sessions.
+          {t(
+            "Project skills (.agents/skills) shadow user skills (~/.agents/skills) with the same name. Claude Code and Codex both read these folders, list the skills when a session starts and load one when the task calls for it, so new skills apply to new sessions.",
+          )}
         </p>
         <SkillImport onDone={() => void reload()} workspaceId={workspaceId} />
         {removalNote && (
           <p className="small">
             {removalNote}{" "}
             <button className="link small" onClick={() => setRemovalNote(null)} type="button">
-              dismiss
+              {t("dismiss")}
             </button>
           </p>
         )}
         {removing && (
           <div aria-modal="true" className="modal-backdrop" role="dialog">
             <div className="modal">
-              <h2>Remove skill {removing.name ?? removing.directoryName}?</h2>
+              <h2>{t("Remove skill {name}?", { name: removing.name ?? removing.directoryName })}</h2>
               <p className="small">
-                This removes the {removing.scope} skill directory <span className="mono">{removing.path.replace(/\/SKILL\.md$/, "")}</span> ({removing.resources.length + 1} file
-                {removing.resources.length === 0 ? "" : "s"}). Agents stop listing it for sessions started afterwards; running sessions keep the catalog they started with.
+                {t("This removes the {scope} skill directory", { scope: scopeLabel(removing.scope) })}{" "}
+                <span className="mono">{removing.path.replace(/\/SKILL\.md$/, "")}</span> (
+                {removing.resources.length === 0 ? t("1 file") : t("{count} files", { count: removing.resources.length + 1 })}).{" "}
+                {t("Agents stop listing it for sessions started afterwards; running sessions keep the catalog they started with.")}
               </p>
               <label className="check small">
-                <input checked={keepBackup} onChange={(e) => setKeepBackup(e.target.checked)} type="checkbox" /> Keep a copy in the app data folder (skill-backups), so it can be
-                restored by copying it back
+                <input checked={keepBackup} onChange={(e) => setKeepBackup(e.target.checked)} type="checkbox" />{" "}
+                {t("Keep a copy in the app data folder (skill-backups), so it can be restored by copying it back")}
               </label>
-              {!keepBackup && <p className="small chip-warn">Without a backup the files are deleted permanently.</p>}
+              {!keepBackup && <p className="small chip-warn">{t("Without a backup the files are deleted permanently.")}</p>}
               <div className="row wrap">
                 <button className="button button-warn" onClick={() => void confirmRemove()} type="button">
-                  {keepBackup ? "Remove (keep backup)" : "Delete permanently"}
+                  {keepBackup ? t("Remove (keep backup)") : t("Delete permanently")}
                 </button>
                 <button className="button" onClick={() => setRemoving(null)} type="button">
-                  Cancel
+                  {t("Cancel")}
                 </button>
               </div>
             </div>
           </div>
         )}
-        {sources?.skills.length === 0 && <p className="small muted">No skills found.</p>}
+        {sources?.skills.length === 0 && <p className="small muted">{t("No skills found.")}</p>}
         <ul className="call-list">
           {sources?.skills.map((skill) => (
             <li className="card" key={skill.path}>
               <div className="row wrap">
                 <strong>{skill.name ?? skill.directoryName}</strong>
-                <span className="chip small">{skill.scope}</span>
-                {skill.shadows && <span className="chip small">shadows the {skill.shadows} skill</span>}
-                {skill.shadowed && <span className="chip small chip-warn">shadowed by the project skill</span>}
+                <span className="chip small">{scopeLabel(skill.scope)}</span>
+                {skill.shadows && <span className="chip small">{t("shadows the {scope} skill", { scope: scopeLabel(skill.shadows) })}</span>}
+                {skill.shadowed && <span className="chip small chip-warn">{t("shadowed by the project skill")}</span>}
                 {skill.problems.length > 0 && <span className="chip small chip-warn">{skill.problems.join("; ")}</span>}
-                <span className="small muted">{skill.resources.length} resource file(s)</span>
+                <span className="small muted">
+                  {skill.resources.length === 1 ? t("1 resource file") : t("{count} resource files", { count: skill.resources.length })}
+                </span>
                 <button
                   className="button button-small"
                   onClick={() =>
@@ -264,7 +275,7 @@ export function IntegrationsPanel() {
                   }
                   type="button"
                 >
-                  Edit
+                  {t("Edit")}
                 </button>
                 <button
                   className="button button-small button-warn"
@@ -274,7 +285,7 @@ export function IntegrationsPanel() {
                   }}
                   type="button"
                 >
-                  Remove…
+                  {t("Remove…")}
                 </button>
               </div>
               {skill.description && <p className="small muted">{skill.description}</p>}
@@ -283,10 +294,10 @@ export function IntegrationsPanel() {
         </ul>
         <div className="row wrap">
           <select className="input inline" onChange={(e) => setNewSkill({ ...newSkill, scope: e.target.value as SkillScope })} value={newSkill.scope}>
-            <option value="project">project</option>
-            <option value="user">user</option>
+            <option value="project">{t("project")}</option>
+            <option value="user">{t("user")}</option>
           </select>
-          <input className="input" onChange={(e) => setNewSkill({ ...newSkill, name: e.target.value })} placeholder="new skill directory name" value={newSkill.name} />
+          <input className="input" onChange={(e) => setNewSkill({ ...newSkill, name: e.target.value })} placeholder={t("new skill directory name")} value={newSkill.name} />
           <button
             className="button"
             disabled={!newSkill.name.trim() || (newSkill.scope === "project" && !workspaceId)}
@@ -302,7 +313,7 @@ export function IntegrationsPanel() {
             }
             type="button"
           >
-            Create skill from template
+            {t("Create skill from template")}
           </button>
         </div>
       </section>

@@ -5,6 +5,7 @@
  * there. Shown only when a phone could take it.
  */
 import { useEffect, useState } from "react";
+import { t } from "../i18n";
 import { api } from "../ipc";
 import { IS_REMOTE } from "../remote/mode";
 import { IconArrowUp } from "./icons";
@@ -29,7 +30,7 @@ export function ApkCard({ path }: { path: string }) {
     try {
       await api.remoteSendApk(path);
       setState("sent");
-      setMessage(IS_REMOTE ? "Android will ask you to confirm." : "Confirm the install on the phone.");
+      setMessage(IS_REMOTE ? t("Android will ask you to confirm.") : t("Confirm the install on the phone."));
     } catch (error) {
       setState("failed");
       setMessage((error as { message?: string })?.message ?? String(error));
@@ -40,11 +41,11 @@ export function ApkCard({ path }: { path: string }) {
       <header className="doc-card-head">
         <span className="mono">{name}</span>
         <span className="small muted doc-card-meta" title={path}>
-          Android app
+          {t("Android app")}
         </span>
         <span className="doc-actions">
           <button className="doc-action doc-action-bigthing" disabled={state === "sending"} onClick={() => void send()} type="button">
-            <IconArrowUp size={13} /> {state === "sending" ? "Sending…" : IS_REMOTE ? "Install on this phone" : "Install on phone"}
+            <IconArrowUp size={13} /> {state === "sending" ? t("Sending…") : IS_REMOTE ? t("Install on this phone") : t("Install on phone")}
           </button>
         </span>
       </header>

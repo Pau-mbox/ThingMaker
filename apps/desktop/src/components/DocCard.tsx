@@ -6,6 +6,7 @@
  */
 import { useEffect, useState } from "react";
 import type { FileRead } from "@thingmaker/contracts";
+import { t } from "../i18n";
 import { api } from "../ipc";
 import { Markdown } from "../markdown";
 import { useStore } from "../store";
@@ -24,10 +25,10 @@ function size(bytes: number): string {
 function ago(at: number | null): string | null {
   if (!at) return null;
   const minutes = Math.round((Date.now() - at) / 60_000);
-  if (minutes < 1) return "just now";
-  if (minutes < 60) return `${minutes}m ago`;
+  if (minutes < 1) return t("just now");
+  if (minutes < 60) return t("{n}m ago", { n: minutes });
   const hours = Math.round(minutes / 60);
-  return hours < 48 ? `${hours}h ago` : `${Math.round(hours / 24)}d ago`;
+  return hours < 48 ? t("{n}h ago", { n: hours }) : t("{n}d ago", { n: Math.round(hours / 24) });
 }
 
 /** The first lines, cut at a line rather than mid-block where it can be. */
@@ -65,23 +66,23 @@ function Actions({ sessionId, workspaceId, relative, onOpen }: { sessionId: stri
   return (
     <span className="doc-actions">
       {onOpen && (
-        <button className="doc-action" onClick={onOpen} title="Read the whole document here" type="button">
-          <IconDoc size={13} /> Open
+        <button className="doc-action" onClick={onOpen} title={t("Read the whole document here")} type="button">
+          <IconDoc size={13} /> {t("Open")}
         </button>
       )}
-      <button className="doc-action remote-hidden" onClick={actions.reveal} title="Show it in Finder" type="button">
+      <button className="doc-action remote-hidden" onClick={actions.reveal} title={t("Show it in Finder")} type="button">
         <IconFolder size={13} /> Finder
       </button>
-      <button className="doc-action remote-hidden" onClick={actions.edit} title="Open it in the system's editor for Markdown" type="button">
-        <IconExternal size={13} /> Editor
+      <button className="doc-action remote-hidden" onClick={actions.edit} title={t("Open it in the system's editor for Markdown")} type="button">
+        <IconExternal size={13} /> {t("Editor")}
       </button>
       <button
         className="doc-action doc-action-bigthing"
         onClick={actions.toBigThing}
-        title={actions.hasGoal ? "Add this document to the running Big Thing as new work" : "Plan a Big Thing from this document"}
+        title={actions.hasGoal ? t("Add this document to the running Big Thing as new work") : t("Plan a Big Thing from this document")}
         type="button"
       >
-        <IconSummit size={13} /> {actions.hasGoal ? "Add to Big Thing" : "Big Thing"}
+        <IconSummit size={13} /> {actions.hasGoal ? t("Add to Big Thing") : "Big Thing"}
       </button>
     </span>
   );
@@ -114,24 +115,24 @@ export function DocViewer({ sessionId, workspaceId, relative, onClose }: { sessi
           <strong className="mono">{relative}</strong>
           {file && (
             <span className="small muted">
-              {file.totalLines.toLocaleString()} lines · {size(file.bytes)}
+              {t("{n} lines", { n: file.totalLines.toLocaleString() })} · {size(file.bytes)}
             </span>
           )}
           <Actions relative={relative} sessionId={sessionId} workspaceId={workspaceId} />
-          <button aria-label="Close" className="icon-button" onClick={onClose} type="button">
+          <button aria-label={t("Close")} className="icon-button" onClick={onClose} type="button">
             <IconX size={14} />
           </button>
         </header>
         <div className="doc-viewer-body">
           {failed ? (
-            <p className="small muted">Could not read it: {failed}</p>
+            <p className="small muted">{t("Could not read it: {error}", { error: failed })}</p>
           ) : file ? (
             <>
               <Markdown onImage={workspaceImageRenderer(workspaceId)} source={file.content} />
-              {file.truncated && <p className="small muted">Shown up to line {file.returnedLines.toLocaleString()}. Open it in an editor for the rest.</p>}
+              {file.truncated && <p className="small muted">{t("Shown up to line {n}. Open it in an editor for the rest.", { n: file.returnedLines.toLocaleString() })}</p>}
             </>
           ) : (
-            <p className="small muted">Reading…</p>
+            <p className="small muted">{t("Reading…")}</p>
           )}
         </div>
       </div>
@@ -173,13 +174,13 @@ export function DocCard({ sessionId, workspaceId, relative, version, verb }: { s
     <section className="doc-card">
       <header className="doc-card-head">
         <IconDoc size={15} />
-        <button className="doc-card-name" onClick={() => setViewing(true)} title={`Open ${relative}`} type="button">
+        <button className="doc-card-name" onClick={() => setViewing(true)} title={t("Open {path}", { path: relative })} type="button">
           {cut.dir && <span className="muted">{cut.dir}</span>}
           <span>{cut.name}</span>
         </button>
         {file && (
           <span className="small muted doc-card-meta">
-            {verb === "wrote" ? "written" : "mentioned"} · {file.totalLines.toLocaleString()} lines · {size(file.bytes)}
+            {verb === "wrote" ? t("written") : t("mentioned")} · {t("{n} lines", { n: file.totalLines.toLocaleString() })} · {size(file.bytes)}
             {ago(file.modifiedUnixMs) ? ` · ${ago(file.modifiedUnixMs)}` : ""}
           </span>
         )}
@@ -192,7 +193,7 @@ export function DocCard({ sessionId, workspaceId, relative, version, verb }: { s
       )}
       {more && (
         <button className="link small doc-card-more" onClick={() => (unfolded && file?.truncated ? setViewing(true) : setUnfolded(!unfolded))} type="button">
-          {!unfolded ? "Show more" : file?.truncated ? `Read all ${file.totalLines.toLocaleString()} lines` : "Show less"}
+          {!unfolded ? t("Show more") : file?.truncated ? t("Read all {n} lines", { n: file.totalLines.toLocaleString() }) : t("Show less")}
         </button>
       )}
       {viewing && <DocViewer onClose={() => setViewing(false)} relative={relative} sessionId={sessionId} workspaceId={workspaceId} />}

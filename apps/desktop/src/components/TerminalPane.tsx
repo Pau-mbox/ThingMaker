@@ -15,6 +15,7 @@ import type { TerminalEvent, TerminalInfo } from "@thingmaker/contracts";
 import { api } from "../ipc";
 import { redactText, type Redaction } from "../redact";
 import { useStore } from "../store";
+import { t } from "../i18n";
 
 const SCROLLBACK_LINES = 5000;
 
@@ -107,7 +108,7 @@ export function TerminalPane({ workspaceId }: { workspaceId: string }) {
         if (disposed) return;
         if (event.type === "output") term.write(decodeBase64(event.dataBase64));
         else {
-          term.write(`\r\n\x1b[2m[process exited${event.code === null ? "" : ` with code ${event.code}`}]\x1b[0m\r\n`);
+          term.write(`\r\n\x1b[2m[${event.code === null ? t("process exited") : t("process exited with code {code}", { code: event.code })}]\x1b[0m\r\n`);
           setInfo((current) => (current && current.id === id ? { ...current, exited: true, exitCode: event.code } : current));
         }
       })
@@ -203,26 +204,26 @@ export function TerminalPane({ workspaceId }: { workspaceId: string }) {
         {info ? (
           <>
             <span className="chip mono small" title={info.cwd}>
-              {info.program} · {info.exited ? `exited${info.exitCode === null ? "" : ` (${info.exitCode})`}` : `pid ${info.pid ?? "?"}`}
+              {info.program} · {info.exited ? (info.exitCode === null ? t("exited") : t("exited ({code})", { code: info.exitCode })) : `pid ${info.pid ?? "?"}`}
             </span>
             <button className="button" onClick={() => void startExport()} type="button">
-              Export log…
+              {t("Export log…")}
             </button>
             <button className="button button-warn" onClick={requestClose} type="button">
-              {info.exited ? "Dismiss" : "Close terminal"}
+              {info.exited ? t("Dismiss") : t("Close terminal")}
             </button>
           </>
         ) : (
           <button className="button button-primary" disabled={connecting} onClick={() => void open()} type="button">
-            {connecting ? "Connecting…" : "Open terminal"}
+            {connecting ? t("Connecting…") : t("Open terminal")}
           </button>
         )}
-        <span className="chip small chip-warn">Trusted local - host access</span>
+        <span className="chip small chip-warn">{t("Trusted local - host access")}</span>
       </div>
       {note && <p className="small muted">{note}</p>}
       {!info && !connecting && (
         <p className="small muted">
-          A login shell starts in the workspace root with the same environment profile agents get. It runs with your full user authority; nothing here is sandboxed.
+          {t("A login shell starts in the workspace root with the same environment profile agents get. It runs with your full user authority; nothing here is sandboxed.")}
         </p>
       )}
       <div className={`terminal-host ${info ? "" : "terminal-host-empty"}`} ref={hostRef} />
@@ -230,8 +231,8 @@ export function TerminalPane({ workspaceId }: { workspaceId: string }) {
       {pendingPaste && (
         <div aria-modal="true" className="modal-backdrop" role="dialog">
           <div className="modal">
-            <h2>Paste {pendingPaste.lines} lines?</h2>
-            <p className="small muted">Multi-line pastes run each line as a command as soon as the shell reads them. Review before continuing.</p>
+            <h2>{t("Paste {count} lines?", { count: pendingPaste.lines })}</h2>
+            <p className="small muted">{t("Multi-line pastes run each line as a command as soon as the shell reads them. Review before continuing.")}</p>
             <pre className="text paste-preview">{pendingPaste.text.slice(0, 4000)}</pre>
             <div className="row wrap">
               <button
@@ -242,7 +243,7 @@ export function TerminalPane({ workspaceId }: { workspaceId: string }) {
                 }}
                 type="button"
               >
-                Paste
+                {t("Paste")}
               </button>
               <button
                 className="button"
@@ -252,10 +253,10 @@ export function TerminalPane({ workspaceId }: { workspaceId: string }) {
                 }}
                 type="button"
               >
-                Paste as one line
+                {t("Paste as one line")}
               </button>
               <button className="button" onClick={() => setPendingPaste(null)} type="button">
-                Cancel
+                {t("Cancel")}
               </button>
             </div>
           </div>
@@ -265,14 +266,14 @@ export function TerminalPane({ workspaceId }: { workspaceId: string }) {
       {confirmClose && (
         <div aria-modal="true" className="modal-backdrop" role="dialog">
           <div className="modal">
-            <h2>Close the running shell?</h2>
-            <p className="small muted">The shell and any foreground command it is running are terminated.</p>
+            <h2>{t("Close the running shell?")}</h2>
+            <p className="small muted">{t("The shell and any foreground command it is running are terminated.")}</p>
             <div className="row wrap">
               <button className="button button-warn" onClick={() => void close()} type="button">
-                Close terminal
+                {t("Close terminal")}
               </button>
               <button className="button" onClick={() => setConfirmClose(false)} type="button">
-                Keep it
+                {t("Keep it")}
               </button>
             </div>
           </div>
@@ -282,22 +283,22 @@ export function TerminalPane({ workspaceId }: { workspaceId: string }) {
       {exportPreview && (
         <div aria-modal="true" className="modal-backdrop" role="dialog">
           <div className="modal modal-wide">
-            <h2>Export terminal log</h2>
+            <h2>{t("Export terminal log")}</h2>
             <p className="small muted">
               {exportPreview.redactions.length === 0
-                ? "No secret-looking text was detected. Review the log before saving; detection is best effort."
-                : `Redacted: ${exportPreview.redactions.map((r) => `${r.count} ${r.label}`).join(", ")}. Review before saving; detection is best effort.`}
+                ? t("No secret-looking text was detected. Review the log before saving; detection is best effort.")
+                : t("Redacted: {list}. Review before saving; detection is best effort.", { list: exportPreview.redactions.map((r) => `${r.count} ${r.label}`).join(", ") })}
             </p>
             <pre className="text paste-preview">{exportPreview.text.slice(-20000)}</pre>
             <div className="row wrap">
               <button className="button button-primary" onClick={() => void saveExport(true)} type="button">
-                Save redacted…
+                {t("Save redacted…")}
               </button>
               <button className="button" onClick={() => void saveExport(false)} type="button">
-                Save unredacted…
+                {t("Save unredacted…")}
               </button>
               <button className="button" onClick={() => setExportPreview(null)} type="button">
-                Cancel
+                {t("Cancel")}
               </button>
             </div>
           </div>

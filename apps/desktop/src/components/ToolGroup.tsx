@@ -9,13 +9,33 @@
  */
 import { useState, type ReactNode } from "react";
 import type { ToolPatch } from "@thingmaker/contracts";
+import { t } from "../i18n";
 import type { Card } from "../projection";
 import { useStore } from "../store";
 import { stepDoing, stepOf, summarize, type Step, type StepVerb } from "../toolSteps";
 import { IconChevron } from "./icons";
 
 const GLYPH: Record<StepVerb, string> = { read: "◱", search: "⌕", list: "☰", run: "›_", edit: "✎", fetch: "↓", agent: "◎", other: "·" };
-const WORD: Record<StepVerb, string> = { read: "Read", search: "Searched", list: "Listed", run: "Ran", edit: "Edited", fetch: "Fetched", agent: "Started", other: "Used" };
+function verbWord(verb: StepVerb): string {
+  switch (verb) {
+    case "read":
+      return t("Read");
+    case "search":
+      return t("Searched");
+    case "list":
+      return t("Listed");
+    case "run":
+      return t("Ran");
+    case "edit":
+      return t("Edited");
+    case "fetch":
+      return t("Fetched");
+    case "agent":
+      return t("Started");
+    default:
+      return t("Used");
+  }
+}
 /** Edits and failures shown under a folded run before "and N more". */
 const ALWAYS_SHOWN = 4;
 
@@ -34,14 +54,14 @@ function StepLine({ step, patch, renderDetail }: { step: Step; patch: ToolPatch;
             {step.parts.slice(0, 2).map((entry, index) => (
               <span key={index}>
                 {index > 0 && <span className="muted"> · </span>}
-                {index === 0 ? WORD[entry.verb] : WORD[entry.verb].toLowerCase()} {entry.target && <code>{entry.target}</code>} {entry.extra && <span className="muted">{entry.extra}</span>}
+                {index === 0 ? verbWord(entry.verb) : verbWord(entry.verb).toLowerCase()} {entry.target && <code>{entry.target}</code>} {entry.extra && <span className="muted">{entry.extra}</span>}
               </span>
             ))}
-            {step.parts.length > 2 && <span className="muted"> · +{step.parts.length - 2} more</span>}
+            {step.parts.length > 2 && <span className="muted"> · {t("+{n} more", { n: step.parts.length - 2 })}</span>}
           </span>
         )}
-        {step.running && <span aria-label="running" className="spinner spinner-xs" />}
-        {step.failed && <span className="tool-step-flag">failed</span>}
+        {step.running && <span aria-label={t("running")} className="spinner spinner-xs" />}
+        {step.failed && <span className="tool-step-flag">{t("failed")}</span>}
       </button>
       {open && <div className="tool-step-detail">{renderDetail(patch)}</div>}
     </li>
@@ -92,8 +112,8 @@ export function ToolGroup({
       <button aria-expanded={open} className="tool-group-head" onClick={() => setOpen(!open)} type="button">
         {live ? (
           <>
-            <span aria-label="working" className="spinner spinner-xs" />
-            <span className="tool-group-title">Working</span>
+            <span aria-label={t("working")} className="spinner spinner-xs" />
+            <span className="tool-group-title">{t("Working")}</span>
             {current && <span className="tool-group-detail">· {stepDoing(current.step)}</span>}
           </>
         ) : (
@@ -102,9 +122,9 @@ export function ToolGroup({
             {detail && <span className="tool-group-detail">{title ? "· " : ""}{detail}</span>}
           </>
         )}
-        {failures > 0 && <span className="tool-step-flag">{failures} failed</span>}
+        {failures > 0 && <span className="tool-step-flag">{t("{n} failed", { n: failures })}</span>}
         <span className="tool-group-count">
-          {steps.length} step{steps.length === 1 ? "" : "s"}
+          {steps.length === 1 ? t("{n} step", { n: steps.length }) : t("{n} steps", { n: steps.length })}
         </span>
         <IconChevron className="tool-group-chevron" open={open} size={11} />
       </button>
@@ -126,7 +146,7 @@ export function ToolGroup({
           {inView.map((entry) => (
             <StepLine key={entry.card.key} patch={entry.patch} renderDetail={renderDetail} step={entry.step} />
           ))}
-          {notable.length > ALWAYS_SHOWN && <li className="small muted tool-step-more">and {notable.length - ALWAYS_SHOWN} more edits or failures — open the run to see them</li>}
+          {notable.length > ALWAYS_SHOWN && <li className="small muted tool-step-more">{t("and {n} more edits or failures — open the run to see them", { n: notable.length - ALWAYS_SHOWN })}</li>}
         </ol>
       )}
     </section>

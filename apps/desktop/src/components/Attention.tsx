@@ -1,4 +1,19 @@
-import { useStore, sessionTitle } from "../store";
+import { t } from "../i18n";
+import { useStore, sessionTitle, type AttentionKind } from "../store";
+
+/** Why a session wants a look, in words. */
+function attentionWord(attention: AttentionKind): string {
+  switch (attention) {
+    case "completed":
+      return t("completed");
+    case "failed":
+      return t("failed");
+    case "needs_input":
+      return t("needs input");
+    default:
+      return attention;
+  }
+}
 
 /** Sessions the user is not viewing that finished, failed or need input. */
 export function AttentionBanner() {
@@ -16,10 +31,10 @@ export function AttentionBanner() {
   if (pending.length === 0) return null;
   return (
     <div className="banner banner-attention" role="status">
-      <strong>{pending.length === 1 ? "1 session needs attention" : `${pending.length} sessions need attention`}:</strong>{" "}
+      <strong>{pending.length === 1 ? t("{n} session needs attention", { n: 1 }) : t("{n} sessions need attention", { n: pending.length })}:</strong>{" "}
       {pending.map((session) => (
         <button className="link" key={session.handle.id} onClick={() => selectSession(session.handle.id)} type="button">
-          {sessionTitle(session, records[session.workspaceId])} ({session.attention.replace("_", " ")})
+          {sessionTitle(session, records[session.workspaceId])} ({attentionWord(session.attention)})
         </button>
       ))}
     </div>
@@ -41,18 +56,16 @@ export function LockedResumeDialog() {
   return (
     <div aria-modal="true" className="modal-backdrop" role="dialog">
       <div className="modal">
-        <h2>Session {locked.sessionId.slice(0, 8)} is locked</h2>
+        <h2>{t("Session {id} is locked", { id: locked.sessionId.slice(0, 8) })}</h2>
         <p>{locked.error.message}</p>
         {stale && (
           <p className="small muted">
-            Recovery takes over the lock left behind by an exited process. If another terminal or desktop is actually
-            using this session, both would write the same transcript. Check first.
+            {t("Recovery takes over the lock left behind by an exited process. If another terminal or desktop is actually using this session, both would write the same transcript. Check first.")}
           </p>
         )}
         {live && (
           <p className="small muted">
-            Another process holds this session right now (for example a terminal running the same agent). Stop it and resume again, or leave it be. This
-            release does not open locked sessions read-only.
+            {t("Another process holds this session right now (for example a terminal running the same agent). Stop it and resume again, or leave it be. This release does not open locked sessions read-only.")}
           </p>
         )}
         <div className="row wrap">
@@ -62,7 +75,7 @@ export function LockedResumeDialog() {
               onClick={() => void openSession(locked.workspaceId, { mode: "resume", session_id: locked.sessionId })}
               type="button"
             >
-              I checked: recover the stale lock
+              {t("I checked: recover the stale lock")}
             </button>
           )}
           {!stale && !live && (
@@ -71,11 +84,11 @@ export function LockedResumeDialog() {
               onClick={() => void openSession(locked.workspaceId, { mode: "resume", session_id: locked.sessionId })}
               type="button"
             >
-              Retry resume
+              {t("Retry resume")}
             </button>
           )}
           <button className="button" onClick={dismiss} type="button">
-            Close
+            {t("Close")}
           </button>
         </div>
       </div>
@@ -94,25 +107,26 @@ export function CloseRequestDialog() {
   return (
     <div aria-modal="true" className="modal-backdrop" role="dialog">
       <div className="modal">
-        <h2>Close ThingMaker?</h2>
+        <h2>{t("Close ThingMaker?")}</h2>
         <p>
           {closeRequest.activity.length === 0
-            ? "No sessions are attached."
-            : `${closeRequest.activity.length} session(s) are attached${active.length > 0 ? `, ${active.length} with work in progress` : ""}.`}
+            ? t("No sessions are attached.")
+            : active.length > 0
+              ? t("{n} session(s) are attached, {active} with work in progress.", { n: closeRequest.activity.length, active: active.length })
+              : t("{n} session(s) are attached.", { n: closeRequest.activity.length })}
         </p>
         <p className="small muted">
-          Keeping the app in the tray leaves local sessions running. Quitting asks each agent to cancel and close, then stops it;
-          detached work does not survive quitting in this release.
+          {t("Keeping the app in the tray leaves local sessions running. Quitting asks each agent to cancel and close, then stops it; detached work does not survive quitting in this release.")}
         </p>
         <div className="row wrap">
           <button className="button button-primary" onClick={() => void hideToTray()} type="button">
-            Keep running in tray
+            {t("Keep running in tray")}
           </button>
           <button className="button button-warn" onClick={() => void quitAndStop()} type="button">
-            Quit and stop local tasks
+            {t("Quit and stop local tasks")}
           </button>
           <button className="button" onClick={dismiss} type="button">
-            Cancel
+            {t("Cancel")}
           </button>
         </div>
       </div>

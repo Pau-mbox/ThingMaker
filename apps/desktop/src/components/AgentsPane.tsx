@@ -7,6 +7,21 @@
 import { useStore } from "../store";
 import { isBackground, type AgentNode } from "../projection";
 import { JobsSection } from "./JobsSection";
+import { t } from "../i18n";
+
+function statusName(status: AgentNode["status"]): string {
+  switch (status) {
+    case "starting": return t("starting");
+    case "working": return t("working");
+    case "idle": return t("idle");
+    case "removed": return t("removed");
+    default: return String(status);
+  }
+}
+
+function outcomeName(outcome: NonNullable<AgentNode["outcome"]>): string {
+  return outcome === "success" ? t("success") : outcome === "failed" ? t("failed") : String(outcome);
+}
 
 function formatMs(ms: number | null): string {
   if (ms === null) return "";
@@ -25,18 +40,18 @@ function AgentTree({ nodes, parentId, depth }: { nodes: AgentNode[]; parentId: s
         return (
           <li key={node.id}>
             <div className="agent-row">
-              <span className={`chip small ${running ? "chip-active" : node.outcome === "failed" ? "chip-warn" : ""}`}>{node.status}</span>
+              <span className={`chip small ${running ? "chip-active" : node.outcome === "failed" ? "chip-warn" : ""}`}>{statusName(node.status)}</span>
               <strong>{node.name}</strong>
               <span className="small muted">
                 {node.harness}
                 {/* "default" rather than nothing: the agent reporting no
                     selection means it chose, which is an answer. */}
-                {` · ${node.model ?? "default"}`} · {formatMs(duration)}
-                {node.outcome ? ` · ${node.outcome}` : ""}
+                {` · ${node.model ?? t("default")}`} · {formatMs(duration)}
+                {node.outcome ? ` · ${outcomeName(node.outcome)}` : ""}
               </span>
               {node.parentId !== null && !nodes.some((p) => p.id === node.parentId) && (
-                <span className="chip small chip-warn" title={`parent ${node.parentId} was not reported`}>
-                  parent unknown{node.parentName ? ` (${node.parentName})` : ""}
+                <span className="chip small chip-warn" title={t("parent {id} was not reported", { id: node.parentId })}>
+                  {node.parentName ? t("parent unknown ({name})", { name: node.parentName }) : t("parent unknown")}
                 </span>
               )}
             </div>
@@ -77,20 +92,20 @@ export function AgentsPane({ sessionId }: { sessionId: string }) {
     <div className="agents-pane">
       <JobsSection sessionId={sessionId} />
       <section>
-        <h3>Subagents</h3>
+        <h3>{t("Subagents")}</h3>
         {agents.length === 0 ? (
-          <p className="small muted">No subagents have run in this session yet. They appear here as the agent starts them.</p>
+          <p className="small muted">{t("No subagents have run in this session yet. They appear here as the agent starts them.")}</p>
         ) : (
           <>
             {live.length > 0 ? (
               <AgentTree depth={0} nodes={live} parentId={null} />
             ) : (
-              <p className="small muted">Nothing is running right now.</p>
+              <p className="small muted">{t("Nothing is running right now.")}</p>
             )}
             {settled.length > 0 && (
               <details className="agent-settled">
                 <summary className="small muted">
-                  {settled.length} finished subagent{settled.length === 1 ? "" : "s"}
+                  {settled.length === 1 ? t("1 finished subagent") : t("{count} finished subagents", { count: settled.length })}
                 </summary>
                 <AgentTree depth={0} nodes={settled} parentId={null} />
               </details>
@@ -100,9 +115,9 @@ export function AgentsPane({ sessionId }: { sessionId: string }) {
       </section>
 
       <section>
-        <h3>Background calls</h3>
+        <h3>{t("Background calls")}</h3>
         {backgroundCalls.length === 0 ? (
-          <p className="small muted">No tool calls running in the background.</p>
+          <p className="small muted">{t("No tool calls running in the background.")}</p>
         ) : (
           <ul className="call-list">
             {backgroundCalls.map((patch) => {
@@ -111,14 +126,14 @@ export function AgentsPane({ sessionId }: { sessionId: string }) {
               return (
                 <li className="card card-tool" key={id}>
                   <div className="agent-row">
-                    <span className="chip small">{patch.toolKind ?? patch.name ?? "tool"}</span>
+                    <span className="chip small">{patch.toolKind ?? patch.name ?? t("tool")}</span>
                     <strong>{patch.title ?? id}</strong>
-                    <span className="chip small">{patch.status ?? "no status"}</span>
+                    <span className="chip small">{patch.status ?? t("no status")}</span>
                     {detachedState && <span className="chip small">{detachedState.replace("_", " ")}</span>}
                   </div>
                   {patch.rawInput !== null && patch.rawInput !== undefined && (
                     <details>
-                      <summary className="small">input (as reported)</summary>
+                      <summary className="small">{t("input (as reported)")}</summary>
                       <pre className="text">{typeof patch.rawInput === "string" ? patch.rawInput : JSON.stringify(patch.rawInput, null, 2)}</pre>
                     </details>
                   )}
