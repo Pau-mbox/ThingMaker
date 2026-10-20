@@ -4,6 +4,7 @@
  * and unpairing. Only in the Android app; a desktop browser has none of it.
  */
 import { useState } from "react";
+import { chooseLanguage, languageChoice, t, type LanguageChoice } from "../i18n";
 
 export function PhoneAppSettings() {
   const native = window.ThingMakerNative;
@@ -28,6 +29,14 @@ export function PhoneAppSettings() {
           Ask for the fingerprint or screen lock when opening
         </label>
       )}
+      <label>
+        {t("Language")}{" "}
+        <select className="select" onChange={(event) => chooseLanguage(event.target.value as LanguageChoice)} value={languageChoice()}>
+          <option value="system">{t("Same as the phone")}</option>
+          <option value="en">English</option>
+          <option value="es">Español</option>
+        </select>
+      </label>
       <button
         className="link small"
         onClick={() => {

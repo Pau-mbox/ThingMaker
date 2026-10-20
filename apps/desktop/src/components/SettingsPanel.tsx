@@ -12,6 +12,7 @@ import {
 import { useStore, basenameOf } from "../store";
 import { api } from "../ipc";
 import { redactText } from "../redact";
+import { chooseLanguage, languageChoice, t, type LanguageChoice } from "../i18n";
 
 
 const ChillPreferences = lazy(() => import("../chill/ChillPreferences"));
@@ -390,6 +391,19 @@ export function SettingsPanel() {
           />
           <span className="small muted">Paid input and output, counted from the agent's own transcript. Blank means no ceiling; the spend is still recorded.</span>
         </label>
+      </section>
+
+      <section>
+        <h3>{t("Language")}</h3>
+        <label className="small">
+          {t("Interface language")}{" "}
+          <select className="select" onChange={(event) => chooseLanguage(event.target.value as LanguageChoice)} value={languageChoice()}>
+            <option value="system">{t("Same as the system")}</option>
+            <option value="en">English</option>
+            <option value="es">Español</option>
+          </select>
+        </label>
+        <p className="small muted">{t("Changing it reloads the window; running sessions carry on.")}</p>
       </section>
 
       <section>
