@@ -47,7 +47,7 @@ import type {
   TurnPhase,
 } from "@thingmaker/contracts";
 import { EMPTY_COMBO, JOB_EVENT, SESSION_TITLE_EVENT, type SessionTitleChange, ODYSSEY_STATE_NOTE, PROVIDERS, PROVIDER_LABELS, BIGTHING_EVENT, asConfigOptions, isEffortOption, type Combo, type JobView, type ProviderModel, type BigThingEvent, type BigThingRuntime, type TeamPreset } from "@thingmaker/contracts";
-import { HANDOFF_SPLIT, handoffBrief, readPresets, upsertJob, upsertPreset, withoutHandoff } from "./team";
+import { HANDOFF_SPLIT, handoffBrief, hasConversation, readPresets, upsertJob, upsertPreset, withoutHandoff } from "./team";
 
 /** Preference keys (scope `ui`) for saved teams. */
 const TEAM_PRESETS_KEY = "teamPresets";
@@ -2138,7 +2138,11 @@ export const useStore = create<State>((set, get) => ({
     const fromAgentSessionId = session.snapshot.agentSessionId;
     const title = sessionTitle(session);
     const team = get().teams[sessionId];
-    set({ busy: t("Continuing with {provider}", { provider: PROVIDER_LABELS[pending.provider] }), error: null });
+    // Nothing said yet: nothing to hand off. The session simply starts on
+    // the chosen provider with the person's message.
+    const fresh = !hasConversation(session.projection.cards);
+    const provider = PROVIDER_LABELS[pending.provider];
+    set({ busy: fresh ? t("Starting with {provider}", { provider }) : t("Continuing with {provider}", { provider }), error: null });
     try {
       const opened = await api.sessionOpen({
         workspaceId: session.workspaceId,
@@ -2155,7 +2159,7 @@ export const useStore = create<State>((set, get) => ({
       const agentSessionId = live?.snapshot.agentSessionId ?? opened.snapshot.agentSessionId ?? null;
       // The brief rides in front of the person's message; the transcript
       // shows only the message (see withoutHandoff).
-      const prompt = `${handoffBrief(session.projection.cards, from)}${HANDOFF_SPLIT}${draft}`;
+      const prompt = fresh ? draft : `${handoffBrief(session.projection.cards, from)}${HANDOFF_SPLIT}${draft}`;
       const response = await api.sessionSubmit(opened.handle, crypto.randomUUID(), prompt, attachments.map((a) => a.id), mentions);
       if (response.outcome.outcome !== "accepted") {
         // Nothing changes for the person: the draft stays, and the session
@@ -2171,9 +2175,9 @@ export const useStore = create<State>((set, get) => ({
         attachments: { ...get().attachments, [sessionId]: [] },
         mentions: { ...get().mentions, [sessionId]: [] },
         pendingProvider: pendingRest,
-        continuationHistory: { ...get().continuationHistory, [key]: session.projection.cards },
+        ...(fresh ? {} : { continuationHistory: { ...get().continuationHistory, [key]: session.projection.cards } }),
       });
-      if (agentSessionId && fromAgentSessionId) {
+      if (!fresh && agentSessionId && fromAgentSessionId) {
         const continuations = { ...get().continuations, [agentSessionId]: { fromAgentSessionId, fromProvider: from } };
         set({ continuations });
         void api.prefSet(CONTINUATIONS_KEY, continuations).catch(() => undefined);

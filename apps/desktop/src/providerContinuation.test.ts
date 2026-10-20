@@ -89,6 +89,22 @@ it("leaves everything as it was if the new session refuses the message", async (
   expect(api.sessionStop).toHaveBeenCalledWith({ id: "new", attachmentGeneration: "1" });
 });
 
+it("just starts on the chosen provider when nothing was said yet", async () => {
+  const empty = live("old");
+  empty.projection.cards = [];
+  useStore.setState({ sessions: { old: empty } });
+  useStore.getState().setPendingProvider("old", { provider: "codex", model: "gpt-6" });
+  await useStore.getState().send("old");
+  expect(api.sessionOpen).toHaveBeenCalledWith(expect.objectContaining({ provider: "codex", model: "gpt-6" }));
+  expect(vi.mocked(api.sessionSubmit).mock.calls[0]![2]).toBe("Now add a test");
+  const state = useStore.getState();
+  expect(state.sessions.old).toBeUndefined();
+  expect(state.view).toEqual(expect.objectContaining({ kind: "session", sessionId: "new" }));
+  expect(state.continuations).toEqual({});
+  expect(state.continuationHistory).toEqual({});
+  expect(renameSession).not.toHaveBeenCalled();
+});
+
 it("without a provider choice, sends as usual", async () => {
   await useStore.getState().send("old");
   expect(api.sessionOpen).not.toHaveBeenCalled();

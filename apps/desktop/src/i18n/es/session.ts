@@ -236,6 +236,8 @@ export const session: Record<string, string> = {
   "This session runs on {provider}": "Esta sesión funciona con {provider}",
   "Your next message continues this conversation with {provider}": "Tu próximo mensaje continúa esta conversación con {provider}",
   "Continuing with {provider}": "Continuando con {provider}",
+  "Starting with {provider}": "Empezando con {provider}",
+  "Your first message starts this session on {provider}": "Tu primer mensaje inicia esta sesión con {provider}",
   "Continued with {provider}": "Continuada con {provider}",
   "Continues a {provider} session": "Continúa una sesión de {provider}",
   "open the earlier session": "abrir la sesión anterior",

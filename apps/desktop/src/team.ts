@@ -110,6 +110,11 @@ function cardText(card: Card): { role: string; text: string } | null {
 export const HANDOFF_SPLIT = "\n\n---\nThe person's next message:\n\n";
 
 /** What the person wrote, without a hand-off brief in front of it. */
+/** Whether anything has been said in a session yet. */
+export function hasConversation(cards: readonly Card[] | undefined): boolean {
+  return (cards ?? []).some((card) => card.kind === "message" && (card.message.role === "user" || card.message.role === "agent"));
+}
+
 export function withoutHandoff(text: string): string {
   const at = text.indexOf(HANDOFF_SPLIT);
   return at < 0 ? text : text.slice(at + HANDOFF_SPLIT.length);

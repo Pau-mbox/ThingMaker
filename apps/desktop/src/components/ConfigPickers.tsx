@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type PointerE
 import { asConfigOptions, isConfigOptionGroup, isEffortOption, PROVIDER_LABELS, PROVIDERS, type ConfigOptionChoice, type Provider, type ProviderModel, type SessionConfigOption } from "@thingmaker/contracts";
 import { t } from "../i18n";
 import { useStore } from "../store";
-import { presetMatches } from "../team";
+import { hasConversation, presetMatches } from "../team";
 import { IconBolt, IconCheck, IconChevron } from "./icons";
 
 function choices(option: SessionConfigOption): { group: string | null; choice: ConfigOptionChoice }[] {
@@ -37,6 +37,13 @@ const FILTER_FROM = 12;
  * from this one (the same hand-off the team editor uses). A session on a
  * saved team preset keeps the preset's lead; the team decides that.
  */
+/** What choosing another provider does: start fresh, or continue the conversation there. */
+function switchTitle(started: boolean, provider: Provider): string {
+  return started
+    ? t("Your next message continues this conversation with {provider}", { provider: PROVIDER_LABELS[provider] })
+    : t("Your first message starts this session on {provider}", { provider: PROVIDER_LABELS[provider] });
+}
+
 function ProviderSwitch({ sessionId }: { sessionId: string }) {
   const provider = useStore((s) => s.sessions[sessionId]?.snapshot.provider);
   const running = useStore((s) => {
@@ -48,6 +55,7 @@ function ProviderSwitch({ sessionId }: { sessionId: string }) {
   const providers = useStore((s) => s.providers);
   const pending = useStore((s) => s.pendingProvider[sessionId]);
   const setPending = useStore((s) => s.setPendingProvider);
+  const started = useStore((s) => hasConversation(s.sessions[sessionId]?.projection.cards));
   if (!provider) return null;
   const chosen = pending?.provider ?? provider;
   const preset = presets.find((candidate) => presetMatches(candidate, provider, team));
@@ -74,7 +82,7 @@ function ProviderSwitch({ sessionId }: { sessionId: string }) {
               // session's own provider again undoes it.
               setPending(sessionId, other === provider ? null : { provider: other });
             }}
-            title={other === provider ? t("This session runs on {provider}", { provider: PROVIDER_LABELS[other] }) : (blocked ?? t("Your next message continues this conversation with {provider}", { provider: PROVIDER_LABELS[other] }))}
+            title={other === provider ? t("This session runs on {provider}", { provider: PROVIDER_LABELS[other] }) : (blocked ?? switchTitle(started, other))}
             type="button"
           >
             {PROVIDER_LABELS[other]}
@@ -263,6 +271,7 @@ export function ModelMenu({
   const setPending = useStore((s) => s.setPendingProvider);
   const loadProviderModels = useStore((s) => s.loadProviderModels);
   const pendingModels = useStore((s) => (pending ? s.providerModels[pending.provider] : undefined));
+  const started = useStore((s) => hasConversation(s.sessions[sessionId]?.projection.cards));
   useEffect(() => {
     if (pending) void loadProviderModels(pending.provider);
   }, [pending, loadProviderModels]);
@@ -297,7 +306,7 @@ export function ModelMenu({
         }}
         title={
           pending
-            ? t("Your next message continues this conversation with {provider}", { provider: PROVIDER_LABELS[pending.provider] })
+            ? switchTitle(started, pending.provider)
             : modelNow?.group
               ? `${modelNow.choice.name} · ${modelNow.group}`
               : t("Model and reasoning effort")
