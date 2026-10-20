@@ -15,6 +15,7 @@ import type {
   AttachmentSnapshot,
   ContextBundle,
   Mention,
+  ProviderChoice,
   SessionDefaults,
   UiPrefs,
   DesktopError,
@@ -552,13 +553,53 @@ export function usageFromQuota(quota: QuotaSnapshot): UsageSnapshot | null {
   };
 }
 
-/** The remembered model and effort, for a session on the provider they were chosen on. */
+/**
+ * The remembered model and effort for a session on `provider`. Claude with
+ * nothing remembered starts on its current Opus rather than whatever the
+ * account defaults to.
+ */
 function launchDefaults(defaults: SessionDefaults, provider: Provider): { model?: string; reasoningEffort?: string } {
-  if (defaults.provider !== provider) return {};
+  const choice = defaults[provider] ?? {};
+  const model = choice.model ?? (provider === "claude" ? CLAUDE_DEFAULT_MODEL : undefined);
   return {
-    ...(defaults.model ? { model: defaults.model } : {}),
-    ...(defaults.reasoningEffort ? { reasoningEffort: defaults.reasoningEffort } : {}),
+    ...(model ? { model } : {}),
+    ...(choice.reasoningEffort ? { reasoningEffort: choice.reasoningEffort } : {}),
   };
+}
+
+/** The adapter's alias for its current Opus. */
+const CLAUDE_DEFAULT_MODEL = "opus";
+
+/**
+ * Saved defaults, read from either shape: per provider, or the earlier single
+ * `{ provider, model, reasoningEffort }` that followed the last change.
+ */
+export function readSessionDefaults(raw: unknown): SessionDefaults {
+  if (!raw || typeof raw !== "object") return {};
+  const value = raw as Record<string, unknown>;
+  const pick = (entry: unknown): ProviderChoice => {
+    const choice = (entry ?? {}) as Record<string, unknown>;
+    return {
+      ...(typeof choice.model === "string" ? { model: choice.model } : {}),
+      ...(typeof choice.reasoningEffort === "string" ? { reasoningEffort: choice.reasoningEffort } : {}),
+    };
+  };
+  if (typeof value.provider === "string") {
+    const provider = value.provider as Provider;
+    return PROVIDERS.includes(provider) ? { [provider]: pick(value) } : {};
+  }
+  const defaults: SessionDefaults = {};
+  for (const provider of PROVIDERS) if (value[provider]) defaults[provider] = pick(value[provider]);
+  return defaults;
+}
+
+/** Where a new session starts when nobody asked for a provider: Claude when it can run, else the first that can. */
+export function startingProvider(providers: readonly ProviderInfo[] | null): Provider {
+  const ready = (provider: Provider) => {
+    const info = providers?.find((entry) => entry.provider === provider);
+    return !info || (!!info.resolved && info.auth?.loggedIn !== false);
+  };
+  return PROVIDERS.find(ready) ?? "claude";
 }
 
 /** Journal summary marking a planning turn as asked for; the engine writes it. */
@@ -1810,8 +1851,7 @@ export const useStore = create<State>((set, get) => ({
     try {
       const stored = await api.prefGet<Partial<UiPrefs>>("ui_prefs");
       if (stored) set({ uiPrefs: { ...DEFAULT_UI_PREFS, ...stored } });
-      const defaults = await api.prefGet<SessionDefaults>("session_defaults");
-      if (defaults) set({ sessionDefaults: defaults });
+      set({ sessionDefaults: readSessionDefaults(await api.prefGet<unknown>("session_defaults")) });
     } catch {
       // Preferences are optional conveniences.
     }
@@ -1920,7 +1960,7 @@ export const useStore = create<State>((set, get) => ({
         // Fall through to an ordinary resume.
       }
     }
-    const chosen: Provider = recorded ?? provider ?? defaults.provider ?? "claude";
+    const chosen: Provider = recorded ?? provider ?? startingProvider(get().providers);
     set({ busy: mode.mode === "new" ? t("Starting {provider}", { provider: PROVIDER_LABELS[chosen] }) : t("Resuming {provider} session", { provider: PROVIDER_LABELS[chosen] }), error: null, lockedResume: null });
     try {
       const opened = await api.sessionOpen({ workspaceId, mode, provider: chosen, ...launchDefaults(defaults, chosen) });
@@ -2493,20 +2533,17 @@ export const useStore = create<State>((set, get) => ({
         set({ sessions: { ...get().sessions, [sessionId]: { ...current, projection: { ...current.projection, configOptions: result.configOptions } } } });
       }
       // The accepted value becomes the default for sessions started later on
-      // the same provider: a model id means nothing to another one.
-      const defaults = { ...get().sessionDefaults };
+      // the same provider: a model id means nothing to another one. It does
+      // not change which provider new sessions start on.
       const provider = session.snapshot.provider;
-      if (defaults.provider !== provider) {
-        delete defaults.model;
-        delete defaults.reasoningEffort;
-      }
-      defaults.provider = provider;
+      const choice: ProviderChoice = { ...get().sessionDefaults[provider] };
       if (configId === "model") {
-        defaults.model = value;
+        choice.model = value;
       } else if (configId === "effort" || configId === "reasoning_effort") {
-        if (value === "default") delete defaults.reasoningEffort;
-        else defaults.reasoningEffort = value;
+        if (value === "default") delete choice.reasoningEffort;
+        else choice.reasoningEffort = value;
       }
+      const defaults: SessionDefaults = { ...get().sessionDefaults, [provider]: choice };
       set({ sessionDefaults: defaults });
       void api.prefSet("session_defaults", defaults).catch(() => undefined);
     } catch (error) {

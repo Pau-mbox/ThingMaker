@@ -3,6 +3,8 @@ import { PhoneSection } from "./PhoneSection";
 import {
   CLAUDE_ORCHESTRATOR_EFFORT,
   CLAUDE_ORCHESTRATOR_MODEL,
+  PROVIDER_LABELS,
+  PROVIDERS,
   type CleanupCandidate,
   type ClaudeModelChoice,
   type KeepAwakeStatus,
@@ -300,14 +302,20 @@ export function SettingsPanel() {
         <h3>{t("Session defaults")}</h3>
         <p className="small muted">
           {t(
-            "Changing the model or effort in a session makes that choice the default for sessions started afterwards (it is passed to the agent at launch; the agent's config.toml is not modified).",
+            "New sessions start on Claude Code when it is installed and signed in, on Opus unless you chose another model. Changing the model or effort in a session makes that choice the default for later sessions on the same provider (it is passed to the agent at launch; the agent's own config is not modified).",
           )}
         </p>
         <div className="row wrap">
-          <span className="chip small">{t("model: {model}", { model: sessionDefaults.model ?? t("the account's default") })}</span>
-          {sessionDefaults.provider && <span className="chip small">{t("provider: {provider}", { provider: sessionDefaults.provider })}</span>}
-          <span className="chip small">{t("effort: {effort}", { effort: sessionDefaults.reasoningEffort ?? t("default") })}</span>
-          {(sessionDefaults.model || sessionDefaults.reasoningEffort) && (
+          {PROVIDERS.filter((provider) => provider === "claude" || sessionDefaults[provider]).map((provider) => {
+            const choice = sessionDefaults[provider] ?? {};
+            const model = choice.model ?? (provider === "claude" ? "Opus" : t("the account's default"));
+            return (
+              <span className="chip small" key={provider}>
+                {PROVIDER_LABELS[provider]}: {model} · {choice.reasoningEffort ?? t("default")}
+              </span>
+            );
+          })}
+          {Object.values(sessionDefaults).some((choice) => choice?.model || choice?.reasoningEffort) && (
             <button className="button button-small" onClick={() => void resetSessionDefaults()} type="button">
               {t("Reset to the account's defaults")}
             </button>

@@ -1351,7 +1351,10 @@ export type UsageSnapshot = {
 export type TranscriptUsage = { path: string; bytes: number; lines: number; parseErrors: number; schemaVersions: number[]; calls: UsageCall[]; totals: UsageTotals };
 
 /** Defaults applied to new sessions, captured from the last picker change. */
-export type SessionDefaults = { provider?: Provider; model?: string; reasoningEffort?: string };
+/** The model and effort last chosen on one provider. */
+export type ProviderChoice = { model?: string; reasoningEffort?: string };
+/** Remembered per provider: a model id means nothing to another one. */
+export type SessionDefaults = Partial<Record<Provider, ProviderChoice>>;
 
 /** Local UI preferences (non-secret). */
 export type UiPrefs = {
