@@ -8,6 +8,7 @@
 
 use std::collections::HashMap;
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::time::Duration;
 
 use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
@@ -123,13 +124,15 @@ async fn socket(State(app): State<AppHandle>, upgrade: WebSocketUpgrade) -> Resp
 struct Connection {
     app: AppHandle,
     device: String,
-    out: mpsc::UnboundedSender<String>,
+    out: Outbox,
     channels: HashMap<u64, tokio::task::JoinHandle<()>>,
+    /// Calls running for this phone.
+    in_flight: Arc<AtomicUsize>,
 }
 
 impl Connection {
     fn send(&self, frame: Value) {
-        let _ = self.out.send(frame.to_string());
+        self.out.send(frame.to_string());
     }
 
     fn handle(&mut self, frame: Value) {
@@ -150,7 +153,7 @@ impl Connection {
                             Ok(offer) => json!({ "t": "result", "id": id, "ok": true, "value": offer }),
                             Err(error) => json!({ "t": "result", "id": id, "ok": false, "error": error }),
                         };
-                        let _ = out.send(frame.to_string());
+                        out.send(frame.to_string());
                     });
                     return;
                 }
@@ -162,15 +165,24 @@ impl Connection {
                     });
                     return;
                 }
+                // Refused before it runs, so trying again is safe.
+                if self.in_flight.load(Ordering::Relaxed) >= MAX_IN_FLIGHT {
+                    let error = thingmaker_supervisor::DesktopError::limit_exceeded("Too many requests at once from this phone; nothing was done.");
+                    self.send(json!({ "t": "result", "id": id, "ok": false, "error": error }));
+                    return;
+                }
+                self.in_flight.fetch_add(1, Ordering::Relaxed);
                 let app = self.app.clone();
                 let out = self.out.clone();
+                let in_flight = self.in_flight.clone();
                 tokio::spawn(async move {
                     let reply = dispatch::dispatch(&app, &command, args).await;
+                    in_flight.fetch_sub(1, Ordering::Relaxed);
                     let frame = match reply {
                         Ok(value) => json!({ "t": "result", "id": id, "ok": true, "value": value }),
                         Err(error) => json!({ "t": "result", "id": id, "ok": false, "error": error }),
                     };
-                    let _ = out.send(frame.to_string());
+                    out.send(frame.to_string());
                 });
             }
             Some("unchannel") => {
@@ -200,7 +212,7 @@ impl Connection {
         let task = tokio::spawn(async move {
             while let Some(event) = subscription.recv().await {
                 let frame = json!({ "t": "channel", "cid": cid, "data": &*event });
-                if out.send(frame.to_string()).is_err() {
+                if !out.send(frame.to_string()) {
                     break;
                 }
             }
@@ -222,11 +234,77 @@ impl Drop for Connection {
 
 /// A phone's WebSocket on the local listener: its frames, through the same
 /// conversation as a relayed one.
+/// Frames waiting for one phone before it counts as fallen behind. A phone
+/// that far behind is closed: it reconnects and reloads its screens rather
+/// than silently missing events.
+const MAX_QUEUED: usize = 4096;
+/// Calls one phone may have running at once; more are refused unrun.
+const MAX_IN_FLIGHT: usize = 16;
+
+/// The frames on their way to one phone, counted.
+#[derive(Clone)]
+pub(super) struct Outbox {
+    tx: mpsc::UnboundedSender<String>,
+    queued: Arc<AtomicUsize>,
+    overflowed: Arc<AtomicBool>,
+}
+
+/// The other end of an [`Outbox`]: what the transport writes to the phone.
+pub(super) struct OutboxReader {
+    rx: mpsc::UnboundedReceiver<String>,
+    queued: Arc<AtomicUsize>,
+}
+
+pub(super) fn outbox() -> (Outbox, OutboxReader) {
+    let (tx, rx) = mpsc::unbounded_channel();
+    let queued = Arc::new(AtomicUsize::new(0));
+    (Outbox { tx, queued: queued.clone(), overflowed: Arc::new(AtomicBool::new(false)) }, OutboxReader { rx, queued })
+}
+
+impl Outbox {
+    /// Queues a frame; false once the phone has gone or fallen behind, which
+    /// ends the conversation.
+    pub(super) fn send(&self, frame: String) -> bool {
+        if self.overflowed.load(Ordering::Relaxed) {
+            return false;
+        }
+        if self.queued.fetch_add(1, Ordering::Relaxed) >= MAX_QUEUED {
+            self.queued.fetch_sub(1, Ordering::Relaxed);
+            self.overflowed.store(true, Ordering::Relaxed);
+            tracing::warn!("a phone fell behind; closing it so it resyncs");
+            return false;
+        }
+        if self.tx.send(frame).is_err() {
+            self.queued.fetch_sub(1, Ordering::Relaxed);
+            return false;
+        }
+        true
+    }
+
+    async fn closed(&self) {
+        self.tx.closed().await;
+    }
+
+    fn overflowed(&self) -> bool {
+        self.overflowed.load(Ordering::Relaxed)
+    }
+}
+
+impl OutboxReader {
+    pub(super) async fn recv(&mut self) -> Option<String> {
+        let frame = self.rx.recv().await;
+        if frame.is_some() {
+            self.queued.fetch_sub(1, Ordering::Relaxed);
+        }
+        frame
+    }
+}
+
 async fn serve(app: AppHandle, socket: WebSocket) {
     use futures_util::{SinkExt, StreamExt};
     let (mut sink, mut stream) = socket.split();
     let (incoming_tx, incoming) = mpsc::unbounded_channel::<String>();
-    let (outgoing, mut outgoing_rx) = mpsc::unbounded_channel::<String>();
+    let (outgoing, mut outgoing_rx) = outbox();
     tokio::spawn(async move {
         while let Some(Ok(message)) = stream.next().await {
             match message {
@@ -254,7 +332,7 @@ async fn serve(app: AppHandle, socket: WebSocket) {
 /// One phone's conversation with the bridge, whatever carries it — the
 /// local listener or the relay. It ends when either side goes; dropping
 /// `outgoing` closes the phone's side.
-pub(super) async fn converse(app: AppHandle, mut incoming: mpsc::UnboundedReceiver<String>, outgoing: mpsc::UnboundedSender<String>) {
+pub(super) async fn converse(app: AppHandle, mut incoming: mpsc::UnboundedReceiver<String>, outgoing: Outbox) {
     // The first frame names the phone; nothing else is read before it.
     let device = match tokio::time::timeout(Duration::from_secs(10), incoming.recv()).await {
         Ok(Some(text)) => {
@@ -265,7 +343,7 @@ pub(super) async fn converse(app: AppHandle, mut incoming: mpsc::UnboundedReceiv
         _ => None,
     };
     let Some(device) = device else {
-        let _ = outgoing.send(json!({ "t": "denied", "message": "This phone is not paired with this Mac, or its pairing was revoked." }).to_string());
+        let _ = outgoing.send(json!({ "t": "denied", "message": "This phone is not paired with this computer, or its pairing was revoked." }).to_string());
         return;
     };
     let remote = app.state::<RemoteState>();
@@ -275,7 +353,7 @@ pub(super) async fn converse(app: AppHandle, mut incoming: mpsc::UnboundedReceiv
     let mut events = remote.events.subscribe();
     let mut revoked = remote.revoked.subscribe();
     let mut direct = remote.direct.subscribe();
-    let mut connection = Connection { app: app.clone(), device: device.id.clone(), out: outgoing.clone(), channels: HashMap::new() };
+    let mut connection = Connection { app: app.clone(), device: device.id.clone(), out: outgoing.clone(), channels: HashMap::new(), in_flight: Arc::new(AtomicUsize::new(0)) };
     loop {
         tokio::select! {
             frame = incoming.recv() => match frame {
@@ -288,29 +366,32 @@ pub(super) async fn converse(app: AppHandle, mut incoming: mpsc::UnboundedReceiv
             },
             event = events.recv() => match event {
                 Ok(frame) => {
-                    if outgoing.send(frame.to_string()).is_err() {
+                    if !outgoing.send(frame.to_string()) {
                         break;
                     }
                 }
-                Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => {}
+                // Events were missed: the phone reconnects and reloads.
                 Err(_) => break,
             },
             frame = direct.recv() => match frame {
                 Ok((target, frame)) if target.as_deref().is_none_or(|target| target == device.id) => {
-                    if outgoing.send(frame.to_string()).is_err() {
+                    if !outgoing.send(frame.to_string()) {
                         break;
                     }
                 }
-                Ok(_) | Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => {}
+                Ok(_) => {}
                 Err(_) => break,
             },
             gone = revoked.recv() => {
                 if matches!(gone.as_deref(), Ok(id) if id == device.id || id == "*") {
-                    let _ = outgoing.send(json!({ "t": "denied", "message": "This phone's pairing was revoked on the Mac." }).to_string());
+                    let _ = outgoing.send(json!({ "t": "denied", "message": "This phone's pairing was revoked on the computer." }).to_string());
                     break;
                 }
             }
             () = outgoing.closed() => break,
+        }
+        if outgoing.overflowed() {
+            break;
         }
     }
     drop(connection);
@@ -333,5 +414,23 @@ mod tests {
         assert_eq!(frame, json!({ "t": "event", "name": "thingmaker://job", "payload": { "id": "j1" } }));
         let empty: Value = serde_json::from_str(&event_frame("x", "")).unwrap();
         assert_eq!(empty["payload"], Value::Null);
+    }
+}
+
+#[cfg(test)]
+mod outbox_tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn a_phone_that_falls_behind_is_cut_off_and_reading_makes_room() {
+        let (outbox, mut reader) = outbox();
+        for i in 0..MAX_QUEUED {
+            assert!(outbox.send(format!("frame {i}")), "room for {i}");
+        }
+        assert!(!outbox.send("one too many".into()), "the phone fell behind");
+        assert!(outbox.overflowed());
+        // Once cut off it stays cut off: the conversation ends and the phone resyncs.
+        assert_eq!(reader.recv().await.as_deref(), Some("frame 0"));
+        assert!(!outbox.send("after".into()));
     }
 }

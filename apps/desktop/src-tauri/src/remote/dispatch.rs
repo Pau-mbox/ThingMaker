@@ -4,10 +4,11 @@
 //! arguments the renderer sends, so the phone's screens are the desktop's.
 //! The list is deliberate: reading sessions, Big Thing and the team, and
 //! controlling them — sending, steering, queueing, cancelling, starting and pausing a
-//! goal, answering it, deciding its plan changes. Not on it: sign-ins and
-//! provider settings, workspace trust, the terminal, git writes, file
+//! goal, answering it, deciding its plan changes — attaching files from the
+//! phone, and reading the project's files and changes. Not on it: sign-ins
+//! and provider settings, workspace trust, the terminal, git writes, file
 //! writes, MCP installs, the runtime environment, deleting, and anything
-//! that opens something on the Mac's screen.
+//! that opens something on the computer's screen.
 
 use serde::Serialize;
 use serde::de::DeserializeOwned;
@@ -15,7 +16,7 @@ use serde_json::Value;
 use tauri::{AppHandle, Manager};
 use thingmaker_supervisor::DesktopError;
 
-use crate::commands::{activity, app as app_commands, artifacts, bigthing, delegation, git, odyssey, providers, review, session, workspace};
+use crate::commands::{activity, app as app_commands, artifacts, attachments, bigthing, delegation, git, odyssey, providers, review, session, workspace};
 use crate::state::AppState;
 
 /// The commands a phone may call. `session_subscribe` is the connection's
@@ -105,6 +106,14 @@ pub const ALLOWED: &[&str] = &[
     "artifacts_list",
     "artifact_read",
     "git_info",
+    // Files & Changes, read only.
+    "workspace_list_dir",
+    "workspace_search_files",
+    "review_diff",
+    "review_file_versions",
+    // Files the phone attaches to a prompt; the computer's own picker is not offered.
+    "attachment_add_bytes",
+    "attachment_preview",
 ];
 
 /// One argument, by the name the renderer sends it under.
@@ -274,6 +283,12 @@ pub async fn dispatch(app: &AppHandle, command: &str, args: Value) -> Result<Val
         "artifacts_list" => sync_call!(app, args, artifacts::artifacts_list, "workspaceId", "agentSessionId"),
         "artifact_read" => sync_call!(app, args, artifacts::artifact_read, "id"),
         "git_info" => sync_call!(app, args, git::git_info, "workspaceId"),
+        "workspace_list_dir" => sync_call!(app, args, review::workspace_list_dir, "workspaceId", "relative", "showIgnored"),
+        "workspace_search_files" => sync_call!(app, args, attachments::workspace_search_files, "request"),
+        "review_diff" => async_call!(app, args, review::review_diff, "request"),
+        "review_file_versions" => sync_call!(app, args, git::review_file_versions, "request"),
+        "attachment_add_bytes" => sync_call!(app, args, attachments::attachment_add_bytes, "request"),
+        "attachment_preview" => sync_call!(app, args, attachments::attachment_preview, "request"),
         _ => refused(DesktopError::untrusted(format!("{command} is not available from the phone"))),
     }
 }

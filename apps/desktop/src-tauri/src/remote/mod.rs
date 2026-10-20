@@ -28,7 +28,7 @@ use thingmaker_supervisor::DesktopError;
 use tokio::sync::broadcast;
 
 use crate::commands::CommandResult;
-use devices::{Device, RemoteConfig};
+use devices::{ConnectionMode, Device, RemoteConfig};
 
 pub const REMOTE_EVENT: &str = "thingmaker://remote";
 /// How long a pairing QR stays good.
@@ -87,24 +87,38 @@ pub struct RelayView {
     pub access: bool,
 }
 
-/// A relay address the phone can reach: https, no path.
-pub fn normalize_relay_url(raw: &str) -> Result<String, DesktopError> {
+/// An address the phone can reach in either mode: https, a host, no path.
+pub fn normalize_url(raw: &str, mode: ConnectionMode) -> Result<String, DesktopError> {
     let trimmed = raw.trim().trim_end_matches('/');
     let with_scheme = if trimmed.contains("://") { trimmed.to_string() } else { format!("https://{trimmed}") };
-    // A development build may use a relay on this Mac (`wrangler dev`).
+    // A development build may use a relay or tunnel on this computer.
     if cfg!(debug_assertions) && (with_scheme.starts_with("http://localhost:") || with_scheme.starts_with("http://127.0.0.1:")) {
         return Ok(with_scheme);
     }
     let Some(host) = with_scheme.strip_prefix("https://") else {
-        return Err(DesktopError::unsupported("The relay address has to be https://…"));
+        return Err(DesktopError::unsupported("The address has to be https://…"));
     };
     if host.is_empty() || host.contains('/') || host.contains(' ') || !host.contains('.') {
-        return Err(DesktopError::unsupported("The relay address is the Worker's host, like https://thingmaker-relay.you.workers.dev"));
+        return Err(DesktopError::unsupported(match mode {
+            ConnectionMode::Relay => "The relay address is the Worker's host, like https://thingmaker-relay.you.workers.dev",
+            ConnectionMode::Direct => "The address is your tunnel's public host, like https://thingmaker.example.com",
+        }));
     }
     Ok(with_scheme)
 }
 
+/// The address the phone uses in the configured mode.
+pub fn phone_url(config: &RemoteConfig) -> Option<String> {
+    match config.mode {
+        ConnectionMode::Relay => config.relay_url.clone(),
+        ConnectionMode::Direct => config.direct_url.clone(),
+    }
+}
+
 fn computer_name() -> String {
+    if cfg!(windows) {
+        return std::env::var("COMPUTERNAME").ok().filter(|name| !name.is_empty()).unwrap_or_else(|| "PC".into());
+    }
     std::process::Command::new("scutil")
         .args(["--get", "ComputerName"])
         .output()
@@ -141,6 +155,9 @@ pub struct RemoteStatus {
     enabled: bool,
     port: u16,
     name: String,
+    /// How the phone reaches this computer, and the address it uses then.
+    mode: ConnectionMode,
+    direct_url: Option<String>,
     /// The Mac's line to the relay.
     relay: RelayView,
     listening: Vec<String>,
@@ -303,6 +320,8 @@ impl RemoteState {
             enabled: config.enabled,
             port: config.port,
             name: self.host_name.clone(),
+            mode: config.mode,
+            direct_url: config.direct_url.clone(),
             relay: self.relay_view(),
             listening,
             devices: config
@@ -350,9 +369,10 @@ impl RemoteState {
         // Everything the phone needs, the Access service token included: it
         // is shown on this Mac's screen only, for the phone to scan.
         let payload = serde_json::json!({
-            "v": 2,
+            "v": 3,
             "name": self.host_name,
-            "url": config.relay_url,
+            "mode": config.mode,
+            "url": phone_url(config),
             "code": pairing.code,
             "accessId": config.access_client_id,
             "accessSecret": config.access_client_secret,
@@ -370,9 +390,10 @@ impl RemoteState {
         if !config.enabled {
             return Vec::new();
         }
-        // Phones come through the relay; only a development build listens
-        // here, on loopback, for an emulator through `adb reverse`.
-        if cfg!(debug_assertions) { vec![SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), config.port)] } else { Vec::new() }
+        // Loopback only, ever: in the Direct mode the user's tunnel forwards
+        // to it, and a development build also listens for an emulator
+        // through `adb reverse`. In the Relay mode the computer only connects out.
+        if config.mode == ConnectionMode::Direct || cfg!(debug_assertions) { vec![SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), config.port)] } else { Vec::new() }
     }
 
     /// Listens where it should, closing listeners that no longer should be.
@@ -442,14 +463,20 @@ pub fn start(app: &AppHandle, data_dir: PathBuf) {
     });
 }
 
-/// The relay's address and the Access service token in front of it.
+/// How the phone reaches this computer: the mode, its address, and the
+/// Cloudflare Access service token in front of it (needed for the relay,
+/// optional for a tunnel).
 #[tauri::command]
-pub fn remote_set_relay(url: String, access_client_id: Option<String>, access_client_secret: Option<String>, app: AppHandle, remote: State<'_, RemoteState>) -> CommandResult<RemoteStatus> {
-    let url = normalize_relay_url(&url)?;
+pub fn remote_set_connection(mode: ConnectionMode, url: String, access_client_id: Option<String>, access_client_secret: Option<String>, app: AppHandle, remote: State<'_, RemoteState>) -> CommandResult<RemoteStatus> {
+    let url = normalize_url(&url, mode)?;
     let clean = |value: Option<String>| value.map(|value| value.trim().to_string()).filter(|value| !value.is_empty());
     let (id, secret) = (clean(access_client_id), clean(access_client_secret));
     remote.update(|config| {
-        config.relay_url = Some(url);
+        config.mode = mode;
+        match mode {
+            ConnectionMode::Relay => config.relay_url = Some(url),
+            ConnectionMode::Direct => config.direct_url = Some(url),
+        }
         // Left empty, the token already saved stays.
         if id.is_some() {
             config.access_client_id = id;
@@ -457,6 +484,19 @@ pub fn remote_set_relay(url: String, access_client_id: Option<String>, access_cl
         if secret.is_some() {
             config.access_client_secret = secret;
         }
+    })?;
+    remote.relay_changed.notify_waiters();
+    remote.apply(&app);
+    remote.changed(&app);
+    Ok(remote.status())
+}
+
+/// Clears the saved Access service token.
+#[tauri::command]
+pub fn remote_clear_access(app: AppHandle, remote: State<'_, RemoteState>) -> CommandResult<RemoteStatus> {
+    remote.update(|config| {
+        config.access_client_id = None;
+        config.access_client_secret = None;
     })?;
     remote.relay_changed.notify_waiters();
     remote.changed(&app);
@@ -485,8 +525,8 @@ pub fn remote_pair_start(app: AppHandle, remote: State<'_, RemoteState>) -> Comm
     if !remote.config().enabled {
         return Err(DesktopError::not_ready("Turn on phone access first."));
     }
-    if remote.config().relay_url.is_none() {
-        return Err(DesktopError::not_ready("Set the relay's address first."));
+    if phone_url(&remote.config()).is_none() {
+        return Err(DesktopError::not_ready("Set the address the phone uses first."));
     }
     let pairing = Pairing { code: devices::new_pairing_code(), expires_at: now_ms() + PAIRING_MS, attempts: 0 };
     let view = remote.pairing_view(&remote.config(), &pairing);
@@ -529,12 +569,26 @@ mod tests {
     use super::*;
 
     #[test]
-    fn a_relay_address_is_an_https_host() {
-        assert_eq!(normalize_relay_url("thingmaker-relay.pau.workers.dev/").unwrap(), "https://thingmaker-relay.pau.workers.dev");
-        assert_eq!(normalize_relay_url(" https://thingmaker-relay.pau.workers.dev ").unwrap(), "https://thingmaker-relay.pau.workers.dev");
-        assert!(normalize_relay_url("http://thingmaker-relay.pau.workers.dev").is_err(), "the phone only talks https to it");
-        assert!(normalize_relay_url("https://x.workers.dev/app").is_err());
-        assert!(normalize_relay_url("localhost").is_err());
+    fn a_phone_address_is_an_https_host_in_either_mode() {
+        let relay = ConnectionMode::Relay;
+        assert_eq!(normalize_url("thingmaker-relay.pau.workers.dev/", relay).unwrap(), "https://thingmaker-relay.pau.workers.dev");
+        assert_eq!(normalize_url(" https://thingmaker-relay.pau.workers.dev ", relay).unwrap(), "https://thingmaker-relay.pau.workers.dev");
+        assert!(normalize_url("http://thingmaker-relay.pau.workers.dev", relay).is_err(), "the phone only talks https");
+        assert!(normalize_url("https://x.workers.dev/app", relay).is_err());
+        assert!(normalize_url("localhost", relay).is_err());
+        let direct = ConnectionMode::Direct;
+        assert_eq!(normalize_url("thingmaker.example.com", direct).unwrap(), "https://thingmaker.example.com");
+        assert!(normalize_url("http://thingmaker.example.com", direct).is_err());
+    }
+
+    #[test]
+    fn the_phone_uses_the_address_of_the_chosen_mode_and_only_direct_listens() {
+        let mut config = RemoteConfig { enabled: true, relay_url: Some("https://r.workers.dev".into()), direct_url: Some("https://t.example.com".into()), ..RemoteConfig::default() };
+        assert_eq!(phone_url(&config).as_deref(), Some("https://r.workers.dev"));
+        config.mode = ConnectionMode::Direct;
+        assert_eq!(phone_url(&config).as_deref(), Some("https://t.example.com"));
+        let saved: RemoteConfig = serde_json::from_str(r#"{"enabled":true,"relayUrl":"https://r.workers.dev"}"#).unwrap();
+        assert_eq!(saved.mode, ConnectionMode::Relay, "a configuration from before the modes keeps the relay");
     }
 
     #[test]

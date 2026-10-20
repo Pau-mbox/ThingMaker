@@ -49,7 +49,8 @@ pub async fn run(app: AppHandle) {
     loop {
         let remote = app.state::<RemoteState>();
         let config = remote.config();
-        let Some(url) = config.relay_url.clone().filter(|_| config.enabled) else {
+        let relaying = config.enabled && config.mode == super::devices::ConnectionMode::Relay;
+        let Some(url) = config.relay_url.clone().filter(|_| relaying) else {
             remote.set_relay(&app, "off", None);
             tokio::select! {
                 () = remote.relay_changed.notified() => {}
@@ -151,7 +152,7 @@ async fn connect(app: &AppHandle, url: &str) -> Result<(), String> {
                         }
                         Some("ws_open") => {
                             let (to_conversation, from_phone) = mpsc::unbounded_channel::<String>();
-                            let (to_phone, mut from_conversation) = mpsc::unbounded_channel::<String>();
+                            let (to_phone, mut from_conversation) = server::outbox();
                             streams.insert(id.clone(), to_conversation);
                             tokio::spawn(server::converse(app.clone(), from_phone, to_phone));
                             let out = out.clone();

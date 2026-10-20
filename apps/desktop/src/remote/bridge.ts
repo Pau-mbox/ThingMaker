@@ -102,13 +102,21 @@ function token(): string {
 
 export type ConnectionState = "connecting" | "open" | "denied" | "closed";
 
-class Bridge {
+/** Calls running at once; the computer refuses more than 16 from one phone. */
+const MAX_IN_FLIGHT = 8;
+
+export class Bridge {
   private socket: Socket | null = null;
   private next = 1;
   private pending = new Map<number, Pending>();
   private channels = new Map<number, ChannelSink>();
   private listeners = new Map<string, Set<(payload: unknown) => void>>();
-  private queue: string[] = [];
+  /** Frames written while the socket was not open yet, with their call's id. */
+  private queue: { text: string; id?: number }[] = [];
+  /** Calls whose frame went out: their outcome is unknown if the line drops. */
+  private sent = new Set<number>();
+  /** Calls waiting for room under {@link MAX_IN_FLIGHT}. */
+  private waiting: { start: () => void; reject: (error: unknown) => void }[] = [];
   private state: ConnectionState = "connecting";
   private watchers = new Set<(state: ConnectionState, message?: string) => void>();
   private everOpen = false;
@@ -126,8 +134,16 @@ class Bridge {
     socket.onmessage = (message) => this.receive(String(message.data));
     socket.onclose = () => {
       this.socket = null;
-      for (const [, pending] of this.pending) pending.reject({ code: "IO", message: "The connection to the Mac dropped.", retry: "safe" });
+      // A call that went out may or may not have run: it is never sent
+      // again by itself. One that never left can be tried again.
+      for (const [id, pending] of this.pending) {
+        if (this.sent.has(id)) pending.reject({ code: "IO", message: "The connection dropped while this was on its way; check before trying again.", retry: "user_action" });
+        else pending.reject({ code: "IO", message: "Not sent: the connection to the computer dropped.", retry: "safe" });
+      }
+      for (const waiting of this.waiting.splice(0)) waiting.reject({ code: "IO", message: "Not sent: the connection to the computer dropped.", retry: "safe" });
       this.pending.clear();
+      this.sent.clear();
+      this.queue.length = 0;
       if (this.state === "denied") return;
       this.setState("closed");
       // A reconnect starts the screens over: streams missed while away are
@@ -161,7 +177,10 @@ class Bridge {
         this.everOpen = true;
         this.retry = 1000;
         this.setState("open");
-        for (const queued of this.queue.splice(0)) this.socket?.send(queued);
+        for (const queued of this.queue.splice(0)) {
+          this.socket?.send(queued.text);
+          if (queued.id !== undefined) this.sent.add(queued.id);
+        }
         return;
       case "denied":
         this.setState("denied", String(frame.message ?? "This phone is not paired."));
@@ -171,8 +190,10 @@ class Bridge {
         const pending = this.pending.get(Number(frame.id));
         if (!pending) return;
         this.pending.delete(Number(frame.id));
+        this.sent.delete(Number(frame.id));
         if (frame.ok) pending.resolve(frame.value);
         else pending.reject(frame.error);
+        this.startWaiting();
         return;
       }
       case "channel":
@@ -185,17 +206,32 @@ class Bridge {
     }
   }
 
-  private send(frame: object) {
+  private send(frame: { id?: number }) {
     const text = JSON.stringify(frame);
-    if (this.socket && this.state === "open") this.socket.send(text);
-    else this.queue.push(text);
+    if (this.socket && this.state === "open") {
+      this.socket.send(text);
+      if (frame.id !== undefined) this.sent.add(frame.id);
+    } else this.queue.push({ text, ...(frame.id !== undefined ? { id: frame.id } : {}) });
   }
 
+  /** Starts calls that waited for room, oldest first. */
+  private startWaiting() {
+    while (this.pending.size < MAX_IN_FLIGHT && this.waiting.length > 0) this.waiting.shift()?.start();
+  }
+
+  /**
+   * Calls the computer. At most {@link MAX_IN_FLIGHT} run at once (the
+   * screens load many panels together); the rest wait their turn.
+   */
   call(command: string, args: Record<string, unknown> = {}): Promise<unknown> {
-    const id = this.next++;
     return new Promise((resolve, reject) => {
-      this.pending.set(id, { resolve, reject });
-      this.send({ t: "call", id, cmd: command, args: this.wire(args) });
+      const start = () => {
+        const id = this.next++;
+        this.pending.set(id, { resolve, reject });
+        this.send({ t: "call", id, cmd: command, args: this.wire(args) } as { id: number });
+      };
+      if (this.pending.size < MAX_IN_FLIGHT) start();
+      else this.waiting.push({ start, reject });
     });
   }
 

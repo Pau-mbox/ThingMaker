@@ -2,14 +2,16 @@
  * Phone access, in Settings: turn the bridge on, pair a phone by scanning a
  * QR code, see which phones are connected, and revoke one.
  *
- * The phone reaches the Mac through the user's own relay — a Cloudflare
- * Worker behind Cloudflare Access — so this asks for the relay's address and
- * the Access service token, says whether the Mac is connected to it, and
+ * The phone reaches this computer one of two ways, the user's choice:
+ * through the user's own relay (a Cloudflare Worker behind Cloudflare
+ * Access), or directly through the user's own tunnel to a local port. This
+ * asks for that address and an Access service token, says whether the
+ * computer is reachable that way, and
  * rather than offering a code no phone could reach.
  */
 import { useCallback, useEffect, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
-import { REMOTE_EVENT, type RemoteStatus } from "@thingmaker/contracts";
+import { REMOTE_EVENT, type ConnectionMode, type RemoteStatus } from "@thingmaker/contracts";
 import { api } from "../ipc";
 import { useStore } from "../store";
 
@@ -39,16 +41,28 @@ const RELAY_STATE: Record<string, string> = {
   error: "can't connect",
 };
 
-/** The relay's address and the Access service token in front of it. */
-function RelayForm({ status, onSaved }: { status: RemoteStatus; onSaved: () => void }) {
+const MODE_LABEL: Record<ConnectionMode, string> = {
+  relay: "Through my Cloudflare relay",
+  direct: "Direct, through my own tunnel",
+};
+
+/**
+ * How the phone reaches this computer, and the details of that way: the
+ * relay's address, or the public address of the user's own tunnel to this
+ * computer's port; either with an optional Cloudflare Access service token
+ * (the relay needs one).
+ */
+function ConnectionForm({ status, onSaved }: { status: RemoteStatus; onSaved: () => void }) {
   const setError = useStore((s) => s.setError);
-  const [url, setUrl] = useState(status.relay.url ?? "");
+  const [mode, setMode] = useState<ConnectionMode>(status.mode);
+  const saved = (which: ConnectionMode) => (which === "relay" ? status.relay.url : status.directUrl) ?? "";
+  const [url, setUrl] = useState(saved(status.mode));
   const [id, setId] = useState("");
   const [secret, setSecret] = useState("");
-  const [editing, setEditing] = useState(!status.relay.url);
+  const [editing, setEditing] = useState(!saved(status.mode));
   const save = () =>
     api
-      .remoteSetRelay(url, id, secret)
+      .remoteSetConnection(mode, url, id, secret)
       .then(() => {
         setId("");
         setSecret("");
@@ -57,52 +71,107 @@ function RelayForm({ status, onSaved }: { status: RemoteStatus; onSaved: () => v
       })
       .catch((error: unknown) => setError(error));
   const relay = status.relay;
-  return (
-    <div className="phone-relay">
-      {relay.url && !editing ? (
+  const port = status.listening[0] ?? `127.0.0.1:${status.port}`;
+  const current = saved(status.mode);
+  if (current && !editing) {
+    return (
+      <div className="phone-relay">
         <p className="small">
-          Relay <span className="mono">{relay.url}</span> ·{" "}
-          <span className={relay.state === "connected" ? "" : relay.state === "error" ? "chip-warn" : "muted"}>{RELAY_STATE[relay.state] ?? relay.state}</span>
-          {relay.access ? " · Cloudflare Access on" : " · no Access token set"}{" "}
-          <button className="link small" onClick={() => setEditing(true)} type="button">
+          {MODE_LABEL[status.mode]}: <span className="mono">{current}</span>
+          {status.mode === "relay" ? (
+            <>
+              {" · "}
+              <span className={relay.state === "connected" ? "" : relay.state === "error" ? "chip-warn" : "muted"}>{RELAY_STATE[relay.state] ?? relay.state}</span>
+            </>
+          ) : (
+            <span className="muted"> · forwarded to {port}</span>
+          )}
+          {relay.access ? " · Cloudflare Access on" : status.mode === "relay" ? " · no Access token set" : ""}{" "}
+          <button
+            className="link small"
+            onClick={() => {
+              setMode(status.mode);
+              setUrl(current);
+              setEditing(true);
+            }}
+            type="button"
+          >
             change
           </button>
-          {relay.message && <span className="small muted"> — {relay.message}</span>}
+          {status.mode === "relay" && relay.message && <span className="small muted"> — {relay.message}</span>}
         </p>
-      ) : (
-        <form
-          className="phone-relay-form"
-          onSubmit={(event) => {
-            event.preventDefault();
-            void save();
-          }}
-        >
+      </div>
+    );
+  }
+  return (
+    <div className="phone-relay">
+      <form
+        className="phone-relay-form"
+        onSubmit={(event) => {
+          event.preventDefault();
+          void save();
+        }}
+      >
+        <div className="row" role="radiogroup" aria-label="How the phone reaches this computer">
+          {(["relay", "direct"] as const).map((choice) => (
+            <label className="check small" key={choice}>
+              <input
+                checked={mode === choice}
+                name="phone-mode"
+                onChange={() => {
+                  setMode(choice);
+                  setUrl(saved(choice));
+                }}
+                type="radio"
+              />{" "}
+              {MODE_LABEL[choice]}
+            </label>
+          ))}
+        </div>
+        {mode === "relay" ? (
           <p className="small muted">
             Deploy the relay once with <span className="mono">pnpm relay:deploy</span> (it asks you to sign in to Cloudflare), turn on Cloudflare Access in the
-            Worker&rsquo;s Access tab with a service token, and paste the details here. The README has the steps.
+            Worker&rsquo;s Access tab with a service token, and paste the details here. This computer only connects out. The README has the steps.
           </p>
-          <input aria-label="Relay address" className="input" onChange={(event) => setUrl(event.target.value)} placeholder="https://thingmaker-relay.you.workers.dev" value={url} />
-          <input aria-label="Access client ID" className="input" onChange={(event) => setId(event.target.value)} placeholder={relay.access ? "Access client ID (saved)" : "Access client ID"} value={id} />
-          <input
-            aria-label="Access client secret"
-            className="input"
-            onChange={(event) => setSecret(event.target.value)}
-            placeholder={relay.access ? "Access client secret (saved)" : "Access client secret"}
-            type="password"
-            value={secret}
-          />
-          <div className="row">
-            <button className="button button-small button-primary" disabled={!url.trim()} type="submit">
-              Save
+        ) : (
+          <p className="small muted">
+            This computer listens on <span className="mono">{port}</span> (this computer only). Expose that port at an HTTPS address with your own tunnel — for
+            example <span className="mono">cloudflared tunnel --url http://{port}</span>, <span className="mono">tailscale funnel {status.port}</span>, or an SSH
+            reverse forward to a server — and paste the public address. Cloudflare Access in front of it is optional. The README has the steps.
+          </p>
+        )}
+        <input
+          aria-label={mode === "relay" ? "Relay address" : "Tunnel address"}
+          className="input"
+          onChange={(event) => setUrl(event.target.value)}
+          placeholder={mode === "relay" ? "https://thingmaker-relay.you.workers.dev" : "https://thingmaker.example.com"}
+          value={url}
+        />
+        <input aria-label="Access client ID" className="input" onChange={(event) => setId(event.target.value)} placeholder={relay.access ? "Access client ID (saved)" : mode === "relay" ? "Access client ID" : "Access client ID (optional)"} value={id} />
+        <input
+          aria-label="Access client secret"
+          className="input"
+          onChange={(event) => setSecret(event.target.value)}
+          placeholder={relay.access ? "Access client secret (saved)" : mode === "relay" ? "Access client secret" : "Access client secret (optional)"}
+          type="password"
+          value={secret}
+        />
+        <div className="row">
+          <button className="button button-small button-primary" disabled={!url.trim()} type="submit">
+            Save
+          </button>
+          {current && (
+            <button className="button button-small" onClick={() => setEditing(false)} type="button">
+              Cancel
             </button>
-            {relay.url && (
-              <button className="button button-small" onClick={() => setEditing(false)} type="button">
-                Cancel
-              </button>
-            )}
-          </div>
-        </form>
-      )}
+          )}
+          {relay.access && (
+            <button className="link small" onClick={() => void api.remoteClearAccess().then(onSaved).catch((error: unknown) => setError(error))} type="button">
+              forget the Access token
+            </button>
+          )}
+        </div>
+      </form>
     </div>
   );
 }
@@ -156,16 +225,18 @@ export function PhoneSection() {
   };
 
   if (!status) return null;
-  const reachable = status.relay.state === "connected";
+  // Ready for a phone: the relay connected, or the tunnel's address set and
+  // the port listening.
+  const reachable = status.mode === "relay" ? status.relay.state === "connected" : !!status.directUrl && status.listening.length > 0;
   const left = pairing ? Math.max(0, Math.round((pairing.expiresAt - now) / 1000)) : 0;
 
   return (
     <section className="phone-section">
       <h3>Phone</h3>
       <p className="small muted">
-        Follow and control this Mac&rsquo;s sessions and Big Things from the ThingMaker app on your Android phone. The phone reaches this Mac through your own relay on
-        Cloudflare — the Mac only connects out, nothing listens here — behind Cloudflare Access, and each phone gets its own key, which you can revoke here. Sign-ins, provider settings, the terminal, git and file writes stay on
-        the Mac.
+        Follow and control this computer&rsquo;s sessions and Big Things from the ThingMaker app on your Android phone, from anywhere. Choose how the phone
+        reaches this computer: through your own relay on Cloudflare (this computer only connects out) or directly through your own tunnel. Each phone gets its
+        own key, which you can revoke here. Sign-ins, provider settings, the terminal, git and file writes stay on this computer.
       </p>
       <label className="check">
         <input checked={status.enabled} onChange={(event) => run(() => api.remoteSetEnabled(event.target.checked))} type="checkbox" /> Allow phone access
@@ -173,14 +244,14 @@ export function PhoneSection() {
 
       {status.enabled && (
         <>
-          <RelayForm onSaved={refresh} status={status} />
+          <ConnectionForm onSaved={refresh} status={status} />
 
           {pairing ? (
             <div className="phone-pairing">
               <div className="phone-qr" dangerouslySetInnerHTML={{ __html: pairing.qrSvg }} />
               <div>
                 <p className="small">
-                  In the ThingMaker app on your phone, tap <strong>Pair with a Mac</strong> and scan this code. Or type the code:
+                  In the ThingMaker app on your phone, tap <strong>Pair with a computer</strong> and scan this code. Or type the code:
                 </p>
                 <p className="mono phone-code">{pairing.code.replace(/(.{5})/, "$1 ")}</p>
                 <p className="small muted">
@@ -192,7 +263,7 @@ export function PhoneSection() {
               </div>
             </div>
           ) : (
-            <button className="button" disabled={!reachable} onClick={() => run(api.remotePairStart)} title={reachable ? undefined : "Connect the Mac to its relay first"} type="button">
+            <button className="button" disabled={!reachable} onClick={() => run(api.remotePairStart)} title={reachable ? undefined : status.mode === "relay" ? "Connect this computer to its relay first" : "Set the tunnel\u2019s address first"} type="button">
               Pair a phone
             </button>
           )}

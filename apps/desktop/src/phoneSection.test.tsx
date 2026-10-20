@@ -1,14 +1,15 @@
-/** Settings → Phone: the relay's address and the Access token, and the Mac's line to it. */
+/** Settings → Phone: how the phone reaches this computer (relay or direct), and the details of that way. */
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 const calls: { command: string; args: Record<string, unknown> }[] = [];
 let relay: Record<string, unknown> = { url: null, state: "off", message: null, access: false };
+let extra: Record<string, unknown> = { mode: "relay", directUrl: null, listening: [] };
 vi.mock("@tauri-apps/api/core", () => ({
   invoke: vi.fn(async (command: string, args: Record<string, unknown>) => {
     calls.push({ command, args });
-    if (command === "remote_status" || command === "remote_set_relay")
-      return { enabled: true, port: 47321, name: "Mac", relay, listening: [], devices: [], pairing: null, offers: [] };
+    if (command === "remote_status" || command === "remote_set_connection")
+      return { enabled: true, port: 47321, name: "Mac", relay, devices: [], pairing: null, offers: [], ...extra };
     return null;
   }),
   Channel: class {},
@@ -28,9 +29,12 @@ async function settle() {
   });
 }
 
-describe("phone access through the relay", () => {
+const pairButton = () => screen.getByRole("button", { name: "Pair a phone" }) as HTMLButtonElement;
+
+describe("how the phone reaches this computer", () => {
   it("asks for the relay and the Access token, and saves them", async () => {
     relay = { url: null, state: "off", message: null, access: false };
+    extra = { mode: "relay", directUrl: null, listening: [] };
     render(<PhoneSection />);
     await settle();
     fireEvent.change(screen.getByLabelText("Relay address"), { target: { value: "thingmaker-relay.pau.workers.dev" } });
@@ -39,16 +43,41 @@ describe("phone access through the relay", () => {
     await act(async () => {
       fireEvent.click(screen.getByRole("button", { name: "Save" }));
     });
-    expect(calls.find((call) => call.command === "remote_set_relay")?.args).toEqual({ url: "thingmaker-relay.pau.workers.dev", accessClientId: "id.access", accessClientSecret: "s3cret" });
-    expect((screen.getByRole("button", { name: "Pair a phone" }) as HTMLButtonElement).disabled).toBe(true);
+    expect(calls.find((call) => call.command === "remote_set_connection")?.args).toEqual({ mode: "relay", url: "thingmaker-relay.pau.workers.dev", accessClientId: "id.access", accessClientSecret: "s3cret" });
+    expect(pairButton().disabled).toBe(true);
   });
 
-  it("says when the Mac is connected to its relay, and lets a phone pair", async () => {
+  it("says when the computer is connected to its relay, and lets a phone pair", async () => {
     relay = { url: "https://thingmaker-relay.pau.workers.dev", state: "connected", message: null, access: true };
+    extra = { mode: "relay", directUrl: null, listening: [] };
     render(<PhoneSection />);
     await settle();
     expect(screen.getByText("connected")).toBeTruthy();
     expect(screen.getByText(/Cloudflare Access on/)).toBeTruthy();
-    expect((screen.getByRole("button", { name: "Pair a phone" }) as HTMLButtonElement).disabled).toBe(false);
+    expect(pairButton().disabled).toBe(false);
+  });
+
+  it("saves a tunnel's address in the direct mode, with the port it forwards to", async () => {
+    relay = { url: "https://thingmaker-relay.pau.workers.dev", state: "off", message: null, access: false };
+    extra = { mode: "relay", directUrl: null, listening: [] };
+    render(<PhoneSection />);
+    await settle();
+    fireEvent.click(screen.getByRole("button", { name: "change" }));
+    fireEvent.click(screen.getByLabelText(/Direct, through my own tunnel/));
+    expect(screen.getByText(/cloudflared tunnel --url http:\/\/127.0.0.1:47321/)).toBeTruthy();
+    fireEvent.change(screen.getByLabelText("Tunnel address"), { target: { value: "https://thingmaker.example.com" } });
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    });
+    expect(calls.find((call) => call.command === "remote_set_connection")?.args).toMatchObject({ mode: "direct", url: "https://thingmaker.example.com" });
+  });
+
+  it("lets a phone pair in the direct mode once the port listens", async () => {
+    relay = { url: null, state: "off", message: null, access: false };
+    extra = { mode: "direct", directUrl: "https://thingmaker.example.com", listening: ["127.0.0.1:47321"] };
+    render(<PhoneSection />);
+    await settle();
+    expect(screen.getByText(/forwarded to 127.0.0.1:47321/)).toBeTruthy();
+    expect(pairButton().disabled).toBe(false);
   });
 });

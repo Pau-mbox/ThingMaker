@@ -14,6 +14,18 @@ fn default_port() -> u16 {
     DEFAULT_PORT
 }
 
+/// How the phone reaches this computer.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
+#[serde(rename_all = "camelCase")]
+pub enum ConnectionMode {
+    /// Both meet at the user's Cloudflare relay; the computer only connects out.
+    #[default]
+    Relay,
+    /// The computer listens on loopback and the user's own tunnel exposes it
+    /// at an HTTPS address.
+    Direct,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct RemoteConfig {
@@ -27,7 +39,14 @@ pub struct RemoteConfig {
     /// `https://thingmaker-relay.<account>.workers.dev`.
     #[serde(default)]
     pub relay_url: Option<String>,
-    /// The Cloudflare Access service token in front of the relay.
+    #[serde(default)]
+    pub mode: ConnectionMode,
+    /// The HTTPS address the user's tunnel gives this computer's port, for
+    /// the Direct mode.
+    #[serde(default)]
+    pub direct_url: Option<String>,
+    /// The Cloudflare Access service token in front of the relay, or in front
+    /// of the tunnel in the Direct mode (optional there).
     #[serde(default)]
     pub access_client_id: Option<String>,
     #[serde(default)]
@@ -39,7 +58,7 @@ pub struct RemoteConfig {
 
 impl Default for RemoteConfig {
     fn default() -> Self {
-        Self { enabled: false, port: DEFAULT_PORT, devices: Vec::new(), relay_url: None, access_client_id: None, access_client_secret: None, mac_key: None }
+        Self { enabled: false, port: DEFAULT_PORT, devices: Vec::new(), relay_url: None, mode: ConnectionMode::Relay, direct_url: None, access_client_id: None, access_client_secret: None, mac_key: None }
     }
 }
 

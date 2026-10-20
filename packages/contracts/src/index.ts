@@ -997,13 +997,21 @@ export type RemoteDevice = { id: string; name: string; pairedAt: number; lastSee
 /** An open pairing: the QR the phone scans, and the code it carries. */
 export type RemotePairing = { code: string; expiresAt: number; payload: string; qrSvg: string };
 
+/** Relay: both meet at the user's Cloudflare Worker. Direct: the user's own tunnel reaches the computer. */
+export type ConnectionMode = "relay" | "direct";
+
 export type RemoteStatus = {
   enabled: boolean;
   port: number;
   /** This Mac's name, as the phone shows it. */
   name: string;
-  /** The Mac's line to its Cloudflare relay. */
+  /** How the phone reaches this computer. */
+  mode: ConnectionMode;
+  /** The public HTTPS address of the user's tunnel, for the direct mode. */
+  directUrl: string | null;
+  /** The computer's line to its Cloudflare relay. */
   relay: RelayView;
+  /** Loopback addresses the bridge listens on (the direct mode's tunnel target). */
   listening: string[];
   devices: RemoteDevice[];
   pairing: RemotePairing | null;
@@ -1638,7 +1646,8 @@ export const COMMANDS = {
   remotePairStart: "remote_pair_start",
   remotePairCancel: "remote_pair_cancel",
   remoteDeviceRevoke: "remote_device_revoke",
-  remoteSetRelay: "remote_set_relay",
+  remoteSetConnection: "remote_set_connection",
+  remoteClearAccess: "remote_clear_access",
   remotePickApk: "remote_pick_apk",
   remoteSendApk: "remote_send_apk",
 } as const;

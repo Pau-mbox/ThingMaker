@@ -65,6 +65,7 @@ import {
   type EditorProfile,
   type ApkOffer,
   type RemotePairing,
+  type ConnectionMode,
   type RemoteStatus,
   type EventEnvelope as EventEnvelopeType,
   type FileVersions,
@@ -368,8 +369,10 @@ export const api = {
   remoteDeviceRevoke: (id: string) => call<RemoteStatus>(COMMANDS.remoteDeviceRevoke, { id }),
   remotePickApk: () => call<string | null>(COMMANDS.remotePickApk),
   /** The relay's address and the Access service token; empty token fields keep the saved ones. */
-  remoteSetRelay: (url: string, accessClientId: string, accessClientSecret: string) =>
-    call<RemoteStatus>(COMMANDS.remoteSetRelay, { url, accessClientId: accessClientId || null, accessClientSecret: accessClientSecret || null }),
+  /** The connection mode and its address; empty Access fields keep the saved token. */
+  remoteSetConnection: (mode: ConnectionMode, url: string, accessClientId: string, accessClientSecret: string) =>
+    call<RemoteStatus>(COMMANDS.remoteSetConnection, { mode, url, accessClientId: accessClientId || null, accessClientSecret: accessClientSecret || null }),
+  remoteClearAccess: () => call<RemoteStatus>(COMMANDS.remoteClearAccess),
   /** From the phone, the Mac sends it to that phone; from the Mac, to one phone or every connected one. */
   remoteSendApk: (path: string, device?: string) => call<ApkOffer>(COMMANDS.remoteSendApk, { path, device: device ?? null }),
   settingsGet: () => call<NotificationSettings>(COMMANDS.settingsGet),
