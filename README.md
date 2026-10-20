@@ -206,12 +206,19 @@ picks up the new build when you reopen it.
 
 ### 4. On your phone
 
-The Android app shows ThingMaker's own screens, served by your Mac, so the
-phone always matches the Mac's version. Phone and Mac meet at a small relay
-you deploy once to your Cloudflare account (a Worker on your free
-workers.dev address, `apps/relay`): the Mac only connects out, nothing on it
-listens to the network, and Cloudflare Access keeps everyone without your
-service token away from the relay.
+**ThingMaker Remote**, the Android app, carries ThingMaker's own screens and
+talks to your computer from anywhere. Choose how it reaches the computer in
+**Settings → Phone** — either way, each phone gets its own revocable key and
+nothing is reachable until you turn phone access on.
+
+| | **Relay** | **Direct** |
+| --- | --- | --- |
+| How | Phone and computer meet at a small relay you deploy to your Cloudflare account (a Worker on your free workers.dev address, `apps/relay`). | The computer listens on `127.0.0.1` only, and your own tunnel exposes that port at an HTTPS address. |
+| You need | A free Cloudflare account. | A tunnel you run: `cloudflared tunnel --url http://127.0.0.1:47321`, `tailscale funnel 47321`, or an SSH reverse forward to a server that has a public HTTPS address. |
+| Listens | Nothing: the computer only connects out. | Loopback only; nothing listens on the network. |
+| Cloudflare Access | Required, with a service token. | Optional, if your tunnel is behind it. |
+
+**Relay**
 
 1. **Deploy the relay.** `pnpm relay:deploy` — Wrangler asks you to sign in to
    Cloudflare the first time — and note the address it prints,
@@ -219,35 +226,52 @@ service token away from the relay.
 2. **Put Cloudflare Access in front of it.** In the Cloudflare dashboard:
    - Zero Trust → Access → Service auth → **Create service token**; copy the
      Client ID and Client Secret.
-   - Workers & Pages → `thingmaker-relay` → **Access**: protect the
-     workers.dev address with a policy whose action is **Service Auth** and
-     which includes that service token.
-3. **Connect the Mac.** In ThingMaker, **Settings → Phone**: turn on phone
-   access, paste the relay address, the Client ID and the Client Secret, and
-   save. It shows *connected* once the Mac reaches the relay.
-4. **Install the app** with `pnpm phone` (Java 17 and the Android SDK; it
-   installs itself when a phone is plugged in with USB debugging on,
-   otherwise copy `ThingMaker-phone.apk` to the phone).
-5. **Pair.** In **Settings → Phone**, press **Pair a phone** and scan the QR
-   code with the app. The code carries the relay address and the Access
-   token, so the phone needs nothing else.
+   - Zero Trust → Access → **Policies** → add a policy whose action is
+     **Service Auth** and which includes that service token.
+   - Workers & Pages → `thingmaker-relay` → **Access**: protect all traffic
+     with that policy.
+3. **Connect the computer.** In ThingMaker, **Settings → Phone**: turn on
+   phone access, choose *Through my Cloudflare relay*, paste the relay
+   address, the Client ID and the Client Secret, and save. It shows
+   *connected* once the computer reaches the relay.
 
-Traffic is encrypted between each device and Cloudflare, and Cloudflare ends
-TLS at its edge; each phone's own token, checked on the Mac, is the key to
-the bridge itself.
+**Direct**
+
+1. **Expose the port** with your tunnel, pointing it at the address
+   **Settings → Phone** shows (`127.0.0.1:47321` by default), and note its
+   public HTTPS address.
+2. **Connect the computer.** In **Settings → Phone**: turn on phone access,
+   choose *Direct, through my own tunnel*, paste the public address (and an
+   Access service token if your tunnel is behind Cloudflare Access), and save.
+
+**Then, either way**
+
+1. **Install the app** with `pnpm phone` (Java 17 and the Android SDK; it
+   builds the screens into the APK and installs itself when a phone is
+   plugged in with USB debugging on, otherwise copy `ThingMaker-phone.apk` to
+   the phone).
+2. **Pair.** In **Settings → Phone**, press **Pair a phone** and scan the QR
+   code with the app. The code carries the mode, the address and any Access
+   token, so the phone needs nothing else; you can also type them in.
+
+The app keeps its token and the Access secret encrypted with an Android
+Keystore key, and only its native code uses them: the screens never see
+either. Traffic is encrypted between the phone and the HTTPS address; behind
+Cloudflare, Cloudflare ends TLS at its edge.
 
 From the phone you can read and follow sessions, send and steer, cancel, start
-sessions, run and answer Big Things and decide their plan changes, and cancel
-or retry worker jobs. Sign-ins, provider settings, workspace trust, the
-terminal, git and file writes stay on the Mac. The app asks for your
-fingerprint or screen lock when it opens, and notifies you when a Big Thing
-needs input, is blocked or is done, or a worker's job fails. Revoke a phone in
-**Settings → Phone**.
+sessions, attach files from the phone, read the project's files and changes,
+run and answer Big Things and decide their plan changes, and cancel or retry
+worker jobs. Sign-ins, provider settings, workspace trust, the terminal, git
+and file writes stay on the computer. The app notifies you when a Big Thing
+needs input, is blocked or is done, or a worker's job fails; it can ask for
+your fingerprint or screen lock when it opens (on by default, in its menu),
+and it speaks English or Spanish. Revoke a phone in **Settings → Phone**.
 
 **Installing apps without a cable.** **Settings → Phone → Send an app…** puts
 any `.apk` on a connected phone, and an `.apk` an agent names in a session
 gets an **Install on phone** button (on the phone: **Install on this phone**).
-The phone downloads it through the relay, checks its SHA-256, and Android asks
+The phone downloads it over its connection, checks its SHA-256, and Android asks
 you to confirm — once, the first time, it also asks you to let ThingMaker
 install apps. That includes updates of the ThingMaker app itself: run
 `pnpm phone` and send `ThingMaker-phone.apk`. Agents can do the same: every
