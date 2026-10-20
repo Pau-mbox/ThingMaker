@@ -13,6 +13,7 @@ import { useStore, basenameOf } from "../store";
 import { api } from "../ipc";
 import { redactText } from "../redact";
 
+
 const ChillPreferences = lazy(() => import("../chill/ChillPreferences"));
 
 function bytes(n: number): string {
@@ -498,7 +499,7 @@ function KeepAwakeSection({ settings, onChange }: { settings: NotificationSettin
     <section>
       <h3>While agents work</h3>
       <label className="check">
-        <input checked={settings.keepAwake} onChange={(e) => onChange({ keepAwake: e.target.checked })} type="checkbox" /> Keep the Mac awake while sessions, Big Things or
+        <input checked={settings.keepAwake} onChange={(e) => onChange({ keepAwake: e.target.checked })} type="checkbox" /> Keep this computer awake while sessions, Big Things or
         team jobs are working
       </label>
       <label className="check">
@@ -506,7 +507,7 @@ function KeepAwakeSection({ settings, onChange }: { settings: NotificationSettin
         battery too
       </label>
       <p className="small muted">
-        Only idle sleep is held off: the display still sleeps, and closing the lid still sleeps the Mac. A Big Thing parked until a limit resets counts as working, so
+        Only idle sleep is held off: the display still sleeps, and manual sleep and lid actions still follow system settings. A Big Thing parked until a limit resets counts as working, so
         it is awake to carry on.
       </p>
       {status && (

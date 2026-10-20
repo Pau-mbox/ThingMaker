@@ -6,8 +6,22 @@ release gate, not a hidden feature.
 
 ## Local build and install - implemented
 
-`pnpm app` builds `ThingMaker.app` in release and installs it in `/Applications`
-(`scripts/install-app.sh`; `CODE_APP_DIR` changes the destination). It:
+`pnpm app` runs `scripts/install-app.mjs`, which picks the platform's
+installer.
+
+### Windows
+
+`scripts/install-app.ps1` builds an x64 NSIS bundle and installs it for the
+current user, in `%LOCALAPPDATA%\ThingMaker` unless `THINGMAKER_INSTALL_DIR`
+names another absolute path (remembered for later builds). It refuses to
+install while ThingMaker is running, so local tasks can stop safely, and
+records the installed commit after a successful install.
+`scripts/windows-build-env.ps1` loads the Visual Studio C++ environment.
+
+### macOS
+
+`scripts/install-app.sh` builds `ThingMaker.app` in release and installs it in
+`/Applications` (`CODE_APP_DIR` changes the destination). It:
 
 - refuses to replace a `ThingMaker.app` whose identifier is not
   `dev.thingmaker.desktop`;

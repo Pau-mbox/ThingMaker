@@ -36,6 +36,9 @@ pub struct TerminalOpened {
 }
 
 fn default_shell() -> PathBuf {
+    if cfg!(windows) {
+        return std::env::var_os("COMSPEC").map(PathBuf::from).unwrap_or_else(|| PathBuf::from("cmd.exe"));
+    }
     if let Some(shell) = std::env::var_os("SHELL")
         && !shell.is_empty()
         && PathBuf::from(&shell).is_file()
@@ -43,6 +46,37 @@ fn default_shell() -> PathBuf {
         return PathBuf::from(shell);
     }
     if cfg!(target_os = "macos") { PathBuf::from("/bin/zsh") } else { PathBuf::from("/bin/sh") }
+}
+
+/// The folder the shell starts in. On Windows, Rust's canonical `\\?\D:\…`
+/// paths read to CMD as UNC, and it silently starts in `C:\Windows` instead,
+/// so the plain drive path is passed; network folders are refused.
+fn shell_cwd(root: &str) -> CommandResult<PathBuf> {
+    #[cfg(windows)]
+    {
+        if let Some(path) = root.strip_prefix("\\\\?\\") {
+            if path.starts_with("UNC\\") {
+                return Err(DesktopError::unsupported("CMD terminals require a local project folder"));
+            }
+            return Ok(PathBuf::from(path));
+        }
+        if root.starts_with("\\\\") {
+            return Err(DesktopError::unsupported("CMD terminals require a local project folder"));
+        }
+    }
+    Ok(PathBuf::from(root))
+}
+
+#[cfg(all(test, windows))]
+mod shell_cwd_tests {
+    use super::*;
+    #[test]
+    fn cmd_uses_the_project_drive_path_and_never_falls_back_from_unc() {
+        assert_eq!(shell_cwd(r"\\?\D:\repos\project").unwrap(), PathBuf::from(r"D:\repos\project"));
+        assert_eq!(shell_cwd(r"D:\repos\project").unwrap(), PathBuf::from(r"D:\repos\project"));
+        assert!(shell_cwd(r"\\?\UNC\server\project").is_err());
+        assert!(shell_cwd(r"\\server\project").is_err());
+    }
 }
 
 #[tauri::command]
@@ -61,9 +95,9 @@ pub fn terminal_open(request: TerminalOpenRequest, state: State<'_, AppState>) -
     let env: Vec<(String, String)> = profile.resolve(std::env::vars()).into_iter().collect();
     let shell = default_shell();
     let terminal = state.terminals.open(TerminalSpawn {
-        cwd: PathBuf::from(&record.canonical_root),
+        cwd: shell_cwd(&record.canonical_root)?,
         program: shell,
-        args: vec!["-l".into()],
+        args: if cfg!(windows) { vec!["/D".into()] } else { vec!["-l".into()] },
         env,
         cols: request.cols,
         rows: request.rows,

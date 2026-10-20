@@ -194,6 +194,8 @@ impl Transport {
             // direct descendants together (best effort, spec section 8.6).
             command.process_group(0);
         }
+        #[cfg(windows)]
+        command.creation_flags(0x08000000); // CREATE_NO_WINDOW: stdio agents have no console UI.
         let mut child = command.spawn().map_err(|error| {
             TransportError::Io(format!("could not start {}: {error}", spec.program.display()))
         })?;

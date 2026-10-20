@@ -90,7 +90,7 @@ impl AppState {
             agent_session_ids: Mutex::new(HashMap::new()),
             actor_roots: Mutex::new(HashMap::new()),
             auth_runs: Arc::new(Mutex::new(HashMap::new())),
-            home: std::env::var_os("HOME").map(PathBuf::from),
+            home: std::env::var_os("HOME").or_else(|| std::env::var_os("USERPROFILE")).map(PathBuf::from),
             terminals: TerminalManager::new(),
             terminal_workspaces: Mutex::new(HashMap::new()),
             data_dir: data_dir.to_path_buf(),
@@ -301,6 +301,17 @@ fn find_codex(home: &Path) -> Option<PathBuf> {
     nvm.sort();
     nvm.reverse();
     candidates.extend(nvm);
+    #[cfg(windows)]
+    {
+        // The Codex desktop installer keeps versioned native binaries here, newest first.
+        let mut bundled: Vec<_> = std::fs::read_dir(home.join("AppData/Local/OpenAI/Codex/bin")).into_iter().flatten().flatten().map(|entry| entry.path().join(name)).collect();
+        bundled.sort_by_key(|path| std::fs::metadata(path).and_then(|m| m.modified()).ok());
+        candidates.extend(bundled.into_iter().rev());
+        for dir in std::env::split_paths(&path_var).chain([home.join("AppData/Roaming/npm")]) {
+            candidates.push(dir.join("node_modules/@openai/codex/vendor/x86_64-pc-windows-msvc/codex/codex.exe"));
+            candidates.push(dir.join("node_modules/@openai/codex/node_modules/@openai/codex-win32-x64/vendor/x86_64-pc-windows-msvc/codex/codex.exe"));
+        }
+    }
     candidates.extend([
         PathBuf::from("/opt/homebrew/bin").join(name),
         PathBuf::from("/usr/local/bin").join(name),

@@ -1568,12 +1568,28 @@ export const useStore = create<State>((set, get) => ({
    * re-sent; the supervisor's event log is the only source.
    */
   async rehydrate() {
+    const observed = Object.values(get().sessions).map((session) => session.handle);
     let open: Awaited<ReturnType<typeof api.sessionListOpen>> = [];
     try {
       open = await api.sessionListOpen();
     } catch {
       return;
     }
+    // A session stopped on the other screen is no longer live. Remove its
+    // stale attention marker too, but keep durable records and drafts.
+    // Do not remove attachments opened/replaced while this request was away.
+    const sessions = { ...get().sessions };
+    let view = get().view;
+    let removed = false;
+    for (const handle of observed) {
+      const session = sessions[handle.id];
+      if (!session || session.handle.attachmentGeneration !== handle.attachmentGeneration) continue;
+      if (open.some((entry) => entry.handle.id === handle.id && entry.handle.attachmentGeneration === handle.attachmentGeneration)) continue;
+      delete sessions[handle.id];
+      removed = true;
+      if (view.kind === "session" && view.sessionId === handle.id) view = { kind: "workspace", workspaceId: session.workspaceId };
+    }
+    if (removed) set({ sessions, sessionOrder: get().sessionOrder.filter((id) => !!sessions[id]), view });
     for (const entry of open) {
       if (get().sessions[entry.handle.id]) continue;
       const workspaceId = entry.workspaceId ?? get().workspaces.find((w) => w.canonicalRoot === entry.root)?.id;
@@ -1843,7 +1859,7 @@ export const useStore = create<State>((set, get) => ({
     // is shown, not resumed: a second process on the same session is refused
     // by the agent, and would compete with the first one if it were not.
     if (mode.mode === "resume") {
-      const live = Object.values(get().sessions).find((session) => session.snapshot.agentSessionId === mode.session_id);
+      const live = Object.values(get().sessions).find((session) => session.snapshot.agentSessionId === mode.session_id && session.projection.process !== "exited");
       if (live) return get().selectSession(live.handle.id);
       try {
         const running = (await api.sessionListOpen()).find((entry) => entry.agentSessionId === mode.session_id);

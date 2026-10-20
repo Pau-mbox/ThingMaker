@@ -26,5 +26,13 @@ apps/desktop/src-tauri/target/
 # Generated images (imagegen sidecar output)
 output/
 
+# Android generated files and local credentials
+apps/android/.gradle/
+apps/android/**/build/
+apps/android/local.properties
+*.keystore
+*.jks
+# The phone screens are built into the APK at packaging time.
+apps/android/app/src/main/assets/
 # The Android app's build
 ThingMaker-phone.apk

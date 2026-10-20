@@ -14,7 +14,7 @@
 use std::{
     io::{BufRead, BufReader, Write},
     path::{Path, PathBuf},
-    process::{Command, Stdio},
+    process::Stdio,
     time::{Duration, Instant},
 };
 
@@ -32,6 +32,7 @@ use crate::{
 /// in the adapter's own `node_modules`, else `claude` on PATH or in the
 /// usual install places.
 pub fn locate_claude_binary(adapter_script: &Path, home: &Path) -> Option<PathBuf> {
+    let name = if cfg!(windows) { "claude.exe" } else { "claude" };
     let package = adapter_script.parent()?.parent()?;
     let scoped = package.join("node_modules/@anthropic-ai");
     let mut bundled: Vec<PathBuf> = std::fs::read_dir(&scoped)
@@ -39,7 +40,7 @@ pub fn locate_claude_binary(adapter_script: &Path, home: &Path) -> Option<PathBu
         .flatten()
         .flatten()
         .filter(|entry| entry.file_name().to_string_lossy().starts_with("claude-agent-sdk-"))
-        .map(|entry| entry.path().join("claude"))
+        .map(|entry| entry.path().join(name))
         .filter(|path| path.is_file())
         .collect();
     bundled.sort();
@@ -48,15 +49,15 @@ pub fn locate_claude_binary(adapter_script: &Path, home: &Path) -> Option<PathBu
     }
     let path_var = std::env::var_os("PATH").unwrap_or_default();
     std::env::split_paths(&path_var)
-        .map(|dir| dir.join("claude"))
-        .chain([home.join(".local/bin/claude"), home.join(".claude/local/claude"), PathBuf::from("/opt/homebrew/bin/claude"), PathBuf::from("/usr/local/bin/claude")])
+        .map(|dir| dir.join(name))
+        .chain([home.join(".local/bin").join(name), home.join(".claude/local").join(name), PathBuf::from("/opt/homebrew/bin").join(name), PathBuf::from("/usr/local/bin").join(name)])
         .find(|path| path.is_file())
 }
 
 /// Asks Claude Code for the account's plan usage.
 pub fn read_quota(claude: &Path, timeout: Duration) -> Result<QuotaSnapshot, String> {
     let env = EnvironmentProfile::trusted_local().resolve(std::env::vars());
-    let mut child = Command::new(claude)
+    let mut child = crate::platform::command(claude)
         .args(["--output-format", "stream-json", "--input-format", "stream-json", "--verbose"])
         .current_dir(std::env::temp_dir())
         .env_clear()

@@ -193,7 +193,7 @@ function SessionRow({ row, showProject, onMenu, renaming, onRename }: { row: Row
             const box = event.currentTarget.getBoundingClientRect();
             onMenu(row, { x: box.right, y: box.bottom });
           }}
-          title="Rename, pin, open in Finder"
+          title="Rename, pin, open folder"
           type="button"
         >
           <IconDots size={14} />
@@ -255,7 +255,7 @@ function RowMenu({ row, at, onClose, onRename }: { row: Row; at: { x: number; y:
       )}
       {root && (
         <button className="context-item" onClick={act(() => void api.revealInFinder(root).catch(setError))} role="menuitem" type="button">
-          Open in Finder
+          Open folder
         </button>
       )}
       {row.id && (

@@ -288,12 +288,24 @@ pub fn reveal_in_finder(path: String, state: State<'_, AppState>) -> CommandResu
     if !known {
         return Err(DesktopError::untrusted("only folders inside a workspace are opened"));
     }
-    let mut command = std::process::Command::new("open");
+    let mut command = std::process::Command::new(if cfg!(windows) {
+        "explorer.exe"
+    } else if cfg!(target_os = "macos") {
+        "open"
+    } else {
+        "xdg-open"
+    });
     // A folder opens; a file is shown selected in its folder.
     if resolved.is_dir() {
         command.arg(&resolved);
     } else {
-        command.arg("-R").arg(&resolved);
+        if cfg!(windows) {
+            command.arg(format!("/select,{}", resolved.display()));
+        } else if cfg!(target_os = "macos") {
+            command.arg("-R").arg(&resolved);
+        } else {
+            command.arg(resolved.parent().unwrap_or(&resolved));
+        }
     }
-    command.spawn().map(|_| ()).map_err(|error| DesktopError::io(format!("could not open Finder: {error}")))
+    command.spawn().map(|_| ()).map_err(|error| DesktopError::io(format!("could not open file manager: {error}")))
 }

@@ -3,6 +3,9 @@ import { createRoot } from "react-dom/client";
 import { App } from "./App";
 import "./styles.css";
 
+// Platform styles (scrollbars, fonts) key off this attribute.
+if (/Windows/i.test(navigator.userAgent)) document.documentElement.dataset.platform = "windows";
+
 const container = document.getElementById("root");
 if (!container) {
   throw new Error("root element missing");

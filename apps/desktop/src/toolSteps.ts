@@ -45,6 +45,16 @@ export function relativePath(path: string, roots: (string | null | undefined)[])
   let out = path;
   for (const root of roots) {
     if (!root) continue;
+    if (/^(?:[a-z]:[\\/]|\\\\)/i.test(root)) {
+      const normalized = root.replace(/^\\\\\?\\/, "").replace(/\\/g, "/").replace(/\/$/, "");
+      const variants = [normalized, normalized.replace(/\//g, "\\")];
+      for (const variant of variants) {
+        const escaped = variant.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+        if (new RegExp(`^(?:\\\\\\\\\\?\\\\)?${escaped}[\\\\/]?$`, "i").test(out)) return ".";
+        out = out.replace(new RegExp(`(?:\\\\\\\\\\?\\\\)?${escaped}[\\\\/]`, "gi"), "");
+      }
+      continue;
+    }
     const base = root.endsWith("/") ? root : `${root}/`;
     if (out === root || out === base.slice(0, -1)) return ".";
     out = out.split(base).join("");
@@ -54,6 +64,7 @@ export function relativePath(path: string, roots: (string | null | undefined)[])
 
 /** Shell words, honouring quotes and backslash escapes. */
 function words(segment: string): string[] {
+  const windowsPaths = /(?:[a-z]:\\|\\\\[?\\])/i.test(segment);
   const out: string[] = [];
   let current = "";
   let quote: string | null = null;
@@ -62,12 +73,12 @@ function words(segment: string): string[] {
     const char = segment[index] as string;
     if (quote) {
       if (char === quote) quote = null;
-      else if (char === "\\" && quote === '"' && index + 1 < segment.length) current += segment[++index];
+      else if (!windowsPaths && char === "\\" && quote === '"' && index + 1 < segment.length) current += segment[++index];
       else current += char;
     } else if (char === "'" || char === '"') {
       quote = char;
       had = true;
-    } else if (char === "\\" && index + 1 < segment.length) {
+    } else if (!windowsPaths && char === "\\" && index + 1 < segment.length) {
       current += segment[++index];
       had = true;
     } else if (/\s/.test(char)) {
@@ -134,8 +145,8 @@ function unwrap(command: string): string {
 }
 
 const SEARCH = new Set(["grep", "egrep", "fgrep", "rg", "ag", "ack"]);
-const READ = new Set(["cat", "head", "tail", "sed", "nl", "less", "more", "bat", "wc"]);
-const LIST = new Set(["ls", "find", "tree", "fd", "du"]);
+const READ = new Set(["cat", "head", "tail", "sed", "nl", "less", "more", "bat", "wc", "type", "get-content", "gc"]);
+const LIST = new Set(["ls", "find", "tree", "fd", "du", "dir", "get-childitem", "gci"]);
 /** Flags that take the next word as their value. */
 const VALUED = new Set(["-e", "-f", "-A", "-B", "-C", "-m", "-g", "-t", "-n", "-c", "--glob", "--type", "--max-count", "--context", "--name", "-name", "-iname", "-type", "-maxdepth", "-mindepth", "-path", "-L"]);
 
@@ -174,7 +185,7 @@ function joinTargets(targets: string[]): string | null {
 function readCommand(tokens: string[], rel: (path: string) => string): StepPart | null {
   const [head, ...args] = tokens;
   if (!head) return null;
-  const name = head.split("/").pop() as string;
+  const name = (head.split(/[\\/]/).pop() as string).replace(/\.exe$/i, "").toLowerCase();
   if (name === "cd" || name === "export" || name === "set" || name === "source" || name === ".") return null;
   if (name === "git" && args[0] === "grep") return readCommand(["grep", ...args.slice(1)], rel);
   if (SEARCH.has(name)) {

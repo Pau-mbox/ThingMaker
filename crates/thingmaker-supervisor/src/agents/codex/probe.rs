@@ -8,7 +8,7 @@
 use std::{
     io::{BufRead, BufReader, Write},
     path::Path,
-    process::{Command, Stdio},
+    process::Stdio,
     time::{Duration, Instant},
 };
 
@@ -39,7 +39,7 @@ pub fn environment(codex_home: Option<&Path>) -> EnvironmentProfile {
 pub fn ask(program: &Path, codex_home: Option<&Path>, calls: &[(&str, Value)], timeout: Duration) -> Result<Vec<Result<Value, String>>, String> {
     let env = environment(codex_home).resolve(std::env::vars());
     let scratch = std::env::temp_dir();
-    let mut child = Command::new(program)
+    let mut child = crate::platform::command(program)
         .arg("app-server")
         .current_dir(&scratch)
         .env_clear()

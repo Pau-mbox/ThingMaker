@@ -9,6 +9,7 @@
 
 <p align="center">
   <img alt="macOS" src="https://img.shields.io/badge/macOS-Apple%20silicon-111?logo=apple&logoColor=white">
+  <img alt="Windows" src="https://img.shields.io/badge/Windows-x64-0078D4">
   <img alt="Tauri 2" src="https://img.shields.io/badge/Tauri-2-24C8DB?logo=tauri&logoColor=white">
   <img alt="Rust" src="https://img.shields.io/badge/Rust-supervisor-B7410E?logo=rust&logoColor=white">
   <img alt="React" src="https://img.shields.io/badge/React-TypeScript-3178C6?logo=react&logoColor=white">
@@ -137,6 +138,40 @@ which worker did each task, and the project memory.
 
 ### 2. Build and install ThingMaker
 
+#### Windows
+
+Install Node.js 24, pnpm 10+, Rust stable, and Visual Studio with **Desktop
+development with C++** plus a Windows 10/11 SDK. WebView2 Runtime is required
+and the installer can install it when missing.
+
+```powershell
+pnpm install --frozen-lockfile
+pnpm app
+```
+
+This builds an x64 NSIS installer and installs ThingMaker for the current
+user. Open **ThingMaker** from the Start menu. Quit it from the tray menu
+before rebuilding or updating. The installer is under `target/release/bundle/nsis`.
+Set `THINGMAKER_INSTALL_DIR` to an absolute path before running `pnpm app` to
+choose another installation directory; later builds remember that path.
+
+On Windows, teams use an owner-only local named pipe, the terminal uses
+ConPTY with `cmd.exe`, and private runtime variables use Windows Credential
+Manager (up to 2560 bytes per value). Codex is found in the Codex desktop
+app's versioned install folder or on PATH, and Claude's adapter in the
+Windows npm global prefix. Sign in through the Providers panel if a provider
+has no active login.
+
+For development, load the compiler environment and use the Windows window
+configuration:
+
+```powershell
+. ./scripts/windows-build-env.ps1
+pnpm --filter @thingmaker/desktop exec tauri dev --config src-tauri/tauri.dev.conf.json --config src-tauri/tauri.windows.conf.json
+```
+
+#### macOS
+
 You need Rust (stable), Node 24 (via [nvm](https://github.com/nvm-sh/nvm)),
 pnpm 10 and Xcode's command line tools.
 
@@ -243,6 +278,8 @@ Live tests against the real providers are opt-in and spend a few tokens:
 | Where | What |
 | --- | --- |
 | `apps/desktop` | the Tauri app: React interface (`src/`) and the host's commands (`src-tauri/`) |
+| `apps/android` | the Android app for your phone (`pnpm phone`) |
+| `apps/relay` | the Cloudflare relay phones and the computer meet at |
 | `crates/thingmaker-supervisor` | the engine: transport, ACP client, provider bridges, delegation, Big Thing (`bigthing/`), session actors, storage |
 | `packages/contracts` | the TypeScript types of the desktop API |
 | `packages/test-fixtures` | mock providers, captured from the real programs |
@@ -262,7 +299,8 @@ Live tests against the real providers are opt-in and spend a few tokens:
 ## Status
 
 ThingMaker is young and moving fast. It is built and used daily on macOS
-(Apple silicon).
+(Apple silicon). Windows x64 support was contributed by Francisco Pons and
+validated with real Codex and Claude sessions on Windows.
 
 ## License
 

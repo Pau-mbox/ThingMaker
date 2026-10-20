@@ -31,7 +31,8 @@ mod tests {
 
     #[test]
     fn front_matter_names_the_skill_and_says_when_to_load_it() {
-        let front = SKILL.strip_prefix("---\n").and_then(|rest| rest.split_once("\n---\n")).map(|(front, _)| front).expect("front matter");
+        let normalized = SKILL.replace("\r\n", "\n");
+        let front = normalized.strip_prefix("---\n").and_then(|rest| rest.split_once("\n---\n")).map(|(front, _)| front).expect("front matter");
         assert!(front.lines().any(|line| line == "name: big-thing"));
         let description = front.lines().find_map(|line| line.strip_prefix("description: ")).expect("a description");
         assert!(description.len() > 40 && description.contains("Use when"));
@@ -40,7 +41,7 @@ mod tests {
     #[test]
     fn it_quotes_every_grammar_the_parsers_read() {
         for grammar in [REPORT_GRAMMAR, PLAN_GRAMMAR, AMEND_GRAMMAR, TASK_GRAMMAR, ASK_GRAMMAR] {
-            assert!(SKILL.contains(grammar), "the skill quotes:\n{grammar}");
+            assert!(SKILL.replace("\r\n", "\n").contains(grammar), "the skill quotes:\n{grammar}");
         }
     }
 

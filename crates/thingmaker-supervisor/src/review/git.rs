@@ -4,7 +4,9 @@
 //! disables pagers, hooks and external diff drivers because configured
 //! helpers and hooks are executable code (REV-05). Outputs are bounded.
 
-use std::{path::Path, process::Command, time::Duration};
+use std::{path::Path, time::Duration};
+#[cfg(test)]
+use std::process::Command;
 
 use serde::{Deserialize, Serialize};
 
@@ -13,7 +15,7 @@ use crate::error::DesktopError;
 const MAX_OUTPUT_BYTES: usize = 8 * 1024 * 1024;
 
 fn git(root: &Path, args: &[&str]) -> Result<std::process::Output, DesktopError> {
-    let mut command = Command::new("git");
+    let mut command = crate::platform::command("git");
     command
         .arg("--no-pager")
         .args(["-c", "core.hooksPath=/dev/null", "-c", "diff.external=", "-c", "core.pager=cat", "-c", "color.ui=never"])
@@ -166,7 +168,7 @@ fn git_ok(root: &Path, args: &[&str]) -> Result<String, DesktopError> {
 }
 
 fn git_stdin(root: &Path, args: &[&str], input: &[u8]) -> Result<String, DesktopError> {
-    let mut command = Command::new("git");
+    let mut command = crate::platform::command("git");
     command
         .arg("--no-pager")
         .args(["-c", "core.hooksPath=/dev/null", "-c", "diff.external=", "-c", "core.pager=cat", "-c", "color.ui=never"])
@@ -591,6 +593,7 @@ mod mutation_tests {
             return None;
         }
         assert!(run(root, &["config", "user.email", "t@example.com"]) && run(root, &["config", "user.name", "t"]));
+        assert!(run(root, &["config", "core.autocrlf", "false"]));
         fs::write(root.join("a.txt"), "one\ntwo\nthree\n").unwrap();
         assert!(run(root, &["add", "a.txt"]) && run(root, &["commit", "-q", "-m", "init"]));
         Some(temp)

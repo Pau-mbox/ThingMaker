@@ -261,7 +261,8 @@ mod tests {
     #[test]
     fn a_failing_command_fails_and_says_the_code() {
         let dir = workspace();
-        let outcome = run_check(dir.path(), CheckKind::TestsPass, Some("echo boom >&2; exit 3")).expect("ran");
+        let command = if cfg!(windows) { "echo boom >&2 & exit /b 3" } else { "echo boom >&2; exit 3" };
+        let outcome = run_check(dir.path(), CheckKind::TestsPass, Some(command)).expect("ran");
         assert!(!outcome.passed);
         assert_eq!(outcome.exit_code, Some(3));
         assert!(outcome.output.contains("boom"), "stderr is evidence too: {}", outcome.output);
@@ -272,7 +273,8 @@ mod tests {
     fn a_check_runs_in_the_workspace_root() {
         let dir = workspace();
         std::fs::write(dir.path().join("marker.txt"), b"x").expect("write");
-        let outcome = run_check(dir.path(), CheckKind::Command, Some("test -f marker.txt")).expect("ran");
+        let command = if cfg!(windows) { "if not exist marker.txt exit /b 1" } else { "test -f marker.txt" };
+        let outcome = run_check(dir.path(), CheckKind::Command, Some(command)).expect("ran");
         assert!(outcome.passed);
     }
 
@@ -280,7 +282,8 @@ mod tests {
     fn only_the_tail_of_a_chatty_check_is_kept() {
         let dir = workspace();
         // 200k lines is far past the kept window.
-        let outcome = run_check(dir.path(), CheckKind::Command, Some("seq 1 200000")).expect("ran");
+        let command = if cfg!(windows) { "for /L %i in (1,1,200000) do @echo %i" } else { "seq 1 200000" };
+        let outcome = run_check(dir.path(), CheckKind::Command, Some(command)).expect("ran");
         assert!(outcome.passed);
         assert!(outcome.output.len() <= KEPT_OUTPUT_BYTES, "kept {} bytes", outcome.output.len());
         assert!(outcome.output.trim_end().ends_with("200000"), "the tail is what explains a failure");

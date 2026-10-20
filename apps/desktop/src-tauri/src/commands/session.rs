@@ -207,7 +207,7 @@ pub async fn session_open(request: OpenRequest, state: State<'_, AppState>) -> C
             let _ = state.with_storage(|storage| storage.session_set_archive(&row.id, thingmaker_supervisor::storage::workspaces::ArchiveState::Unavailable));
         }
         return Err(DesktopError::not_ready(format!(
-            "This {} session never got a prompt, so there is nothing to resume; it has been removed from the list. Start a new session instead.",
+            "The transcript for this {} session could not be found. Its record is retained and will reappear when the transcript is available again.",
             provider.label()
         )));
     }
@@ -669,7 +669,7 @@ pub fn session_rename(request: RenameRequest, state: State<'_, AppState>) -> Com
 /// provider's title here, once (`titles::backfill`).
 #[tauri::command]
 pub async fn session_records(workspace_id: String, state: State<'_, AppState>) -> CommandResult<Vec<SessionRecord>> {
-    let mut records = state.with_storage(|storage| storage.session_list(&workspace_id)).map_err(storage_error)?;
+    let mut records = load_session_records(&state, &workspace_id)?;
     let untitled = records.iter().any(|record| record.title_overlay.is_none() && record.auto_title.is_none());
     let root = state.with_storage(|storage| storage.workspace_get(&workspace_id)).ok().flatten().map(|workspace| PathBuf::from(workspace.canonical_root));
     if let (true, Some(home), Some(root)) = (untitled, state.home.clone(), root) {
@@ -680,6 +680,25 @@ pub async fn session_records(workspace_id: String, state: State<'_, AppState>) -
         })
         .await
         .map_err(|error| DesktopError::io(error.to_string()))?;
+    }
+    Ok(records)
+}
+
+/// A workspace's records, with any session marked unavailable brought back
+/// when its transcript is there again: a failed lookup can be temporary (or
+/// an older path bug), and an existing transcript must not stay hidden.
+fn load_session_records(state: &AppState, workspace_id: &str) -> CommandResult<Vec<SessionRecord>> {
+    let mut records = state.with_storage(|storage| storage.session_list(workspace_id)).map_err(storage_error)?;
+    let workspace = state.with_storage(|storage| storage.workspace_get(workspace_id)).map_err(storage_error)?;
+    if let Some(workspace) = workspace
+        && state.home.is_some()
+    {
+        for record in &mut records {
+            if record.archive_state == ArchiveState::Unavailable && transcript_exists(state, record.provider, Path::new(&workspace.canonical_root), &record.agent_session_id) {
+                state.with_storage(|storage| storage.session_set_archive(&record.id, ArchiveState::Active)).map_err(storage_error)?;
+                record.archive_state = ArchiveState::Active;
+            }
+        }
     }
     Ok(records)
 }
@@ -831,5 +850,32 @@ pub fn session_token_usage(request: TokenUsageRequest, state: State<'_, AppState
         // `agy` keeps its conversation in its own database; usage arrives on
         // the session's stream instead.
         Provider::Gemini => Err(DesktopError::unsupported("Antigravity reports token usage on the session's stream, not in a transcript the desktop reads")),
+    }
+}
+
+#[cfg(test)]
+mod recovery_tests {
+    use super::*;
+
+    #[test]
+    fn listing_recovers_existing_transcripts_but_preserves_archives_and_missing_files() {
+        let temp = tempfile::tempdir().unwrap();
+        let mut state = AppState::initialize(&temp.path().join("data"), None).unwrap();
+        state.home = Some(temp.path().join("home"));
+        let workspace = state.with_storage(|s| s.workspace_upsert(r"\\?\D:\repos\kidgame", r"D:\repos\kidgame", "test")).unwrap();
+        for (id, archive) in [("recover", ArchiveState::Unavailable), ("missing", ArchiveState::Unavailable), ("archived", ArchiveState::Archived)] {
+            let record = state.with_storage(|s| s.session_upsert(&workspace.id, id, SessionOrigin::Desktop, Provider::Claude)).unwrap();
+            state.with_storage(|s| s.session_set_archive(&record.id, archive)).unwrap();
+        }
+        let transcripts = state.home.as_ref().unwrap().join(".claude/projects/D--repos-kidgame");
+        std::fs::create_dir_all(&transcripts).unwrap();
+        for id in ["recover", "archived"] {
+            std::fs::write(transcripts.join(format!("{id}.jsonl")), "{}").unwrap();
+        }
+        let records = load_session_records(&state, &workspace.id).unwrap();
+        for (id, expected) in [("recover", ArchiveState::Active), ("missing", ArchiveState::Unavailable), ("archived", ArchiveState::Archived)] {
+            assert_eq!(records.iter().find(|r| r.agent_session_id == id).unwrap().archive_state, expected);
+            assert_eq!(state.with_storage(|s| s.session_by_agent_id(&workspace.id, id)).unwrap().unwrap().archive_state, expected);
+        }
     }
 }

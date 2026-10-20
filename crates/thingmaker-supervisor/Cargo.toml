@@ -33,8 +33,11 @@ zip = { version = "=8.6.0", default-features = false, features = ["deflate"] }
 reqwest = { version = "=0.13.4", features = ["blocking", "json"] }
 regex = "=1.13.1"
 
-[target.'cfg(unix)'.dependencies]
+[target.'cfg(any(unix, windows))'.dependencies]
 libc = "=0.2.189"
 
 [dev-dependencies]
 tempfile = { workspace = true }
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "=0.61.2", features = ["Win32_Foundation", "Win32_Security", "Win32_Security_Authorization"] }
