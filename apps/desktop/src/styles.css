@@ -5635,3 +5635,42 @@ html[data-platform="android"] { --traffic-lights: 8px; --titlebar: 52px; height:
   gap: 6px;
   padding: 8px 0;
 }
+
+/* Settings → Phone: the setup guide for each way in. */
+.setup-guide {
+  max-width: 640px;
+  max-height: 86vh;
+  overflow: auto;
+}
+
+.setup-steps {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding-left: 22px;
+  margin: 12px 0 16px;
+}
+
+.setup-steps li > div {
+  margin-top: 3px;
+  line-height: 1.5;
+}
+
+.setup-code {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 6px;
+  padding: 6px 10px;
+  border-radius: 8px;
+  background: var(--panel-3);
+  overflow-x: auto;
+}
+
+.setup-code code {
+  white-space: nowrap;
+}
+
+.setup-guide-link {
+  margin-left: 2px;
+}

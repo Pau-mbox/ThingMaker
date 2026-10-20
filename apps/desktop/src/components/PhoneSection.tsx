@@ -13,6 +13,7 @@ import { useCallback, useEffect, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { REMOTE_EVENT, type ConnectionMode, type RemoteStatus } from "@thingmaker/contracts";
 import { api } from "../ipc";
+import { PhoneSetupGuide } from "./PhoneSetupGuide";
 import { useStore } from "../store";
 import { t } from "../i18n";
 
@@ -61,6 +62,9 @@ function ConnectionForm({ status, onSaved }: { status: RemoteStatus; onSaved: ()
   const [id, setId] = useState("");
   const [secret, setSecret] = useState("");
   const [editing, setEditing] = useState(!saved(status.mode));
+  /** Which mode's setup guide is open. */
+  const [guide, setGuide] = useState<ConnectionMode | null>(null);
+  const guideDialog = guide && <PhoneSetupGuide mode={guide} onClose={() => setGuide(null)} port={status.port} />;
   const save = () =>
     api
       .remoteSetConnection(mode, url, id, secret)
@@ -77,6 +81,7 @@ function ConnectionForm({ status, onSaved }: { status: RemoteStatus; onSaved: ()
   if (current && !editing) {
     return (
       <div className="phone-relay">
+        {guideDialog}
         <p className="small">
           {MODE_LABEL()[status.mode]}: <span className="mono">{current}</span>
           {status.mode === "relay" ? (
@@ -98,6 +103,9 @@ function ConnectionForm({ status, onSaved }: { status: RemoteStatus; onSaved: ()
             type="button"
           >
             {t("change")}
+          </button>{" "}
+          <button className="link small" onClick={() => setGuide(status.mode)} type="button">
+            {t("setup guide")}
           </button>
           {status.mode === "relay" && relay.message && <span className="small muted"> — {relay.message}</span>}
         </p>
@@ -106,6 +114,7 @@ function ConnectionForm({ status, onSaved }: { status: RemoteStatus; onSaved: ()
   }
   return (
     <div className="phone-relay">
+      {guideDialog}
       <form
         className="phone-relay-form"
         onSubmit={(event) => {
@@ -115,18 +124,23 @@ function ConnectionForm({ status, onSaved }: { status: RemoteStatus; onSaved: ()
       >
         <div className="row" role="radiogroup" aria-label={t("How the phone reaches this computer")}>
           {(["relay", "direct"] as const).map((choice) => (
-            <label className="check small" key={choice}>
-              <input
-                checked={mode === choice}
-                name="phone-mode"
-                onChange={() => {
-                  setMode(choice);
-                  setUrl(saved(choice));
-                }}
-                type="radio"
-              />{" "}
-              {MODE_LABEL()[choice]}
-            </label>
+            <span className="row" key={choice}>
+              <label className="check small">
+                <input
+                  checked={mode === choice}
+                  name="phone-mode"
+                  onChange={() => {
+                    setMode(choice);
+                    setUrl(saved(choice));
+                  }}
+                  type="radio"
+                />{" "}
+                {MODE_LABEL()[choice]}
+              </label>
+              <button aria-label={t("How to set up: {mode}", { mode: MODE_LABEL()[choice] })} className="link small setup-guide-link" onClick={() => setGuide(choice)} type="button">
+                {t("How to set this up")}
+              </button>
+            </span>
           ))}
         </div>
         {mode === "relay" ? (

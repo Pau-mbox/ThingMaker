@@ -1,5 +1,5 @@
 /** Settings → Phone: how the phone reaches this computer (relay or direct), and the details of that way. */
-import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 const calls: { command: string; args: Record<string, unknown> }[] = [];
@@ -63,7 +63,7 @@ describe("how the phone reaches this computer", () => {
     render(<PhoneSection />);
     await settle();
     fireEvent.click(screen.getByRole("button", { name: "change" }));
-    fireEvent.click(screen.getByLabelText(/Direct, through my own tunnel/));
+    fireEvent.click(screen.getByRole("radio", { name: "Direct, through my own tunnel" }));
     expect(screen.getByText(/cloudflared tunnel --url http:\/\/127.0.0.1:47321/)).toBeTruthy();
     fireEvent.change(screen.getByLabelText("Tunnel address"), { target: { value: "https://thingmaker.example.com" } });
     await act(async () => {
@@ -79,5 +79,22 @@ describe("how the phone reaches this computer", () => {
     await settle();
     expect(screen.getByText(/forwarded to 127.0.0.1:47321/)).toBeTruthy();
     expect(pairButton().disabled).toBe(false);
+  });
+
+  it("opens a step-by-step guide beside each way in", async () => {
+    relay = { url: null, state: "off", message: null, access: false };
+    extra = { mode: "relay", directUrl: null, listening: [] };
+    render(<PhoneSection />);
+    await settle();
+    fireEvent.click(screen.getByRole("button", { name: "How to set up: Through my Cloudflare relay" }));
+    const relayGuide = within(screen.getByRole("dialog", { name: "Phone setup guide" }));
+    expect(relayGuide.getByText("pnpm relay:deploy")).toBeTruthy();
+    expect(relayGuide.getByText("Create a service token")).toBeTruthy();
+    fireEvent.click(relayGuide.getByRole("button", { name: "Got it" }));
+    expect(screen.queryByRole("dialog", { name: "Phone setup guide" })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "How to set up: Direct, through my own tunnel" }));
+    const directGuide = within(screen.getByRole("dialog", { name: "Phone setup guide" }));
+    expect(directGuide.getByText("cloudflared tunnel --url http://127.0.0.1:47321")).toBeTruthy();
+    expect(directGuide.getByText("tailscale funnel 47321")).toBeTruthy();
   });
 });
