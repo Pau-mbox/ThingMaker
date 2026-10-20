@@ -32,6 +32,7 @@ import { PlanBar, PlanCard, planText } from "./PlanChecklist";
 import { QueueStrip } from "./QueueStrip";
 import { ProviderMark } from "./ProviderMark";
 import { IconAgents, IconArrowUp, IconAt, IconBox, IconBranch, IconCheck, IconChevron, IconDots, IconFolder, IconImage, IconPaperclip, IconSquare, IconTerminal } from "./icons";
+import { withoutHandoff } from "../team";
 
 const EMPTY_LIST: never[] = [];
 
@@ -136,8 +137,50 @@ function ToolCard({ patch, detached, provider, workspaceId }: { patch: ToolPatch
   );
 }
 
+/** A message's blocks as the person sees them: their own, without a hand-off brief in front. */
+function shownBlocks(card: Extract<Card, { kind: "message" }>): ContentBlock[] {
+  if (card.message.role !== "user") return card.message.blocks;
+  return card.message.blocks.map((block) => (block.type === "text" ? { ...block, text: withoutHandoff(block.text) } : block));
+}
+
 function messageText(card: Extract<Card, { kind: "message" }>): string {
-  return card.message.blocks.map((b) => (b.type === "text" ? b.text : b.type === "resource_link" ? (b.name ?? b.uri) : `[${b.type}]`)).join("\n");
+  return shownBlocks(card).map((b) => (b.type === "text" ? b.text : b.type === "resource_link" ? (b.name ?? b.uri) : `[${b.type}]`)).join("\n");
+}
+
+/**
+ * Above a session that carries on another on a different provider: the
+ * earlier conversation, read-only, then where it continued. After a restart
+ * only a link to the earlier (archived) session is left.
+ */
+function EarlierConversation({ sessionId }: { sessionId: string }) {
+  const session = useStore((s) => s.sessions[sessionId]);
+  const continuation = useStore((s) => (session?.snapshot.agentSessionId ? s.continuations[session.snapshot.agentSessionId] : undefined));
+  const earlier = useStore((s) => s.continuationHistory[sessionId]);
+  const openSession = useStore((s) => s.openSession);
+  const openUrl = useStore((s) => s.openUrl);
+  if (!session || !continuation) return null;
+  const from = continuation.fromProvider;
+  const messages = (earlier ?? []).filter((card): card is Extract<Card, { kind: "message" }> => card.kind === "message" && card.message.role !== "thought");
+  return (
+    <>
+      {messages.map((card) => (
+        <article className={`card card-${card.message.role} card-earlier`} key={`earlier-${card.key}`}>
+          <header className="small muted">{card.message.role === "user" ? t("You") : PROVIDER_LABELS[from]}</header>
+          <Blocks blocks={shownBlocks(card)} markdown={card.message.role !== "user"} onLink={(url) => void openUrl(url)} workspaceId={session.workspaceId} />
+        </article>
+      ))}
+      <div className="continued-divider small muted" role="separator">
+        {earlier
+          ? t("Continued with {provider}", { provider: PROVIDER_LABELS[session.snapshot.provider] })
+          : t("Continues a {provider} session", { provider: PROVIDER_LABELS[from] })}
+        {!earlier && (
+          <button className="link small" onClick={() => void openSession(session.workspaceId, { mode: "resume", session_id: continuation.fromAgentSessionId }, from)} type="button">
+            {t("open the earlier session")}
+          </button>
+        )}
+      </div>
+    </>
+  );
 }
 
 /** Images a card brought into the transcript, shown under it. */
@@ -226,7 +269,7 @@ function CardBody({ card, sessionId }: { card: Card; sessionId: string }) {
               </button>
             </span>
           </header>
-          <Blocks blocks={card.message.blocks} markdown={card.message.role !== "user"} onLink={onLink} workspaceId={workspaceId} />
+          <Blocks blocks={shownBlocks(card)} markdown={card.message.role !== "user"} onLink={onLink} workspaceId={workspaceId} />
         </article>
       );
     case "tool": {
@@ -954,6 +997,7 @@ export function SessionPanel({ sessionId }: { sessionId: string }) {
             </div>
           )}
           <div aria-busy={active} className="transcript" ref={transcriptRef}>
+            <EarlierConversation sessionId={sessionId} />
             {transcriptGroups.map((group, index, groups) => (
               <Fragment key={group.kind === "single" ? group.card.key : group.key}>
               {group.kind === "single" ? (

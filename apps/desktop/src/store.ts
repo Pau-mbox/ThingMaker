@@ -47,7 +47,7 @@ import type {
   TurnPhase,
 } from "@thingmaker/contracts";
 import { EMPTY_COMBO, JOB_EVENT, SESSION_TITLE_EVENT, type SessionTitleChange, ODYSSEY_STATE_NOTE, PROVIDERS, PROVIDER_LABELS, BIGTHING_EVENT, asConfigOptions, isEffortOption, type Combo, type JobView, type ProviderModel, type BigThingEvent, type BigThingRuntime, type TeamPreset } from "@thingmaker/contracts";
-import { handoffBrief, readPresets, upsertJob, upsertPreset } from "./team";
+import { HANDOFF_SPLIT, handoffBrief, readPresets, upsertJob, upsertPreset, withoutHandoff } from "./team";
 
 /** Preference keys (scope `ui`) for saved teams. */
 const TEAM_PRESETS_KEY = "teamPresets";
@@ -56,7 +56,7 @@ import { t } from "./i18n";
 import { api } from "./ipc";
 import { notify, shouldNotify } from "./notifications";
 import { CLAUDE_RETRY_MS, claudeUsageFrom } from "./odysseyClaudeQuota";
-import { applyEvent, emptyProjection, EMPTY_QUEUE, type Projection } from "./projection";
+import { applyEvent, emptyProjection, EMPTY_QUEUE, type Card, type Projection } from "./projection";
 import { IS_REMOTE } from "./remote/mode";
 
 export const CLOSE_REQUESTED_EVENT = "thingmaker://close-requested";
@@ -323,6 +323,23 @@ type State = {
    * is put in the new session's composer to read and send.
    */
   handOff: (sessionId: string, provider: Provider, preset?: TeamPreset) => Promise<void>;
+  /**
+   * The provider (and model, effort) a session's next message goes to,
+   * chosen in the model menu; nothing changes until that message is sent.
+   * Choosing the session's own provider again clears it.
+   */
+  pendingProvider: Record<string, PendingProvider>;
+  setPendingProvider: (sessionId: string, pending: PendingProvider | null) => void;
+  /** Sessions that continue another on a different provider, by agent session id. */
+  continuations: Record<string, Continuation>;
+  /** The earlier session's transcript, kept for the session that continues it (this run only). */
+  continuationHistory: Record<string, Card[]>;
+  loadContinuations: () => Promise<void>;
+  /**
+   * Sends the draft to a new session on the pending provider, briefed from
+   * this one without showing the brief, and carries the conversation on there.
+   */
+  continueOnProvider: (sessionId: string) => Promise<void>;
   loadTeamPresets: () => Promise<void>;
   saveTeamPreset: (preset: TeamPreset) => Promise<void>;
   deleteTeamPreset: (id: string) => Promise<void>;
@@ -462,6 +479,13 @@ export function basenameOf(path: string): string {
  * session), then what the stream says now. Records default to the store's,
  * so every caller names a session the same way.
  */
+/** Where a session's next message goes when it is another provider. */
+export type PendingProvider = { provider: Provider; model?: string; effort?: string };
+/** A session that carries on another's conversation on a different provider. */
+export type Continuation = { fromAgentSessionId: string; fromProvider: Provider };
+
+const CONTINUATIONS_KEY = "session_continuations";
+
 export function sessionTitle(session: LiveSession, records?: SessionRecord[]): string {
   const id = session.snapshot.agentSessionId;
   const record = id ? (records ?? useStore.getState().records[session.workspaceId])?.find((entry) => entry.agentSessionId === id) : undefined;
@@ -471,7 +495,7 @@ export function sessionTitle(session: LiveSession, records?: SessionRecord[]): s
   for (const card of session.projection.cards) {
     if (card.kind === "message" && card.message.role === "user") {
       const text = card.message.blocks.find((b) => b.type === "text");
-      if (text && text.type === "text" && text.text.trim()) return text.text.trim().slice(0, 60);
+      if (text && text.type === "text" && withoutHandoff(text.text).trim()) return withoutHandoff(text.text).trim().slice(0, 60);
     }
   }
   return t("Session {id}", { id: session.handle.id.replace(/^kw-/, "").slice(0, 8) });
@@ -718,6 +742,9 @@ export const useStore = create<State>((set, get) => ({
   jobs: {},
   defaultCombo: EMPTY_COMBO,
   providerModels: {},
+  pendingProvider: {},
+  continuations: {},
+  continuationHistory: {},
   teamPresets: [],
   defaultPresetId: null,
   signIn: null,
@@ -751,6 +778,7 @@ export const useStore = create<State>((set, get) => ({
       set({ profiles, workspaces });
       void get().loadSettings();
       void get().loadUiPrefs();
+      void get().loadContinuations();
       void get().loadProviders();
       // Whether a provider program has fallen behind: once shortly after
       // start, then twice a day. It asks npm, so it is never on the hot path.
@@ -2084,6 +2112,89 @@ export const useStore = create<State>((set, get) => ({
     get().selectSession(key);
   },
 
+  setPendingProvider(sessionId, pending) {
+    const { [sessionId]: _previous, ...rest } = get().pendingProvider;
+    const own = get().sessions[sessionId]?.snapshot.provider;
+    set({ pendingProvider: pending && pending.provider !== own ? { ...rest, [sessionId]: pending } : rest });
+  },
+
+  async loadContinuations() {
+    try {
+      const stored = await api.prefGet<Record<string, Continuation>>(CONTINUATIONS_KEY);
+      if (stored && typeof stored === "object") set({ continuations: stored });
+    } catch {
+      // None yet.
+    }
+  },
+
+  async continueOnProvider(sessionId) {
+    const session = get().sessions[sessionId];
+    const pending = get().pendingProvider[sessionId];
+    const draft = get().drafts[sessionId] ?? "";
+    const attachments = get().attachments[sessionId] ?? [];
+    const mentions = get().mentions[sessionId] ?? [];
+    if (!session || !pending || (!draft.trim() && attachments.length === 0 && mentions.length === 0) || session.inFlightRequestId) return;
+    const from = session.snapshot.provider;
+    const fromAgentSessionId = session.snapshot.agentSessionId;
+    const title = sessionTitle(session);
+    const team = get().teams[sessionId];
+    set({ busy: t("Continuing with {provider}", { provider: PROVIDER_LABELS[pending.provider] }), error: null });
+    try {
+      const opened = await api.sessionOpen({
+        workspaceId: session.workspaceId,
+        mode: { mode: "new" },
+        provider: pending.provider,
+        ...launchDefaults(get().sessionDefaults, pending.provider),
+        ...(pending.model ? { model: pending.model } : {}),
+        ...(pending.effort ? { reasoningEffort: pending.effort } : {}),
+        ...(team ? { combo: team } : {}),
+      });
+      await attachLive(get, set, opened.handle, session.workspaceId, false);
+      const key = opened.handle.id;
+      const live = get().sessions[key];
+      const agentSessionId = live?.snapshot.agentSessionId ?? opened.snapshot.agentSessionId ?? null;
+      // The brief rides in front of the person's message; the transcript
+      // shows only the message (see withoutHandoff).
+      const prompt = `${handoffBrief(session.projection.cards, from)}${HANDOFF_SPLIT}${draft}`;
+      const response = await api.sessionSubmit(opened.handle, crypto.randomUUID(), prompt, attachments.map((a) => a.id), mentions);
+      if (response.outcome.outcome !== "accepted") {
+        // Nothing changes for the person: the draft stays, and the session
+        // opened for it goes away.
+        await api.sessionStop(opened.handle).catch(() => undefined);
+        const { [key]: _unused, ...kept } = get().sessions;
+        set({ sessions: kept, sessionOrder: get().sessionOrder.filter((id) => id !== key), error: response.outcome.error });
+        return;
+      }
+      const { [sessionId]: _done, ...pendingRest } = get().pendingProvider;
+      set({
+        drafts: { ...get().drafts, [sessionId]: "" },
+        attachments: { ...get().attachments, [sessionId]: [] },
+        mentions: { ...get().mentions, [sessionId]: [] },
+        pendingProvider: pendingRest,
+        continuationHistory: { ...get().continuationHistory, [key]: session.projection.cards },
+      });
+      if (agentSessionId && fromAgentSessionId) {
+        const continuations = { ...get().continuations, [agentSessionId]: { fromAgentSessionId, fromProvider: from } };
+        set({ continuations });
+        void api.prefSet(CONTINUATIONS_KEY, continuations).catch(() => undefined);
+        // One conversation in the list: the new session keeps the title,
+        // and the earlier one is archived (still there among archived).
+        await get().renameSession(session.workspaceId, agentSessionId, title);
+      }
+      get().selectSession(key);
+      if (fromAgentSessionId) {
+        await api.sessionStop(session.handle).catch(() => undefined);
+        const { [sessionId]: _stopped, ...rest } = get().sessions;
+        set({ sessions: rest, sessionOrder: get().sessionOrder.filter((id) => id !== sessionId) });
+        await get().archiveSession(session.workspaceId, fromAgentSessionId, true);
+      }
+    } catch (error) {
+      set({ error: asError(error) });
+    } finally {
+      set({ busy: null });
+    }
+  },
+
   async loadTeamPresets() {
     try {
       const [presets, defaultId] = await Promise.all([api.prefGet<unknown>(TEAM_PRESETS_KEY), api.prefGet<string>(DEFAULT_PRESET_KEY)]);
@@ -2178,6 +2289,8 @@ export const useStore = create<State>((set, get) => ({
   },
 
   async send(sessionId) {
+    const pending = get().pendingProvider[sessionId];
+    if (pending && pending.provider !== get().sessions[sessionId]?.snapshot.provider) return get().continueOnProvider(sessionId);
     const session = get().sessions[sessionId];
     const draft = get().drafts[sessionId] ?? "";
     const attachments = get().attachments[sessionId] ?? [];

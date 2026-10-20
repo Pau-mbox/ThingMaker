@@ -1,6 +1,7 @@
 /**
- * Switching provider from the model menu: a hand-off to a new session on the
- * other provider, unless the session runs a saved team preset.
+ * Switching provider from the model menu: choosing one only marks where the
+ * next message goes. Nothing else changes until that message is sent, and
+ * choosing the session's own provider again undoes it.
  */
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -24,6 +25,11 @@ const OPTIONS = [
 ];
 const team = { workers: [{ name: "Luna-Max", provider: "codex", model: "gpt-6-luna" }], nativeSubagents: false };
 const handOff = vi.fn(async () => undefined);
+const loadProviderModels = vi.fn(async () => undefined);
+const CODEX_MODELS = [
+  { id: "gpt-6", name: "GPT-6", needsCredits: false, efforts: ["low", "high"], defaultEffort: "high", inputImage: true, isDefault: true },
+  { id: "gpt-6-luna", name: "GPT-6 Luna", needsCredits: false, efforts: [], inputImage: true, isDefault: false },
+];
 const signedIn = (provider: string, loggedIn = true) => ({ provider, label: provider, resolved: { program: provider }, auth: { loggedIn } });
 
 function seed({ preset = false, foreground = "idle", codexSignedIn = true } = {}) {
@@ -33,6 +39,9 @@ function seed({ preset = false, foreground = "idle", codexSignedIn = true } = {}
     teamPresets: preset ? [{ id: "p", name: "Game team", orchestrator: { provider: "claude" }, combo: team, updatedAt: 0 }] : [],
     providers: [signedIn("claude"), signedIn("codex", codexSignedIn), signedIn("gemini")],
     handOff,
+    loadProviderModels,
+    providerModels: { codex: CODEX_MODELS },
+    pendingProvider: {},
   } as never);
 }
 
@@ -51,13 +60,33 @@ describe("switching provider from the model menu", () => {
     expect(screen.queryByText("Agent")).toBeNull();
   });
 
-  it("hands the work off to a new session on the other provider", () => {
+  it("marks the other provider for the next message without starting anything", () => {
     seed();
     openModels();
     expect(screen.getByRole("button", { name: "Claude Code" }).getAttribute("aria-pressed")).toBe("true");
     fireEvent.click(screen.getByRole("button", { name: "Codex" }));
-    expect(handOff).toHaveBeenCalledWith("s1", "codex");
-    expect(screen.queryByRole("dialog", { name: "Model and effort" })).toBeNull();
+    expect(handOff).not.toHaveBeenCalled();
+    expect(useStore.getState().pendingProvider.s1).toEqual({ provider: "codex" });
+    expect(screen.getByRole("button", { name: "Codex" }).getAttribute("aria-pressed")).toBe("true");
+    // The chip and the list now show the chosen provider's models.
+    expect(screen.getByRole("button", { name: /Codex.*GPT-6/ })).toBeTruthy();
+  });
+
+  it("lets the person pick the new provider's model and effort before sending", () => {
+    seed();
+    openModels();
+    fireEvent.click(screen.getByRole("button", { name: "Codex" }));
+    fireEvent.click(screen.getByText("GPT-6 Luna"));
+    expect(useStore.getState().pendingProvider.s1).toEqual({ provider: "codex", model: "gpt-6-luna" });
+  });
+
+  it("undoes the choice when the session's own provider is chosen again", () => {
+    seed();
+    openModels();
+    fireEvent.click(screen.getByRole("button", { name: "Codex" }));
+    fireEvent.click(screen.getByRole("button", { name: "Claude Code" }));
+    expect(useStore.getState().pendingProvider.s1).toBeUndefined();
+    expect(screen.getByRole("button", { name: /Opus 5.5/ })).toBeTruthy();
   });
 
   it("keeps a session on a saved team preset with the preset's lead", () => {

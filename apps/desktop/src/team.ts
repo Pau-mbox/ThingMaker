@@ -102,6 +102,19 @@ function cardText(card: Card): { role: string; text: string } | null {
  * context window, so a cross-provider switch is a new session told what the
  * old one knew: the latest exchange in full, the rest by its asks.
  */
+/**
+ * Between a hand-off brief and the person's own message in the first prompt
+ * of a session that continues another. The brief is for the model; the
+ * transcript shows only what follows this.
+ */
+export const HANDOFF_SPLIT = "\n\n---\nThe person's next message:\n\n";
+
+/** What the person wrote, without a hand-off brief in front of it. */
+export function withoutHandoff(text: string): string {
+  const at = text.indexOf(HANDOFF_SPLIT);
+  return at < 0 ? text : text.slice(at + HANDOFF_SPLIT.length);
+}
+
 export function handoffBrief(cards: Card[], from: Provider, budget = 6000): string {
   const messages = cards.map(cardText).filter((entry): entry is { role: string; text: string } => entry !== null);
   const header = `You are taking over this work from a ${PROVIDER_LABELS[from]} session in the same workspace. Its conversation is summarised below; the files it changed are on disk. Read what you need, then continue where it left off.`;

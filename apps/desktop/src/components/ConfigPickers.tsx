@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type PointerEvent } from "react";
-import { asConfigOptions, isConfigOptionGroup, isEffortOption, PROVIDER_LABELS, PROVIDERS, type ConfigOptionChoice, type Provider, type SessionConfigOption } from "@thingmaker/contracts";
+import { asConfigOptions, isConfigOptionGroup, isEffortOption, PROVIDER_LABELS, PROVIDERS, type ConfigOptionChoice, type Provider, type ProviderModel, type SessionConfigOption } from "@thingmaker/contracts";
 import { t } from "../i18n";
 import { useStore } from "../store";
 import { presetMatches } from "../team";
@@ -37,7 +37,7 @@ const FILTER_FROM = 12;
  * from this one (the same hand-off the team editor uses). A session on a
  * saved team preset keeps the preset's lead; the team decides that.
  */
-function ProviderSwitch({ sessionId, onSwitched }: { sessionId: string; onSwitched: () => void }) {
+function ProviderSwitch({ sessionId }: { sessionId: string }) {
   const provider = useStore((s) => s.sessions[sessionId]?.snapshot.provider);
   const running = useStore((s) => {
     const foreground = s.sessions[sessionId]?.projection.foreground;
@@ -46,8 +46,10 @@ function ProviderSwitch({ sessionId, onSwitched }: { sessionId: string; onSwitch
   const team = useStore((s) => s.teams[sessionId]);
   const presets = useStore((s) => s.teamPresets);
   const providers = useStore((s) => s.providers);
-  const handOff = useStore((s) => s.handOff);
+  const pending = useStore((s) => s.pendingProvider[sessionId]);
+  const setPending = useStore((s) => s.setPendingProvider);
   if (!provider) return null;
+  const chosen = pending?.provider ?? provider;
   const preset = presets.find((candidate) => presetMatches(candidate, provider, team));
   const why = (other: Provider): string | null => {
     if (preset) return t("This session runs the team preset “{preset}”, led by {provider}. Change the team to switch.", { preset: preset.name, provider: PROVIDER_LABELS[provider] });
@@ -63,16 +65,16 @@ function ProviderSwitch({ sessionId, onSwitched }: { sessionId: string; onSwitch
         const blocked = other === provider ? null : why(other);
         return (
           <button
-            aria-pressed={other === provider}
-            className={`model-menu-provider ${other === provider ? "model-menu-provider-on" : ""}`}
+            aria-pressed={other === chosen}
+            className={`model-menu-provider ${other === chosen ? "model-menu-provider-on" : ""}`}
             disabled={other !== provider && blocked !== null}
             key={other}
             onClick={() => {
-              if (other === provider) return;
-              onSwitched();
-              void handOff(sessionId, other);
+              // Only marks where the next message goes; choosing this
+              // session's own provider again undoes it.
+              setPending(sessionId, other === provider ? null : { provider: other });
             }}
-            title={other === provider ? t("This session runs on {provider}", { provider: PROVIDER_LABELS[other] }) : (blocked ?? t("Continue in a new {provider} session, briefed from this one", { provider: PROVIDER_LABELS[other] }))}
+            title={other === provider ? t("This session runs on {provider}", { provider: PROVIDER_LABELS[other] }) : (blocked ?? t("Your next message continues this conversation with {provider}", { provider: PROVIDER_LABELS[other] }))}
             type="button"
           >
             {PROVIDER_LABELS[other]}
@@ -83,7 +85,7 @@ function ProviderSwitch({ sessionId, onSwitched }: { sessionId: string; onSwitch
   );
 }
 
-function ModelList({ option, onPick, sessionId, onSwitched }: { option: SessionConfigOption; onPick: (value: string) => void; sessionId: string; onSwitched: () => void }) {
+function ModelList({ option, onPick, sessionId }: { option: SessionConfigOption; onPick: (value: string) => void; sessionId: string }) {
   const [filter, setFilter] = useState("");
   const all = useMemo(() => choices(option), [option]);
   const value = typeof option.currentValue === "string" ? option.currentValue : "";
@@ -101,7 +103,7 @@ function ModelList({ option, onPick, sessionId, onSwitched }: { option: SessionC
 
   return (
     <div className="model-menu-list">
-      <ProviderSwitch onSwitched={onSwitched} sessionId={sessionId} />
+      <ProviderSwitch sessionId={sessionId} />
       <div className="model-menu-caption">{t("Select model")}</div>
       {all.length > FILTER_FROM && (
         <input aria-label={t("Filter models")} autoFocus className="input model-menu-filter" onChange={(e) => setFilter(e.target.value)} placeholder={t("Filter {n} models…", { n: all.length })} value={filter} />
@@ -194,6 +196,30 @@ function EffortSlider({ levels, index, onPick, disabled }: { levels: ConfigOptio
  * come from the agent's advertised options only (P08); switching uses
  * `session/set_config_option` and the agent's echo updates what is shown.
  */
+/**
+ * Model and effort choices for a provider the session is not on yet, from
+ * that provider's own model list.
+ */
+function pendingOptions(modelId: string | undefined, effortId: string | undefined, models: ProviderModel[]): { model: SessionConfigOption; effort: SessionConfigOption | undefined } {
+  const chosen = models.find((entry) => entry.id === modelId) ?? models.find((entry) => entry.isDefault) ?? models[0];
+  const model: SessionConfigOption = {
+    configId: "model",
+    name: t("Model"),
+    currentValue: chosen?.id ?? "",
+    options: models.map((entry) => ({ value: entry.id, name: entry.name, ...(entry.description ? { description: entry.description } : {}) })),
+  };
+  const efforts = chosen?.efforts ?? [];
+  const effort: SessionConfigOption | undefined = efforts.length
+    ? {
+        configId: "effort",
+        name: t("Effort"),
+        currentValue: effortId ?? chosen?.defaultEffort ?? "",
+        options: efforts.map((level) => ({ value: level, name: level.charAt(0).toUpperCase() + level.slice(1) })),
+      }
+    : undefined;
+  return { model, effort };
+}
+
 export function ModelMenu({
   sessionId,
   model,
@@ -231,13 +257,31 @@ export function ModelMenu({
     };
   }, [open, view]);
 
+  // A provider chosen for the next message: its own models and efforts,
+  // kept in the session's pending choice until that message is sent.
+  const pending = useStore((s) => s.pendingProvider[sessionId]);
+  const setPending = useStore((s) => s.setPendingProvider);
+  const loadProviderModels = useStore((s) => s.loadProviderModels);
+  const pendingModels = useStore((s) => (pending ? s.providerModels[pending.provider] : undefined));
+  useEffect(() => {
+    if (pending) void loadProviderModels(pending.provider);
+  }, [pending, loadProviderModels]);
+  if (pending) {
+    const options = pendingOptions(pending.model, pending.effort, pendingModels ?? []);
+    model = options.model;
+    effort = options.effort;
+    fast = undefined;
+  }
+
   const modelNow = current(model);
   const effortNow = current(effort);
   const levels = effort ? choices(effort).map((c) => c.choice).filter((c) => c.value !== DEFAULT_EFFORT) : [];
   const effortIndex = levels.findIndex((level) => level.value === effortNow?.choice.value);
   const fastEnabled = fast ? fastOn(fast) : false;
   const set = (option: SessionConfigOption | undefined, value: string) => {
-    if (option && value !== option.currentValue) void setConfigOption(sessionId, option.configId, value);
+    if (!option || value === option.currentValue) return;
+    if (pending) setPending(sessionId, option.configId === "model" ? { provider: pending.provider, model: value } : { ...pending, effort: value });
+    else void setConfigOption(sessionId, option.configId, value);
   };
 
   return (
@@ -245,15 +289,22 @@ export function ModelMenu({
       <button
         aria-expanded={open}
         aria-haspopup="dialog"
-        className="model-chip"
+        className={`model-chip ${pending ? "model-chip-pending" : ""}`}
         disabled={disabled}
         onClick={() => {
           setView(effort || fast ? "main" : "models");
           setOpen(!open);
         }}
-        title={modelNow?.group ? `${modelNow.choice.name} · ${modelNow.group}` : t("Model and reasoning effort")}
+        title={
+          pending
+            ? t("Your next message continues this conversation with {provider}", { provider: PROVIDER_LABELS[pending.provider] })
+            : modelNow?.group
+              ? `${modelNow.choice.name} · ${modelNow.group}`
+              : t("Model and reasoning effort")
+        }
         type="button"
       >
+        {pending && <span className="model-chip-provider">{PROVIDER_LABELS[pending.provider]}</span>}
         {fastEnabled && <IconBolt className="model-chip-bolt" size={12} />}
         <span className="model-chip-model">{modelNow?.choice.name ?? t("Model")}</span>
         {effortNow && <span className="model-chip-effort">{effortNow.choice.name}</span>}
@@ -268,7 +319,6 @@ export function ModelMenu({
                 if (effort || fast) setView("main");
                 else setOpen(false);
               }}
-              onSwitched={() => setOpen(false)}
               option={model}
               sessionId={sessionId}
             />

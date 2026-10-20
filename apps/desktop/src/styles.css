@@ -1815,6 +1815,15 @@ code {
   color: var(--accent);
 }
 
+.model-chip-pending {
+  border-color: var(--accent);
+}
+
+.model-chip-provider {
+  color: var(--accent);
+  font-weight: 600;
+}
+
 .model-chip svg:last-child {
   color: var(--muted);
 }
@@ -5673,4 +5682,24 @@ html[data-platform="android"] { --traffic-lights: 8px; --titlebar: 52px; height:
 
 .setup-guide-link {
   margin-left: 2px;
+}
+
+/* A session that continues another on a different provider: the earlier
+   conversation, quieter, then a divider where it carried on. */
+.card-earlier {
+  opacity: 0.7;
+}
+
+.continued-divider {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 8px 0;
+}
+
+.continued-divider::before,
+.continued-divider::after {
+  content: "";
+  flex: 1;
+  border-top: 1px solid var(--border);
 }
