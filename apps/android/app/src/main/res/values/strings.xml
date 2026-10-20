@@ -1,4 +1,72 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">ThingMaker</string>
+
+    <!-- Pairing -->
+    <string name="pair_title">Pair with a computer</string>
+    <string name="pair_intro">On the computer, open ThingMaker → Settings → Phone, turn on phone access and press Pair a phone. Then scan its code.</string>
+    <string name="pair_scan">Scan the QR code</string>
+    <string name="pair_or_type">Or type them in</string>
+    <string name="pair_mode_relay">Through a Cloudflare relay</string>
+    <string name="pair_mode_direct">Direct, through a tunnel</string>
+    <string name="pair_address_relay">Relay address, e.g. https://thingmaker-relay.you.workers.dev</string>
+    <string name="pair_address_direct">Tunnel address, e.g. https://thingmaker.example.com</string>
+    <string name="pair_code">Code shown on the computer</string>
+    <string name="pair_access_id">Cloudflare Access client ID (if Access is on)</string>
+    <string name="pair_access_secret">Cloudflare Access client secret</string>
+    <string name="pair_button">Pair</string>
+    <string name="pair_not_a_code">That is not a ThingMaker pairing code.</string>
+    <string name="pair_scanner_failed">The scanner did not start: %1$s. Type the address and code instead.</string>
+    <string name="pair_type_both">Type the address and the code the computer shows.</string>
+    <string name="pair_reaching">Reaching %1$s…</string>
+    <string name="pair_relay_without_computer">The relay is up, but ThingMaker on the computer is not connected to it.</string>
+    <string name="pair_access_refused">Cloudflare Access turned the phone away: check the Access client ID and secret.</string>
+    <string name="pair_answered">The address answered %1$d.</string>
+    <string name="pair_unreachable">Could not reach the address: %1$s</string>
+
+    <!-- Main screen -->
+    <string name="locked">Locked</string>
+    <string name="unlock">Unlock</string>
+    <string name="unlock_title">Unlock ThingMaker</string>
+    <string name="unlock_subtitle">It can run agents on %1$s</string>
+    <string name="revoked">%1$s no longer knows this phone: its pairing was revoked there.</string>
+    <string name="pair_again">Pair again</string>
+    <string name="computer">Computer</string>
+
+    <!-- Connection service and notifications -->
+    <string name="channel_attention">Needs you</string>
+    <string name="channel_attention_about">A Big Thing asks, is blocked or is done; a worker\'s job failed.</string>
+    <string name="channel_connection">Connection to the computer</string>
+    <string name="channel_connection_about">Shown while the app keeps its line to the computer open.</string>
+    <string name="service_connecting">Connecting to %1$s…</string>
+    <string name="service_connected">Connected to %1$s</string>
+    <string name="service_waiting">Waiting for %1$s…</string>
+    <string name="revoked_title">Pairing revoked</string>
+    <string name="revoked_body">%1$s no longer knows this phone. Open the app to pair again.</string>
+    <string name="bigthing_needs_you">Big Thing needs you</string>
+    <string name="bigthing_blocked">Big Thing is blocked</string>
+    <string name="bigthing_done">Big Thing is done</string>
+    <string name="bigthing">Big Thing</string>
+    <string name="job_failed">A worker\'s job failed</string>
+
+    <!-- Installing apps the computer sends -->
+    <string name="install_title">Install %1$s</string>
+    <string name="install_question">Install %1$s?</string>
+    <string name="install_sent_by">Sent by %1$s · %2$s. Tap to install.</string>
+    <string name="install_permission">Sent by %1$s · %2$s\n\nAndroid needs your permission once for ThingMaker to install apps. Turn on “Allow from this source”, then come back.</string>
+    <string name="install_open_settings">Open settings</string>
+    <string name="install_downloading">Downloading from %1$s…</string>
+    <string name="install_not_paired">This phone is not paired.</string>
+    <string name="install_unreachable">Could not reach the computer.</string>
+    <string name="install_refused">The computer refused (%1$d).</string>
+    <string name="install_mismatch">The download does not match what %1$s sent. Nothing was installed.</string>
+    <string name="install_download_failed">Could not download: %1$s</string>
+    <string name="install_confirm">Android will ask you to confirm.</string>
+    <string name="install_start_failed">Android could not start the install: %1$s</string>
+    <string name="install_cancelled">The install was cancelled.</string>
+    <string name="install_done">%1$s is installed.</string>
+    <string name="install_not_installed">Android did not install it.</string>
+    <string name="done">Done</string>
+    <string name="close">Close</string>
+    <string name="the_computer">the computer</string>
 </resources>

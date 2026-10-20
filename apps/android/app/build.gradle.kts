@@ -4,16 +4,16 @@ plugins {
 }
 
 android {
-    namespace = "dev.thingmaker.phone"
+    namespace = "dev.thingmaker.remote"
     compileSdk = 35
 
     defaultConfig {
-        applicationId = "dev.thingmaker.phone"
+        applicationId = "dev.thingmaker.remote"
         // Android 11: the device-credential fallback for the fingerprint unlock.
         minSdk = 30
         targetSdk = 35
-        versionCode = 1
-        versionName = "0.1.0"
+        versionCode = 6
+        versionName = "3.0.0"
     }
 
     buildTypes {
@@ -35,5 +35,7 @@ android {
 
 dependencies {
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
+    // Serves the bundled screens from a local HTTPS origin.
+    implementation("androidx.webkit:webkit:1.12.1")
     implementation("com.google.android.gms:play-services-code-scanner:16.1.0")
 }

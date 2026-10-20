@@ -2,6 +2,7 @@ import { Suspense, lazy, useCallback, useEffect, useState } from "react";
 import type { DirEntry, EditorProfile, FileRead } from "@thingmaker/contracts";
 import { api, toDesktopError } from "../ipc";
 import { useStore } from "../store";
+import { IS_REMOTE } from "../remote/mode";
 
 const CodeEditor = lazy(() => import("./MonacoEditor"));
 
@@ -159,15 +160,20 @@ export function FilesPane({ workspaceId }: { workspaceId: string }) {
               <button className="button small" onClick={() => void openFile(selected.relativePath)} type="button">
                 Reload
               </button>
-              <button className="button small button-primary" disabled={!dirty || saving || !editable} onClick={() => void save()} type="button">
-                {saving ? "Saving…" : dirty ? "Save (checked)" : "Saved"}
-              </button>
-              <span className="small muted">open in</span>
-              {EDITORS.map((editor) => (
-                <button className="link small" key={editor.id} onClick={() => void openExternal(editor.id)} type="button">
-                  {editor.label}
-                </button>
-              ))}
+              {/* From the phone, files are read, not written or opened on the computer's screen. */}
+              {!IS_REMOTE && (
+                <>
+                  <button className="button small button-primary" disabled={!dirty || saving || !editable} onClick={() => void save()} type="button">
+                    {saving ? "Saving…" : dirty ? "Save (checked)" : "Saved"}
+                  </button>
+                  <span className="small muted">open in</span>
+                  {EDITORS.map((editor) => (
+                    <button className="link small" key={editor.id} onClick={() => void openExternal(editor.id)} type="button">
+                      {editor.label}
+                    </button>
+                  ))}
+                </>
+              )}
             </div>
             {notice && <p className="small muted">{notice}</p>}
             {selected.binary ? (
@@ -180,7 +186,7 @@ export function FilesPane({ workspaceId }: { workspaceId: string }) {
                     setDirty(value !== selected.content);
                   }}
                   path={selected.relativePath}
-                  readOnly={!editable}
+                  readOnly={!editable || IS_REMOTE}
                   value={draft}
                 />
               </Suspense>

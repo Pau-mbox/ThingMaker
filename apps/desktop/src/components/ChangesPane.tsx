@@ -3,6 +3,7 @@ import type { DiffResponse, DiffScope, FileChange, FileVersions, RepositoryInfo 
 import { api, toDesktopError } from "../ipc";
 import { useStore } from "../store";
 import { hunkPatch, parseHunks } from "../diffHunks";
+import { IS_REMOTE } from "../remote/mode";
 
 const MonacoDiff = lazy(() => import("./MonacoEditor").then((m) => ({ default: m.DiffEditor })));
 
@@ -186,7 +187,7 @@ export function ChangesPane({ workspaceId, sessionId, isGit }: { workspaceId: st
         <button className="button small" disabled={loading} onClick={() => void refresh()} type="button">
           {loading ? "Working…" : "Refresh"}
         </button>
-        {scope === "baseline" && (
+        {scope === "baseline" && !IS_REMOTE && (
           <button className="button small" disabled={loading} onClick={() => void resetBaseline()} type="button">
             Reset baseline to now
           </button>
@@ -220,7 +221,8 @@ export function ChangesPane({ workspaceId, sessionId, isGit }: { workspaceId: st
                 <span className="small diff-add">+{file.additions}</span> <span className="small diff-del">-{file.deletions}</span>
                 {file.binary && <span className="chip small">binary</span>}
               </button>
-              {gitScope && (
+              {/* From the phone, changes are read; git writes stay on the computer. */}
+              {gitScope && !IS_REMOTE && (
                 <span className="row">
                   {scope === "working_tree" && (
                     <>
@@ -242,7 +244,7 @@ export function ChangesPane({ workspaceId, sessionId, isGit }: { workspaceId: st
             </li>
           ))}
           {response?.report.truncated && <li className="small muted">List truncated.</li>}
-          {scope === "working_tree" && files.length > 0 && (
+          {scope === "working_tree" && files.length > 0 && !IS_REMOTE && (
             <li className="row">
               <button className="link small" disabled={loading} onClick={() => void run("Staged all listed files.", () => api.gitStage(workspaceId, files.map((f) => f.path)))} type="button">
                 stage all listed
@@ -266,11 +268,11 @@ export function ChangesPane({ workspaceId, sessionId, isGit }: { workspaceId: st
               ) : (
                 <UnifiedView
                   change={current}
-                  onRevertHunk={scope === "working_tree" ? (patch) => void (async () => {
+                  onRevertHunk={scope === "working_tree" && !IS_REMOTE ? (patch) => void (async () => {
                     const ok = await confirm("Revert hunk?", `Back out this hunk from ${current.path} in the working tree. Unstaged edits in it are lost.`, "Revert hunk");
                     if (ok) await run("Hunk reverted.", () => api.gitApplyHunk(workspaceId, patch, false, true));
                   })() : undefined}
-                  onStageHunk={scope === "working_tree" ? (patch) => void run("Hunk staged.", () => api.gitApplyHunk(workspaceId, patch, true, false)) : undefined}
+                  onStageHunk={scope === "working_tree" && !IS_REMOTE ? (patch) => void run("Hunk staged.", () => api.gitApplyHunk(workspaceId, patch, true, false)) : undefined}
                 />
               )}
               {sideBySide && versions && (versions.before === null || versions.after === null) && <p className="small muted">One side is unavailable (new, deleted, binary or truncated); showing unified text instead.</p>}
@@ -280,7 +282,7 @@ export function ChangesPane({ workspaceId, sessionId, isGit }: { workspaceId: st
           )}
         </section>
       </div>
-      {scope === "staged" && isGit && (
+      {scope === "staged" && isGit && !IS_REMOTE && (
         <section className="commit-box">
           <textarea
             aria-label="Commit message"

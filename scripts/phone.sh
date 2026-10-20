@@ -4,9 +4,9 @@
 #
 #   pnpm phone            build apps/android → ThingMaker-phone.apk, install if a device is attached
 #
-# The app is a thin shell: its screens come from the Mac it pairs with, so
-# updating ThingMaker on the Mac updates the phone's screens too. Rebuild the
-# APK only when the Android side changes.
+# The app carries ThingMaker's own screens (the renderer's phone build, from
+# this checkout) and talks to the paired computer through its relay or the
+# user's tunnel. Rebuild it to bring the phone's screens up to date.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -20,6 +20,20 @@ if [ -z "${JAVA_HOME:-}" ] || ! "$JAVA_HOME/bin/java" -version 2>&1 | grep -q '"
 fi
 [ -n "$JAVA_HOME" ] || { echo "Java 17 is needed to build the Android app (brew install --cask temurin@17)." >&2; exit 1; }
 [ -d "$SDK" ] || { echo "No Android SDK at $SDK (install Android Studio, or set ANDROID_HOME)." >&2; exit 1; }
+
+# The screens, built for the phone and packed into the APK's assets.
+if [ -s "$HOME/.nvm/nvm.sh" ]; then
+  set +u
+  # shellcheck disable=SC1091
+  . "$HOME/.nvm/nvm.sh" >/dev/null
+  nvm use 24 >/dev/null 2>&1 || true
+  set -u
+fi
+(cd "$ROOT/apps/desktop" && pnpm exec vite build --mode remote --logLevel warn)
+ASSETS="$ROOT/apps/android/app/src/main/assets"
+rm -rf "$ASSETS"
+mkdir -p "$ASSETS"
+cp -R "$ROOT/apps/desktop/dist-remote/." "$ASSETS/"
 
 cd "$ROOT/apps/android"
 [ -f local.properties ] || echo "sdk.dir=$SDK" > local.properties

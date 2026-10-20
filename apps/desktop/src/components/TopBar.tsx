@@ -52,14 +52,9 @@ export function TopBar() {
 
   return (
     <header className={`topbar ${sidebarCollapsed && !IS_REMOTE ? "topbar-inset" : ""}`} data-tauri-drag-region>
-      {IS_REMOTE && view.kind !== "welcome" && view.kind !== "workspace" && (
-        <button
-          aria-label="Back to sessions"
-          className="icon-button remote-back"
-          onClick={() => setView(workspaceId ? { kind: "workspace", workspaceId } : { kind: "welcome" })}
-          type="button"
-        >
-          ‹
+      {IS_REMOTE && (
+        <button aria-label="Workspaces and sessions" className="icon-button" onClick={toggleSidebar} type="button">
+          <IconSidebar />
         </button>
       )}
       {sidebarCollapsed && !IS_REMOTE && (

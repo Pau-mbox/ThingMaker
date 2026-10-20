@@ -1,0 +1,72 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">ThingMaker</string>
+
+    <!-- Emparejar -->
+    <string name="pair_title">Emparejar con un ordenador</string>
+    <string name="pair_intro">En el ordenador, abre ThingMaker → Ajustes → Teléfono, activa el acceso desde el teléfono y pulsa Emparejar un teléfono. Luego escanea su código.</string>
+    <string name="pair_scan">Escanear el código QR</string>
+    <string name="pair_or_type">O escríbelos</string>
+    <string name="pair_mode_relay">A través de un relay de Cloudflare</string>
+    <string name="pair_mode_direct">Directo, a través de un túnel</string>
+    <string name="pair_address_relay">Dirección del relay, p. ej. https://thingmaker-relay.tu.workers.dev</string>
+    <string name="pair_address_direct">Dirección del túnel, p. ej. https://thingmaker.ejemplo.com</string>
+    <string name="pair_code">Código que muestra el ordenador</string>
+    <string name="pair_access_id">ID de cliente de Cloudflare Access (si Access está activo)</string>
+    <string name="pair_access_secret">Secreto de cliente de Cloudflare Access</string>
+    <string name="pair_button">Emparejar</string>
+    <string name="pair_not_a_code">Ese no es un código de emparejamiento de ThingMaker.</string>
+    <string name="pair_scanner_failed">El escáner no se inició: %1$s. Escribe la dirección y el código.</string>
+    <string name="pair_type_both">Escribe la dirección y el código que muestra el ordenador.</string>
+    <string name="pair_reaching">Conectando con %1$s…</string>
+    <string name="pair_relay_without_computer">El relay funciona, pero ThingMaker en el ordenador no está conectado a él.</string>
+    <string name="pair_access_refused">Cloudflare Access ha rechazado el teléfono: revisa el ID y el secreto de cliente de Access.</string>
+    <string name="pair_answered">La dirección respondió %1$d.</string>
+    <string name="pair_unreachable">No se pudo llegar a la dirección: %1$s</string>
+
+    <!-- Pantalla principal -->
+    <string name="locked">Bloqueado</string>
+    <string name="unlock">Desbloquear</string>
+    <string name="unlock_title">Desbloquear ThingMaker</string>
+    <string name="unlock_subtitle">Puede ejecutar agentes en %1$s</string>
+    <string name="revoked">%1$s ya no reconoce este teléfono: se revocó su emparejamiento allí.</string>
+    <string name="pair_again">Emparejar de nuevo</string>
+    <string name="computer">Ordenador</string>
+
+    <!-- Servicio de conexión y notificaciones -->
+    <string name="channel_attention">Te necesita</string>
+    <string name="channel_attention_about">Un Big Thing pregunta, está bloqueado o ha terminado; ha fallado el trabajo de un worker.</string>
+    <string name="channel_connection">Conexión con el ordenador</string>
+    <string name="channel_connection_about">Se muestra mientras la app mantiene abierta su conexión con el ordenador.</string>
+    <string name="service_connecting">Conectando con %1$s…</string>
+    <string name="service_connected">Conectado a %1$s</string>
+    <string name="service_waiting">Esperando a %1$s…</string>
+    <string name="revoked_title">Emparejamiento revocado</string>
+    <string name="revoked_body">%1$s ya no reconoce este teléfono. Abre la app para emparejarlo de nuevo.</string>
+    <string name="bigthing_needs_you">Big Thing te necesita</string>
+    <string name="bigthing_blocked">Big Thing está bloqueado</string>
+    <string name="bigthing_done">Big Thing ha terminado</string>
+    <string name="bigthing">Big Thing</string>
+    <string name="job_failed">Ha fallado el trabajo de un worker</string>
+
+    <!-- Instalar apps que envía el ordenador -->
+    <string name="install_title">Instalar %1$s</string>
+    <string name="install_question">¿Instalar %1$s?</string>
+    <string name="install_sent_by">Enviada por %1$s · %2$s. Toca para instalar.</string>
+    <string name="install_permission">Enviada por %1$s · %2$s\n\nAndroid necesita tu permiso una vez para que ThingMaker instale apps. Activa “Permitir de esta fuente” y vuelve.</string>
+    <string name="install_open_settings">Abrir ajustes</string>
+    <string name="install_downloading">Descargando desde %1$s…</string>
+    <string name="install_not_paired">Este teléfono no está emparejado.</string>
+    <string name="install_unreachable">No se pudo llegar al ordenador.</string>
+    <string name="install_refused">El ordenador lo rechazó (%1$d).</string>
+    <string name="install_mismatch">La descarga no coincide con lo que envió %1$s. No se instaló nada.</string>
+    <string name="install_download_failed">No se pudo descargar: %1$s</string>
+    <string name="install_confirm">Android te pedirá que lo confirmes.</string>
+    <string name="install_start_failed">Android no pudo iniciar la instalación: %1$s</string>
+    <string name="install_cancelled">Se canceló la instalación.</string>
+    <string name="install_done">%1$s está instalada.</string>
+    <string name="install_not_installed">Android no la instaló.</string>
+    <string name="done">Hecho</string>
+    <string name="close">Cerrar</string>
+    <string name="the_computer">el ordenador</string>
+</resources>

@@ -1,5 +1,5 @@
 /**
- * On the phone: whether the Mac is there. Shown only when it is not —
+ * On the phone: whether the computer is there. Shown only when it is not —
  * connecting, gone (the page reconnects by itself), or refused because the
  * phone's pairing was revoked.
  */
@@ -12,7 +12,9 @@ export function ConnectionBanner() {
   if (state.state === "open") return null;
   return (
     <div className={`banner remote-banner ${state.state === "denied" ? "banner-error" : "banner-busy"}`} role="status">
-      {state.state === "denied" ? (state.message ?? "This phone is not paired with the Mac.") : state.state === "closed" ? "Lost the Mac — reconnecting…" : "Connecting to the Mac…"}
+      {state.state === "denied"
+        ? (state.message ?? "This phone is not paired with the computer.")
+        : (state.message ?? (state.state === "closed" ? "Lost the computer — reconnecting…" : "Connecting to the computer…"))}
     </div>
   );
 }

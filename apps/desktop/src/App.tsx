@@ -79,24 +79,31 @@ export function App() {
     void bootstrap();
   }, [bootstrap]);
 
+  const toggleSidebar = useStore((s) => s.toggleSidebar);
   useKeyboardShortcuts();
 
-  // On the phone, Android's back gesture steps out of a session to the list.
+  // On the phone, Android's back closes the topmost thing — Chill, the
+  // palette, a dialog, the drawer — then opens the drawer from a screen, and
+  // only then leaves the app.
   useEffect(() => {
     if (!IS_REMOTE) return;
     const back = () => {
-      if (useStore.getState().chillMode) { useStore.getState().setChillMode(false); return true; }
-      const current = useStore.getState().view;
-      if (current.kind === "welcome" || current.kind === "workspace") return false;
-      const workspaceId = current.kind === "session" ? useStore.getState().sessions[current.sessionId]?.workspaceId : undefined;
-      useStore.getState().setView(workspaceId ? { kind: "workspace", workspaceId } : { kind: "welcome" });
-      return true;
+      const state = useStore.getState();
+      if (state.chillMode) { state.setChillMode(false); return true; }
+      if (state.paletteOpen) { state.setPaletteOpen(false); return true; }
+      if (document.querySelector('[aria-modal="true"]')) {
+        (document.activeElement ?? document.body).dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+        return true;
+      }
+      if (!state.sidebarCollapsed) { state.toggleSidebar(); return true; }
+      if (state.view.kind !== "welcome") { state.toggleSidebar(); return true; }
+      return false;
     };
     (window as unknown as { __thingmakerBack?: () => boolean }).__thingmakerBack = back;
   }, []);
 
   return (
-    <div className={`app ${sidebarCollapsed && !IS_REMOTE ? "sidebar-collapsed" : ""} ${IS_REMOTE ? `app-remote remote-view-${view.kind}` : ""}`} data-reduce-motion={reducedMotion === "reduce" ? "true" : undefined}>
+    <div className={`app ${sidebarCollapsed && !IS_REMOTE ? "sidebar-collapsed" : ""} ${IS_REMOTE ? "app-remote" : ""}`} data-reduce-motion={reducedMotion === "reduce" ? "true" : undefined}>
       <div aria-live="polite" className="sr-only" role="status">
         {announcement}
       </div>
@@ -106,11 +113,12 @@ export function App() {
       {IS_REMOTE && !chillMode && <ConnectionBanner />}
       {chillMode && <ErrorBoundary label="Chill" onReset={() => setChillMode(false)} fallback={<div className="chill" role="alert" aria-label="Chill rendering unavailable"><button aria-label="Back to work" onClick={() => setChillMode(false)}><svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor"><path d="M9 5H5v14h4M13 8l4 4-4 4M9 12h11" /></svg></button></div>}><Suspense fallback={<div className="chill" aria-label="Opening Chill" />}><ChillView onExit={() => setChillMode(false)} /></Suspense></ErrorBoundary>}
       <div className="shell" style={chillMode ? { display: "none" } : undefined}>
-        {(!sidebarCollapsed || IS_REMOTE) && (
+        {!sidebarCollapsed && (
           <ErrorBoundary label="sidebar">
             <Sidebar />
           </ErrorBoundary>
         )}
+        {IS_REMOTE && !sidebarCollapsed && <button aria-label="Close the menu" className="mobile-sidebar-backdrop" onClick={toggleSidebar} type="button" />}
         <section className="main">
           <ErrorBoundary label="top bar">
             <TopBar />

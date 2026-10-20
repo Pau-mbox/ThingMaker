@@ -1,4 +1,4 @@
-package dev.thingmaker.phone
+package dev.thingmaker.remote
 
 import android.app.Notification
 import android.app.NotificationManager
@@ -18,9 +18,9 @@ import org.json.JSONObject
 import java.util.concurrent.TimeUnit
 
 /**
- * Keeps a line open to the Mac while the app is closed, so the phone hears
+ * Keeps a line open to the computer while the app is closed, so the phone hears
  * when a Big Thing asks something, is blocked or is done, and when a
- * worker's job fails. No push service in between: the Mac speaks to this
+ * worker's job fails. No push service in between: the computer speaks to this
  * phone through its relay.
  */
 class BridgeService : Service() {
@@ -37,6 +37,8 @@ class BridgeService : Service() {
 
     override fun onBind(intent: Intent?): IBinder? = null
 
+    override fun attachBaseContext(newBase: Context) = super.attachBaseContext(AppSettings.localized(newBase))
+
     override fun onCreate() {
         super.onCreate()
         instance = this
@@ -48,7 +50,7 @@ class BridgeService : Service() {
             stopSelf()
             return START_NOT_STICKY
         }
-        startForeground(ONGOING, ongoing(shown ?: "Connecting to ${pairing!!.macName}…"), ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE)
+        startForeground(ONGOING, ongoing(shown ?: getString(R.string.service_connecting, pairing!!.macName)), ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE)
         if (socket == null) open()
         return START_STICKY
     }
@@ -89,7 +91,7 @@ class BridgeService : Service() {
 
     private inner class Listener(private val pairing: Pairing) : WebSocketListener() {
         override fun onOpen(webSocket: WebSocket, response: Response) {
-            webSocket.send(JSONObject().put("t", "hello").put("token", pairing.token).put("client", "thingmaker-phone-service").toString())
+            webSocket.send(JSONObject(pairing.hello()).put("client", "thingmaker-remote-service").toString())
         }
 
         override fun onMessage(webSocket: WebSocket, text: String) {
@@ -97,7 +99,7 @@ class BridgeService : Service() {
             when (frame.optString("t")) {
                 "welcome" -> {
                     retry = 2_000L
-                    status("Connected to ${pairing.macName}")
+                    status(getString(R.string.service_connected, pairing.macName))
                     // Reports made while there was no line, an update of this
                     // app included: it could only say so now.
                     val prefs = getSharedPreferences("install", MODE_PRIVATE)
@@ -111,7 +113,7 @@ class BridgeService : Service() {
                 "install" -> offered(Offer(frame.optString("id"), frame.optString("name"), frame.optLong("size"), frame.optString("sha256"), frame.optString("from", pairing.macName)))
                 "denied" -> {
                     stopped = true
-                    Notifier.attention(this@BridgeService, "Pairing revoked", "${pairing.macName} no longer knows this phone. Open the app to pair again.")
+                    Notifier.attention(this@BridgeService, getString(R.string.revoked_title), getString(R.string.revoked_body, pairing.macName))
                     stopSelf()
                 }
                 "event" -> event(frame.optString("name"), frame.optJSONObject("payload"))
@@ -119,17 +121,17 @@ class BridgeService : Service() {
         }
 
         override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
-            status("Waiting for ${pairing.macName}…")
+            status(getString(R.string.service_waiting, pairing.macName))
             reconnect()
         }
 
         override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
-            status("Waiting for ${pairing.macName}…")
+            status(getString(R.string.service_waiting, pairing.macName))
             reconnect()
         }
     }
 
-    /** An app from the Mac: straight to the install screen when the app is open, a notification when not. */
+    /** An app from the computer: straight to the install screen when the app is open, a notification when not. */
     private fun offered(offer: Offer) {
         if (offer.id.isEmpty()) return
         val open = offer.into(Intent(this, InstallActivity::class.java)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
@@ -146,15 +148,15 @@ class BridgeService : Service() {
         when (name) {
             "thingmaker://bigthing" -> if (payload.optString("kind") == "notify") {
                 val title = when (payload.optString("attention")) {
-                    "needs_input" -> "Big Thing needs you"
-                    "blocked" -> "Big Thing is blocked"
-                    "done" -> "Big Thing is done"
-                    else -> "Big Thing"
+                    "needs_input" -> getString(R.string.bigthing_needs_you)
+                    "blocked" -> getString(R.string.bigthing_blocked)
+                    "done" -> getString(R.string.bigthing_done)
+                    else -> getString(R.string.bigthing)
                 }
                 Notifier.attention(this, title, payload.optString("text"))
             }
             "thingmaker://job" -> if (payload.optString("status") == "failed" && toldJobs.add(payload.optString("id"))) {
-                Notifier.attention(this, "A worker's job failed", "${payload.optString("worker")}: ${payload.optString("error").take(200)}")
+                Notifier.attention(this, getString(R.string.job_failed), "${payload.optString("worker")}: ${payload.optString("error").take(200)}")
             }
         }
     }
@@ -165,7 +167,7 @@ class BridgeService : Service() {
         @Volatile
         private var instance: BridgeService? = null
 
-        /** Tells the Mac; kept for the next connection when there is none now. */
+        /** Tells the computer; kept for the next connection when there is none now. */
         fun report(context: Context, id: String, state: String, message: String?) {
             val service = instance
             val socket = service?.socket

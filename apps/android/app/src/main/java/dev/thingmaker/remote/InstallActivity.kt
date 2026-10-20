@@ -1,4 +1,4 @@
-package dev.thingmaker.phone
+package dev.thingmaker.remote
 
 import android.app.Activity
 import android.app.PendingIntent
@@ -24,22 +24,22 @@ import java.security.MessageDigest
 import java.util.concurrent.TimeUnit
 import kotlin.concurrent.thread
 
-/** An app the Mac offered: what to fetch and how to check it. */
+/** An app the computer offered: what to fetch and how to check it. */
 data class Offer(val id: String, val name: String, val size: Long, val sha256: String, val from: String) {
     fun into(intent: Intent): Intent = intent.putExtra("id", id).putExtra("name", name).putExtra("size", size).putExtra("sha256", sha256).putExtra("from", from)
 
     companion object {
         fun from(intent: Intent): Offer? {
             val id = intent.getStringExtra("id") ?: return null
-            return Offer(id, intent.getStringExtra("name") ?: "app.apk", intent.getLongExtra("size", 0), intent.getStringExtra("sha256") ?: "", intent.getStringExtra("from") ?: "the Mac")
+            return Offer(id, intent.getStringExtra("name") ?: "app.apk", intent.getLongExtra("size", 0), intent.getStringExtra("sha256") ?: "", intent.getStringExtra("from") ?: "")
         }
     }
 }
 
 /**
- * Installs an app the Mac sent: asks Android for permission to install apps
- * the first time, downloads it over the phone bridge, checks it is the file
- * the Mac offered, and hands it to Android's installer, which asks you to
+ * Installs an app the computer sent: asks Android for permission to install
+ * apps the first time, downloads it over the phone bridge, checks it is the
+ * file the computer offered, and hands it to Android's installer, which asks you to
  * confirm.
  */
 class InstallActivity : Activity() {
@@ -49,6 +49,11 @@ class InstallActivity : Activity() {
     private lateinit var progress: ProgressBar
     private lateinit var action: Button
     private var started = false
+
+    override fun attachBaseContext(newBase: Context) = super.attachBaseContext(AppSettings.localized(newBase))
+
+    /** Who sent it, in this phone's language when the computer gave no name. */
+    private val sender get() = offer.from.ifBlank { getString(R.string.the_computer) }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -73,7 +78,7 @@ class InstallActivity : Activity() {
             addView(progress, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT).apply { topMargin = dp(16) })
             addView(action, LinearLayout.LayoutParams(WRAP_CONTENT, WRAP_CONTENT).apply { topMargin = dp(20) })
         })
-        title.text = "Install ${offer.name}"
+        title.text = getString(R.string.install_title, offer.name)
         current = this
     }
 
@@ -90,28 +95,28 @@ class InstallActivity : Activity() {
 
     private fun begin() {
         if (!packageManager.canRequestPackageInstalls()) {
-            say("Sent by ${offer.from} · ${size(offer.size)}\n\nAndroid needs your permission once for ThingMaker to install apps. Turn on “Allow from this source”, then come back.")
-            button("Open settings") { startActivity(Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, Uri.parse("package:$packageName"))) }
+            say(getString(R.string.install_permission, sender, size(offer.size)))
+            button(getString(R.string.install_open_settings)) { startActivity(Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, Uri.parse("package:$packageName"))) }
             return
         }
         started = true
         action.visibility = View.GONE
         progress.visibility = View.VISIBLE
-        say("Downloading from ${offer.from}…")
+        say(getString(R.string.install_downloading, sender))
         thread { download() }
     }
 
     private fun download() {
-        val pairing = Pairing.load(this) ?: return fail("This phone is not paired.")
+        val pairing = Pairing.load(this) ?: return fail(getString(R.string.install_not_paired))
         val target = File(cacheDir, "apks").apply { mkdirs() }.resolve("${offer.id}.apk")
         val digest = MessageDigest.getInstance("SHA-256")
-        var lastError = "Could not reach the relay."
+        var lastError = getString(R.string.install_unreachable)
         for (base in listOf(pairing.url)) {
             try {
                 val request = pairing.authorize(Request.Builder().url("$base/v1/apk/${offer.id}").header("Authorization", "Bearer ${pairing.token}")).build()
                 HTTP.newCall(request).execute().use { response ->
                     if (!response.isSuccessful) {
-                        lastError = response.body?.string()?.take(200) ?: "The Mac refused (${response.code})."
+                        lastError = response.body?.string()?.take(200) ?: getString(R.string.install_refused, response.code)
                         return@use
                     }
                     val body = response.body ?: return@use
@@ -134,12 +139,12 @@ class InstallActivity : Activity() {
                     val sha = digest.digest().joinToString("") { "%02x".format(it) }
                     if (!sha.equals(offer.sha256, ignoreCase = true)) {
                         target.delete()
-                        return fail("The download does not match what ${offer.from} sent. Nothing was installed.")
+                        return fail(getString(R.string.install_mismatch, sender))
                     }
                     return install(target)
                 }
             } catch (error: Exception) {
-                lastError = "Could not download: ${error.message}"
+                lastError = getString(R.string.install_download_failed, error.message ?: "")
             }
         }
         fail(lastError)
@@ -148,7 +153,7 @@ class InstallActivity : Activity() {
     private fun install(file: File) {
         runOnUiThread {
             progress.isIndeterminate = true
-            say("Android will ask you to confirm.")
+            say(getString(R.string.install_confirm))
         }
         // An update of this app ends this app: it reports back when it starts again.
         if (packageManager.getPackageArchiveInfo(file.path, 0)?.packageName == packageName) {
@@ -170,7 +175,7 @@ class InstallActivity : Activity() {
             BridgeService.report(this, offer.id, "confirm", null)
         } catch (error: Exception) {
             file.delete()
-            fail("Android could not start the install: ${error.message}")
+            fail(getString(R.string.install_start_failed, error.message ?: ""))
         }
     }
 
@@ -178,7 +183,7 @@ class InstallActivity : Activity() {
     fun finished(ok: Boolean, message: String) {
         progress.visibility = View.INVISIBLE
         say(message)
-        button(if (ok) "Done" else "Close") { finish() }
+        button(getString(if (ok) R.string.done else R.string.close)) { finish() }
     }
 
     private fun fail(message: String) {

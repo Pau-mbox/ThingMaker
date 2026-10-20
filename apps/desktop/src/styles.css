@@ -5065,8 +5065,6 @@ button.odyssey-task-title svg {
 }
 /* Shared Android renderer: touch controls and a sidebar drawer. */
 html[data-platform="android"] { --traffic-lights: 8px; --titlebar: 52px; height: var(--android-viewport-height, 100vh); }
-.remote-connection { flex: none; display: flex; justify-content: space-between; gap: 8px; padding: 6px 12px; font-size: 11px; color: var(--muted); background: var(--panel-2); border-bottom: 1px solid var(--border); }
-.remote-offline { color: var(--warn); }
 .mobile-sidebar-backdrop { display: none; }
 @media (max-width: 640px) {
   html[data-platform="android"] .app { height: var(--android-viewport-height, 100vh); }
@@ -5462,21 +5460,6 @@ html[data-platform="android"] { --traffic-lights: 8px; --titlebar: 52px; height:
   display: none !important;
 }
 
-/* One screen at a time: the sessions, or the session. */
-.app-remote .sidebar {
-  width: 100%;
-  border-right: 0;
-}
-
-.app-remote:not(.remote-view-welcome):not(.remote-view-workspace) .sidebar {
-  display: none;
-}
-
-.app-remote.remote-view-welcome .main,
-.app-remote.remote-view-workspace .main {
-  display: none;
-}
-
 .app-remote .sidebar-top {
   padding: 0 12px;
 }
@@ -5484,14 +5467,6 @@ html[data-platform="android"] { --traffic-lights: 8px; --titlebar: 52px; height:
 .app-remote .topbar {
   padding: 0 8px;
   gap: 4px;
-}
-
-.app-remote .remote-back {
-  width: 36px;
-  height: 36px;
-  font-size: 28px;
-  line-height: 1;
-  color: var(--text);
 }
 
 .app-remote .topbar-title {
@@ -5651,4 +5626,12 @@ html[data-platform="android"] { --traffic-lights: 8px; --titlebar: 52px; height:
 .model-menu-provider:disabled {
   opacity: 0.45;
   cursor: not-allowed;
+}
+
+/* The phone's own settings, at the foot of its drawer. */
+.phone-app-settings {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px 0;
 }

@@ -115,6 +115,16 @@ pub fn phone_url(config: &RemoteConfig) -> Option<String> {
     }
 }
 
+/// Development builds only: a standing pairing code from the environment, so
+/// an emulator can pair without scanning. Compiled out of the app you install.
+fn dev_pairing() -> Option<Pairing> {
+    if !cfg!(debug_assertions) {
+        return None;
+    }
+    let code = std::env::var("THINGMAKER_REMOTE_DEV_PAIR_CODE").ok().filter(|code| code.len() >= 6)?;
+    Some(Pairing { code, expires_at: i64::MAX, attempts: 0 })
+}
+
 fn computer_name() -> String {
     if cfg!(windows) {
         return std::env::var("COMPUTERNAME").ok().filter(|name| !name.is_empty()).unwrap_or_else(|| "PC".into());
@@ -176,7 +186,7 @@ impl RemoteState {
             config: Mutex::new(devices::load(&data_dir)),
             data_dir,
             host_name: computer_name(),
-            pairing: Mutex::new(None),
+            pairing: Mutex::new(dev_pairing()),
             listening: Mutex::new(None),
             connections: Mutex::new(HashMap::new()),
             events,

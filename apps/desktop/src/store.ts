@@ -55,6 +55,7 @@ import { api } from "./ipc";
 import { notify, shouldNotify } from "./notifications";
 import { CLAUDE_RETRY_MS, claudeUsageFrom } from "./odysseyClaudeQuota";
 import { applyEvent, emptyProjection, EMPTY_QUEUE, type Projection } from "./projection";
+import { IS_REMOTE } from "./remote/mode";
 
 export const CLOSE_REQUESTED_EVENT = "thingmaker://close-requested";
 
@@ -720,7 +721,8 @@ export const useStore = create<State>((set, get) => ({
   announcement: "",
   uiPrefs: DEFAULT_UI_PREFS,
   bigThingDoc: {},
-  sidebarCollapsed: false,
+  // On the phone the sidebar is a drawer, closed until asked for.
+  sidebarCollapsed: IS_REMOTE,
   chillMode: false,
   setChillMode: (enabled) => set({ chillMode: enabled }),
   sessionDefaults: {},
@@ -824,7 +826,8 @@ export const useStore = create<State>((set, get) => ({
   },
 
   setView(view) {
-    set({ view });
+    // On the phone, going somewhere closes the drawer.
+    set({ view, ...(IS_REMOTE ? { sidebarCollapsed: true } : {}) });
     if (view.kind === "session") {
       const session = get().sessions[view.sessionId];
       if (session && session.attention !== "none") {
@@ -861,7 +864,7 @@ export const useStore = create<State>((set, get) => ({
   },
 
   async selectWorkspace(workspaceId) {
-    set({ view: { kind: "workspace", workspaceId } });
+    set({ view: { kind: "workspace", workspaceId }, ...(IS_REMOTE ? { sidebarCollapsed: true } : {}) });
     if (!get().inspections[workspaceId]) await get().inspectWorkspace(workspaceId);
   },
 

@@ -1,13 +1,14 @@
 /**
- * The phone build's line to the Mac: one WebSocket to the bridge that served
- * this page, speaking the renderer's own protocol. `call` is a command and
- * its result; a `Channel` argument becomes `channel` frames; the host's
- * events arrive as `event` frames.
+ * The phone build's line to the computer: one WebSocket to the phone bridge,
+ * speaking the renderer's own protocol. `call` is a command and its result;
+ * a `Channel` argument becomes `channel` frames; the host's events arrive as
+ * `event` frames.
  *
- * The page comes from the Mac, so the socket is on the same origin. The
- * phone's token comes from the Android app (`window.ThingMakerNative`), or,
- * in a desktop browser for testing, from `#token=` in the address, kept in
- * local storage.
+ * In the Android app the screens are bundled and the app opens the socket
+ * itself — through the relay or the user's tunnel, with the Access headers —
+ * and sends the hello with this phone's token, so the page never holds a
+ * secret. In a desktop browser, for testing, the socket is the page's own, on
+ * the origin that served it, with the token from `#token=` in the address.
  */
 
 type Pending = { resolve: (value: unknown) => void; reject: (error: unknown) => void };
@@ -16,7 +17,6 @@ type ChannelSink = { onmessage?: ((message: unknown) => void) | null };
 declare global {
   interface Window {
     ThingMakerNative?: {
-      token(): string;
       notify?(title: string, body: string): void;
       connectionChanged?(state: string): void;
       unpair?(): void;
@@ -28,10 +28,44 @@ declare global {
       socketOpen?(path: string): string;
       socketSend?(id: string, data: string): void;
       socketClose?(id: string): void;
+      /** Android's file picker; answered through `__thingmakerAnswer` with `[{name, dataBase64}]`. */
+      pickFiles?(id: string): void;
+      /** Android's "save as"; answered with the saved address, or null. */
+      saveText?(id: string, name: string, content: string): void;
+      macName?(): string;
+      connectionMode?(): string;
+      address?(): string;
+      lockEnabled?(): boolean;
+      setLockEnabled?(enabled: boolean): void;
+      language?(): string;
+      setLanguage?(language: string): void;
     };
     __thingmakerSocket?: (id: string, kind: "open" | "message" | "close", data: string) => void;
+    __thingmakerAnswer?: (id: string, value: unknown) => void;
   }
 }
+
+const answers = new Map<string, (value: unknown) => void>();
+
+/** Asks the Android app for something it answers later (a picker, a save). */
+export function askNative<T>(ask: (id: string) => void): Promise<T> {
+  window.__thingmakerAnswer ??= (id, value) => {
+    answers.get(id)?.(value);
+    answers.delete(id);
+  };
+  const id = `ask-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  return new Promise<T>((resolve) => {
+    answers.set(id, resolve as (value: unknown) => void);
+    ask(id);
+  });
+}
+
+/** Why the app's socket would not open, as the connection banner says it. */
+const CLOSE_REASON: Record<string, string> = {
+  "relay-without-computer": "The relay is up, but ThingMaker on the computer is not connected to it.",
+  "access-refused": "Cloudflare Access turned this phone away. Pair again to pick up the current token.",
+  unreachable: "Can't reach the computer's address. Is this phone online?",
+};
 
 /** What the bridge needs of a socket: the browser's, or the app's. */
 type Socket = {
@@ -39,7 +73,9 @@ type Socket = {
   close(): void;
   onopen: (() => void) | null;
   onmessage: ((message: { data: unknown }) => void) | null;
-  onclose: (() => void) | null;
+  onclose: ((reason?: string) => void) | null;
+  /** The app's socket: it sends the hello itself. */
+  native: boolean;
 };
 
 const nativeSockets = new Map<string, Socket>();
@@ -50,7 +86,7 @@ function openSocket(path: string): Socket {
   if (!native?.socketOpen || !native.socketSend || !native.socketClose) {
     const scheme = window.location.protocol === "https:" ? "wss" : "ws";
     const browser = new WebSocket(`${scheme}://${window.location.host}${path}`);
-    const socket: Socket = { send: (data) => browser.send(data), close: () => browser.close(), onopen: null, onmessage: null, onclose: null };
+    const socket: Socket = { send: (data) => browser.send(data), close: () => browser.close(), onopen: null, onmessage: null, onclose: null, native: false };
     browser.onopen = () => socket.onopen?.();
     browser.onmessage = (message) => socket.onmessage?.(message);
     browser.onclose = () => socket.onclose?.();
@@ -63,7 +99,7 @@ function openSocket(path: string): Socket {
     else if (kind === "message") socket.onmessage?.({ data });
     else {
       nativeSockets.delete(id);
-      socket.onclose?.();
+      socket.onclose?.(data || undefined);
     }
   };
   const id = native.socketOpen(path);
@@ -73,6 +109,7 @@ function openSocket(path: string): Socket {
     onopen: null,
     onmessage: null,
     onclose: null,
+    native: true,
   };
   nativeSockets.set(id, socket);
   return socket;
@@ -81,8 +118,6 @@ function openSocket(path: string): Socket {
 const TOKEN_KEY = "thingmaker.remote.token";
 
 function token(): string {
-  const native = window.ThingMakerNative?.token();
-  if (native) return native;
   const fromHash = /token=([A-Za-z0-9_-]{20,})/.exec(window.location.hash)?.[1];
   if (fromHash) {
     try {
@@ -120,6 +155,8 @@ export class Bridge {
   private state: ConnectionState = "connecting";
   private watchers = new Set<(state: ConnectionState, message?: string) => void>();
   private everOpen = false;
+  /** Why the line last failed to open, kept while it retries. */
+  private lastReason: string | undefined;
   private retry = 1000;
 
   constructor() {
@@ -129,10 +166,13 @@ export class Bridge {
   private open() {
     const socket = openSocket("/v1/ws");
     this.socket = socket;
-    this.setState("connecting");
-    socket.onopen = () => socket.send(JSON.stringify({ t: "hello", token: token(), client: "thingmaker-phone" }));
+    this.setState("connecting", this.lastReason);
+    // The app's socket has said hello already, with the token it keeps.
+    socket.onopen = () => {
+      if (!socket.native) socket.send(JSON.stringify({ t: "hello", token: token(), client: "thingmaker-browser" }));
+    };
     socket.onmessage = (message) => this.receive(String(message.data));
-    socket.onclose = () => {
+    socket.onclose = (reason) => {
       this.socket = null;
       // A call that went out may or may not have run: it is never sent
       // again by itself. One that never left can be tried again.
@@ -145,7 +185,8 @@ export class Bridge {
       this.sent.clear();
       this.queue.length = 0;
       if (this.state === "denied") return;
-      this.setState("closed");
+      this.lastReason = reason ? CLOSE_REASON[reason] : undefined;
+      this.setState("closed", this.lastReason);
       // A reconnect starts the screens over: streams missed while away are
       // read again from the Mac rather than patched together here.
       setTimeout(() => (this.everOpen ? window.location.reload() : this.open()), this.retry);
@@ -175,6 +216,7 @@ export class Bridge {
     switch (frame.t) {
       case "welcome":
         this.everOpen = true;
+        this.lastReason = undefined;
         this.retry = 1000;
         this.setState("open");
         for (const queued of this.queue.splice(0)) {

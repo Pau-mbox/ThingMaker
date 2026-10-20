@@ -1,4 +1,4 @@
-package dev.thingmaker.phone
+package dev.thingmaker.remote
 
 import android.app.Notification
 import android.app.NotificationChannel
@@ -15,11 +15,11 @@ object Notifier {
 
     fun channels(context: Context) {
         val manager = context.getSystemService(NotificationManager::class.java)
-        manager.createNotificationChannel(NotificationChannel(ATTENTION, "Needs you", NotificationManager.IMPORTANCE_HIGH).apply {
-            description = "A Big Thing asks, is blocked or is done; a worker's job failed."
+        manager.createNotificationChannel(NotificationChannel(ATTENTION, context.getString(R.string.channel_attention), NotificationManager.IMPORTANCE_HIGH).apply {
+            description = context.getString(R.string.channel_attention_about)
         })
-        manager.createNotificationChannel(NotificationChannel(CONNECTION, "Connection to the Mac", NotificationManager.IMPORTANCE_MIN).apply {
-            description = "Shown while the app keeps its line to the Mac open."
+        manager.createNotificationChannel(NotificationChannel(CONNECTION, context.getString(R.string.channel_connection), NotificationManager.IMPORTANCE_MIN).apply {
+            description = context.getString(R.string.channel_connection_about)
         })
     }
 
@@ -29,14 +29,14 @@ object Notifier {
         PendingIntent.FLAG_IMMUTABLE,
     )
 
-    /** "Install Game.apk from your Mac?", opening the install screen. */
+    /** "Install Game.apk?", opening the install screen. */
     fun install(context: Context, offer: Offer, open: Intent) {
         channels(context)
         val tap = PendingIntent.getActivity(context, offer.id.hashCode(), open, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
         val notification = Notification.Builder(context, ATTENTION)
             .setSmallIcon(android.R.drawable.stat_sys_download_done)
-            .setContentTitle("Install ${offer.name}?")
-            .setContentText("Sent by ${offer.from} · ${InstallActivity.size(offer.size)}. Tap to install.")
+            .setContentTitle(context.getString(R.string.install_question, offer.name))
+            .setContentText(context.getString(R.string.install_sent_by, offer.from, InstallActivity.size(offer.size)))
             .setContentIntent(tap)
             .setAutoCancel(true)
             .build()
