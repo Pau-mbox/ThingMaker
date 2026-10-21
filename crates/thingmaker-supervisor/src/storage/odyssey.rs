@@ -170,6 +170,21 @@ string_enum!(StepState {
     Blocked => "blocked",
 }, default Pending);
 
+string_enum!(StepKind {
+    Work => "work",
+    Approval => "approval",
+}, default Work);
+
+string_enum!(LoopAtLimit {
+    Ask => "ask",
+    Stop => "stop",
+    Continue => "continue",
+}, default Ask);
+
+fn first_round() -> i64 {
+    1
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct OdysseyRecord {
@@ -280,6 +295,9 @@ pub struct QuestionRecord {
     pub answer: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub answered_at: Option<i64>,
+    /// The task it stands for: an approval step, or a loop at its limit.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub step_id: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -292,6 +310,8 @@ pub struct NewQuestion {
     pub options: Vec<String>,
     #[serde(default)]
     pub fallback: Option<String>,
+    #[serde(default)]
+    pub step_id: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -358,6 +378,29 @@ pub struct StepRecord {
     /// A cross-provider review of the task's result.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub review: Option<String>,
+    /// Work for a worker, or the user's own approval.
+    #[serde(default)]
+    pub kind: StepKind,
+    /// Tasks whose results this one is given.
+    #[serde(default)]
+    pub uses: Vec<String>,
+    /// The task's result, bounded, once it has one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub result: Option<String>,
+    /// The task to go back to when this one asks for changes.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub loop_to: Option<String>,
+    /// Rounds before the loop stops; none is no limit.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub loop_limit: Option<i64>,
+    #[serde(default)]
+    pub loop_at_limit: LoopAtLimit,
+    /// Which attempt this task is on, from 1.
+    #[serde(default = "first_round")]
+    pub round: i64,
+    /// What the last loop back asked of this task.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub feedback: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub started_at: Option<i64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -373,6 +416,13 @@ pub struct StepEdit {
     pub title: Option<String>,
     pub detail: Option<String>,
     pub depends_on: Option<Vec<String>>,
+    pub kind: Option<StepKind>,
+    pub uses: Option<Vec<String>>,
+    /// An empty id clears the loop.
+    pub loop_to: Option<String>,
+    /// 0 is no limit.
+    pub loop_limit: Option<i64>,
+    pub loop_at_limit: Option<LoopAtLimit>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -705,7 +755,7 @@ fn plan_change_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<PlanChangeRecord
     })
 }
 
-const QUESTION_COLUMNS: &str = "id, odyssey_id, at, kind, question, options, fallback, state, answer, answered_at";
+const QUESTION_COLUMNS: &str = "id, odyssey_id, at, kind, question, options, fallback, state, answer, answered_at, step_id";
 
 fn question_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<QuestionRecord> {
     let options: String = row.get(5)?;
@@ -721,10 +771,14 @@ fn question_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<QuestionRecord> {
         state: QuestionState::parse(&state),
         answer: row.get(8)?,
         answered_at: row.get(9)?,
+        step_id: row.get(10)?,
     })
 }
 
-const STEP_COLUMNS: &str = "id, milestone_id, position, title, state, note, detail, agent_name, harness, model, depends_on, started_at, updated_at, finished_at, capability, job_id, review";
+/// How much of a task's result is kept: enough for the tasks that read it.
+pub const STEP_RESULT_LIMIT: usize = 8_000;
+
+const STEP_COLUMNS: &str = "id, milestone_id, position, title, state, note, detail, agent_name, harness, model, depends_on, started_at, updated_at, finished_at, capability, job_id, review, kind, uses, result, loop_to, loop_limit, loop_at_limit, round, feedback";
 
 fn step_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<StepRecord> {
     let state: String = row.get(4)?;
@@ -748,6 +802,14 @@ fn step_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<StepRecord> {
         capability: row.get(14)?,
         job_id: row.get(15)?,
         review: row.get(16)?,
+        kind: StepKind::parse(&row.get::<_, String>(17)?),
+        uses: serde_json::from_str(&row.get::<_, String>(18)?).unwrap_or_default(),
+        result: row.get(19)?,
+        loop_to: row.get(20)?,
+        loop_limit: row.get(21)?,
+        loop_at_limit: LoopAtLimit::parse(&row.get::<_, String>(22)?),
+        round: row.get(23)?,
+        feedback: row.get(24)?,
     })
 }
 
@@ -1317,6 +1379,26 @@ impl Storage {
         Ok(())
     }
 
+    /// The task's result, bounded.
+    pub fn step_set_result(&self, id: &str, result: Option<&str>) -> Result<(), StorageError> {
+        let result = result.map(|text| text.chars().take(STEP_RESULT_LIMIT).collect::<String>());
+        self.conn().execute("UPDATE odyssey_steps SET result = ?2, updated_at = ?3 WHERE id = ?1", params![id, result, now_unix_ms()])?;
+        Ok(())
+    }
+
+    /// Sends a task round again: pending, off its job and review, one round
+    /// further on, with what was asked of it this time.
+    pub fn step_reopen(&self, id: &str, feedback: Option<&str>, note: &str) -> Result<(), StorageError> {
+        let changed = self.conn().execute(
+            "UPDATE odyssey_steps SET state = 'pending', job_id = NULL, review = NULL, round = round + 1, feedback = ?2, note = ?3, finished_at = NULL, updated_at = ?4 WHERE id = ?1",
+            params![id, feedback, note, now_unix_ms()],
+        )?;
+        if changed == 0 {
+            return Err(StorageError::NotFound(format!("step {id} not found")));
+        }
+        Ok(())
+    }
+
     pub fn step_set_review(&self, id: &str, review: Option<&str>) -> Result<(), StorageError> {
         self.conn().execute("UPDATE odyssey_steps SET review = ?2, updated_at = ?3 WHERE id = ?1", params![id, review, now_unix_ms()])?;
         Ok(())
@@ -1359,9 +1441,32 @@ impl Storage {
             None => existing.title,
         };
         let depends = serde_json::to_string(edit.depends_on.as_ref().unwrap_or(&existing.depends_on)).map_err(|error| StorageError::Io(error.to_string()))?;
+        let uses = serde_json::to_string(edit.uses.as_ref().unwrap_or(&existing.uses)).map_err(|error| StorageError::Io(error.to_string()))?;
+        let loop_to = match &edit.loop_to {
+            Some(target) if target.trim().is_empty() => None,
+            Some(target) if target == id => return Err(StorageError::Io("a task cannot loop back to itself".into())),
+            Some(target) => Some(target.clone()),
+            None => existing.loop_to,
+        };
+        let loop_limit = match edit.loop_limit {
+            Some(limit) if limit <= 0 => None,
+            Some(limit) => Some(limit),
+            None => existing.loop_limit,
+        };
         self.conn().execute(
-            "UPDATE odyssey_steps SET title = ?2, detail = ?3, depends_on = ?4, updated_at = ?5 WHERE id = ?1",
-            params![id, title, edit.detail.as_deref().map(str::trim).unwrap_or(&existing.detail), depends, now_unix_ms()],
+            "UPDATE odyssey_steps SET title = ?2, detail = ?3, depends_on = ?4, kind = ?5, uses = ?6, loop_to = ?7, loop_limit = ?8, loop_at_limit = ?9, updated_at = ?10 WHERE id = ?1",
+            params![
+                id,
+                title,
+                edit.detail.as_deref().map(str::trim).unwrap_or(&existing.detail),
+                depends,
+                edit.kind.unwrap_or(existing.kind).as_str(),
+                uses,
+                loop_to,
+                loop_limit,
+                edit.loop_at_limit.unwrap_or(existing.loop_at_limit).as_str(),
+                now_unix_ms()
+            ],
         )?;
         self.step_get(id)?.ok_or_else(|| StorageError::NotFound(format!("step {id} not found")))
     }
@@ -1525,10 +1630,18 @@ impl Storage {
         let id = new_id();
         let options = serde_json::to_string(&new.options).map_err(|error| StorageError::Io(error.to_string()))?;
         self.conn().execute(
-            "INSERT INTO odyssey_questions (id, odyssey_id, at, kind, question, options, fallback) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
-            params![id, new.odyssey_id, now_unix_ms(), new.kind.trim(), question, options, new.fallback.as_deref().map(str::trim).filter(|value| !value.is_empty())],
+            "INSERT INTO odyssey_questions (id, odyssey_id, at, kind, question, options, fallback, step_id) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+            params![id, new.odyssey_id, now_unix_ms(), new.kind.trim(), question, options, new.fallback.as_deref().map(str::trim).filter(|value| !value.is_empty()), new.step_id],
         )?;
         self.question_get(&id)?.ok_or_else(|| StorageError::NotFound(format!("question {id} not found")))
+    }
+
+    /// The open question standing for a task, if there is one.
+    pub fn question_open_for_step(&self, step_id: &str) -> Result<Option<QuestionRecord>, StorageError> {
+        Ok(self
+            .conn()
+            .query_row(&format!("SELECT {QUESTION_COLUMNS} FROM odyssey_questions WHERE step_id = ?1 AND state = 'open' ORDER BY at DESC LIMIT 1"), params![step_id], question_row)
+            .optional()?)
     }
 
     pub fn question_get(&self, id: &str) -> Result<Option<QuestionRecord>, StorageError> {
@@ -2238,13 +2351,13 @@ mod tests {
         assert_eq!(storage.plan_change_list(&record.id, 10).unwrap().len(), 2);
 
         let question = storage
-            .question_add(&NewQuestion { odyssey_id: record.id.clone(), kind: "architecture".into(), question: "ECS or plain classes for the economy?".into(), options: vec!["ECS".into(), "classes".into()], fallback: Some("continuing with classes".into()) })
+            .question_add(&NewQuestion { odyssey_id: record.id.clone(), kind: "architecture".into(), question: "ECS or plain classes for the economy?".into(), options: vec!["ECS".into(), "classes".into()], fallback: Some("continuing with classes".into()), step_id: None })
             .unwrap();
         assert_eq!((question.state, question.options.len()), (QuestionState::Open, 2));
         storage.question_settle(&question.id, QuestionState::Answered, Some("classes")).unwrap();
         let answered = storage.question_get(&question.id).unwrap().unwrap();
         assert_eq!((answered.state, answered.answer.as_deref()), (QuestionState::Answered, Some("classes")));
-        assert!(storage.question_add(&NewQuestion { odyssey_id: record.id.clone(), kind: "x".into(), question: "  ".into(), options: vec![], fallback: None }).is_err());
+        assert!(storage.question_add(&NewQuestion { odyssey_id: record.id.clone(), kind: "x".into(), question: "  ".into(), options: vec![], fallback: None, step_id: None }).is_err());
     }
 
     #[test]

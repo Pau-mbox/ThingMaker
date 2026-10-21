@@ -14,7 +14,8 @@
 //!
 //! Around them: [`engine`] (the loop), [`watch`] (one per session),
 //! [`tools`] (the protocol and the memory on the `team` server),
-//! [`dispatch`] (the plan handed to the team), [`spend`] (the forecast),
+//! [`dispatch`] (the plan handed to the team), [`flow`] (loops, the user's
+//! approvals and the results tasks are given), [`spend`] (the forecast),
 //! [`worktree`] (a run's own branch) and [`apply`] (plan changes into the
 //! record).
 
@@ -27,6 +28,7 @@ pub mod decide;
 pub mod dispatch;
 pub mod engine;
 pub mod evidence;
+pub mod flow;
 pub mod host;
 pub mod journal;
 pub mod prompt;
@@ -41,7 +43,7 @@ pub mod worktree;
 #[cfg(test)]
 pub(crate) mod tests {
     use crate::storage::odyssey::{
-        CheckKind, MilestoneRecord, MilestoneState, OdysseyRecord, OdysseyState, OnPlanChange, OnReport, OnUsageReset, Orchestrator, StepRecord, StepState, StopCondition,
+        CheckKind, LoopAtLimit, MilestoneRecord, MilestoneState, OdysseyRecord, OdysseyState, OnPlanChange, OnReport, OnUsageReset, Orchestrator, StepKind, StepRecord, StepState, StopCondition,
     };
 
     pub fn goal() -> OdysseyRecord {
@@ -120,6 +122,14 @@ pub(crate) mod tests {
             capability: None,
             job_id: None,
             review: None,
+            kind: StepKind::Work,
+            uses: Vec::new(),
+            result: None,
+            loop_to: None,
+            loop_limit: None,
+            loop_at_limit: LoopAtLimit::Ask,
+            round: 1,
+            feedback: None,
         }
     }
 }

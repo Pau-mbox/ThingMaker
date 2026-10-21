@@ -9,9 +9,9 @@
  * never stored. A human can move a task by hand; the record stamps that too.
  */
 import { useState } from "react";
-import type { MilestoneRecord, OdysseyStep } from "@thingmaker/contracts";
+import type { LoopAtLimit, MilestoneRecord, OdysseyStep } from "@thingmaker/contracts";
 import { useStore } from "../store";
-import { TASK_STATUS_LABEL, dependencyNumbers, matchAgentToTask, taskNumber, taskOwner, taskStatus, type TaskStatus } from "../odysseyTasks";
+import { TASK_STATUS_LABEL, dependencyNumbers, flowBadges, matchAgentToTask, taskNumber, taskOwner, taskStatus, type TaskStatus } from "../odysseyTasks";
 import { describeModel } from "./OdysseyActivity";
 import { IconAgents, IconChevron } from "./icons";
 import { t } from "../i18n";
@@ -27,6 +27,91 @@ function ago(ms: number): string {
 
 export function TaskStatusChip({ status }: { status: TaskStatus }) {
   return <span className={`chip small task-status task-status-${status}`}>{TASK_STATUS_LABEL[status]}</span>;
+}
+
+/**
+ * How a task moves beyond what it waits for: who does it, which earlier
+ * results it is given, and where the work goes back to when it asks for
+ * changes. Each choice is saved as it is made.
+ */
+function TaskFlowEditor({ sessionId, milestones, milestoneIndex, stepIndex }: { sessionId: string; milestones: MilestoneRecord[]; milestoneIndex: number; stepIndex: number }) {
+  const editStep = useStore((s) => s.odysseyEditStep);
+  const steps = milestones[milestoneIndex]?.steps ?? [];
+  const step = steps[stepIndex];
+  if (!step) return null;
+  const uses = step.uses ?? [];
+  // Earlier milestones' tasks and this milestone's other tasks can feed it.
+  const sources = milestones.slice(0, milestoneIndex + 1).flatMap((milestone, index) =>
+    milestone.steps.map((candidate, position) => ({ id: candidate.id, label: `${taskNumber(index, position)} ${candidate.title}` })).filter((candidate) => candidate.id !== step.id),
+  );
+  const earlier = steps.slice(0, stepIndex);
+  const save = (edit: Parameters<typeof editStep>[2]) => void editStep(sessionId, step.id, edit);
+  return (
+    <div className="odyssey-task-flow">
+      <label className="row small">
+        <span className="muted">{t("Who does it")}</span>
+        <select className="input" onChange={(event) => save({ kind: event.target.value === "approval" ? "approval" : "work" })} value={step.kind ?? "work"}>
+          <option value="work">{t("the team")}</option>
+          <option value="approval">{t("you: the run stops and asks you to approve")}</option>
+        </select>
+      </label>
+      {sources.length > 0 && (
+        <fieldset className="odyssey-task-uses">
+          <legend className="small muted">{t("Given the results of")}</legend>
+          {sources.map((source) => (
+            <label className="row small" key={source.id}>
+              <input
+                checked={uses.includes(source.id)}
+                onChange={(event) => save({ uses: event.target.checked ? [...uses, source.id] : uses.filter((id) => id !== source.id) })}
+                type="checkbox"
+              />
+              <span>{source.label}</span>
+            </label>
+          ))}
+        </fieldset>
+      )}
+      {earlier.length > 0 && (
+        <label className="row small">
+          <span className="muted">{step.kind === "approval" ? t("When you send it back, go back to") : t("When it asks for changes, go back to")}</span>
+          <select className="input" onChange={(event) => save({ loopTo: event.target.value })} value={step.loopTo ?? ""}>
+            <option value="">{step.kind === "approval" ? t("the tasks it waits on") : t("nowhere: no loop")}</option>
+            {earlier.map((candidate, index) => (
+              <option key={candidate.id} value={candidate.id}>
+                {taskNumber(milestoneIndex, index)} {candidate.title}
+              </option>
+            ))}
+          </select>
+        </label>
+      )}
+      {step.loopTo && step.kind !== "approval" && (
+        <div className="row wrap small">
+          <label className="row">
+            <span className="muted">{t("Rounds")}</span>
+            <input
+              aria-label={t("Rounds")}
+              className="input odyssey-task-rounds"
+              min={1}
+              onChange={(event) => save({ loopLimit: Number.parseInt(event.target.value, 10) || 0 })}
+              placeholder={t("no limit")}
+              type="number"
+              value={step.loopLimit ?? ""}
+            />
+          </label>
+          {step.loopLimit && (
+            <label className="row">
+              <span className="muted">{t("then")}</span>
+              <select className="input" onChange={(event) => save({ loopAtLimit: event.target.value as LoopAtLimit })} value={step.loopAtLimit ?? "ask"}>
+                <option value="ask">{t("ask me")}</option>
+                <option value="stop">{t("stop the run")}</option>
+                <option value="continue">{t("carry on with the work as it is")}</option>
+              </select>
+            </label>
+          )}
+        </div>
+      )}
+      {step.loopTo && step.kind !== "approval" && <p className="small muted">{t("The worker on this task ends its reply with a verdict; changes send the work back and the tasks in between run again with what was asked.")}</p>}
+    </div>
+  );
 }
 
 export function TaskTable({ milestone, milestoneIndex, sessionId }: { milestone: MilestoneRecord; milestoneIndex: number; sessionId: string }) {
@@ -79,18 +164,23 @@ export function TaskTable({ milestone, milestoneIndex, sessionId }: { milestone:
               const depends = dependencyNumbers(step, steps, milestoneIndex);
               const number = taskNumber(milestoneIndex, index);
               const unfolded = open === step.id;
-              const hasMore = Boolean(step.detail || (step.note && status !== "pending"));
+              const badges = flowBadges(step, milestones.length > 0 ? milestones : [milestone], milestones.length > 0 ? milestoneIndex : 0);
               return (
                 <tr className={`task-row task-${status} ${running ? "task-live" : ""}`} key={step.id}>
                   <td className="odyssey-task-number mono">{number}</td>
                   <td className="odyssey-task-cell">
-                    {hasMore ? (
-                      <button aria-expanded={unfolded} className="odyssey-task-title" onClick={() => setOpen(unfolded ? null : step.id)} type="button">
-                        <span>{step.title}</span>
-                        <IconChevron open={unfolded} size={11} />
-                      </button>
-                    ) : (
-                      <span className="odyssey-task-title">{step.title}</span>
+                    <button aria-expanded={unfolded} className="odyssey-task-title" onClick={() => setOpen(unfolded ? null : step.id)} type="button">
+                      <span>{step.title}</span>
+                      <IconChevron open={unfolded} size={11} />
+                    </button>
+                    {badges.length > 0 && (
+                      <span className="row wrap odyssey-task-badges">
+                        {badges.map((badge) => (
+                          <span className={`chip small ${step.kind === "approval" && badge === badges[0] ? "chip-accent" : ""}`} key={badge}>
+                            {badge}
+                          </span>
+                        ))}
+                      </span>
                     )}
                     {unfolded && step.detail && <p className="odyssey-task-detail">{step.detail}</p>}
                     {unfolded && step.note && status !== "pending" && (
@@ -98,6 +188,13 @@ export function TaskTable({ milestone, milestoneIndex, sessionId }: { milestone:
                         {step.note}
                       </p>
                     )}
+                    {unfolded && step.result && (
+                      <details className="odyssey-task-result">
+                        <summary className="small muted">{t("Result")}</summary>
+                        <pre className="text odyssey-inbox-output">{step.result}</pre>
+                      </details>
+                    )}
+                    {unfolded && <TaskFlowEditor milestoneIndex={milestones.length > 0 ? milestoneIndex : 0} milestones={milestones.length > 0 ? milestones : [milestone]} sessionId={sessionId} stepIndex={index} />}
                   </td>
                   <td>
                     {who ? (

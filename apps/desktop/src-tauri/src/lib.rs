@@ -273,6 +273,7 @@ pub fn run() {
             commands::bigthing::bigthing_amend,
             commands::bigthing::bigthing_decide_plan_change,
             commands::bigthing::bigthing_answer,
+            commands::bigthing::bigthing_decide_approval,
             commands::bigthing::bigthing_runtime,
             commands::bigthing::bigthing_briefing,
             commands::bigthing::bigthing_commits,

@@ -85,6 +85,9 @@ pub struct Extra {
     /// Open jobs the runner itself dispatched for the active milestone, by
     /// task number. While any is open the orchestrator is not prompted.
     pub dispatched_open: Vec<String>,
+    /// Tasks waiting on the user, when nothing else in the milestone can
+    /// move. While any is, the orchestrator is not prompted either.
+    pub waiting_on_you: Vec<String>,
 }
 
 /// The next action for a goal. Guards run in order, so a run out of budget is
@@ -151,6 +154,9 @@ pub fn decide(goal: &OdysseyRecord, milestones: &[MilestoneRecord], journal_entr
     }
     if !extra.dispatched_open.is_empty() {
         return Decision::Idle { reason: format!("workers are on task{} {}", if extra.dispatched_open.len() == 1 { "" } else { "s" }, extra.dispatched_open.join(", ")) };
+    }
+    if !extra.waiting_on_you.is_empty() {
+        return Decision::Idle { reason: format!("task{} {} {} for you", if extra.waiting_on_you.len() == 1 { "" } else { "s" }, extra.waiting_on_you.join(", "), if extra.waiting_on_you.len() == 1 { "waits" } else { "wait" }) };
     }
     Decision::Continue { index }
 }
@@ -348,7 +354,7 @@ mod tests {
 
     #[test]
     fn runner_dispatched_work_keeps_the_orchestrator_quiet() {
-        let extra = Extra { dispatched_open: vec!["2.1".into(), "2.2".into()] };
+        let extra = Extra { dispatched_open: vec!["2.1".into(), "2.2".into()], ..Extra::default() };
         assert_eq!(decide(&goal(), &plan(), &briefed(), READY, None, 1_000_000, &extra), Decision::Idle { reason: "workers are on tasks 2.1, 2.2".into() });
     }
 

@@ -46,7 +46,7 @@ use crate::{
         Storage, StorageError,
         odyssey::{
             AmendmentState, CheckSource, Dispatch, GoalEdit, JournalEntry, JournalKind, MilestoneRecord, MilestoneState, NewAmendment, NewQuestion, NewUsageSample, OdysseyRecord, OdysseyState, OdysseyView,
-            OnPlanChange, Orchestrator, PlanChangeState, QuestionState, StepState,
+            OnPlanChange, Orchestrator, PlanChangeState, QuestionState, StepKind, StepState,
         },
     },
     supervisor::{SubmissionOutcome, TurnPhase},
@@ -484,10 +484,15 @@ impl Engine {
 
         // Runner dispatch first: it may put workers on tasks, which is what
         // the decision then waits for.
-        let extra = match &live {
+        // The user's approvals open first, in either dispatch: a worker is
+        // never handed one.
+        let (waiting_on_you, opened) = if journal::briefed_this_session(&loaded.journal) { self.open_gates(&loaded) } else { (Vec::new(), false) };
+        let loaded = if opened { self.load(goal_id).unwrap_or(loaded) } else { loaded };
+        let mut extra = match &live {
             Some(live) if goal.dispatch == Dispatch::Runner && journal::briefed_this_session(&loaded.journal) => self.dispatch_ready(&loaded, live).await,
             _ => Extra::default(),
         };
+        extra.waiting_on_you = waiting_on_you;
         let loaded = if extra.dispatched_open.is_empty() { loaded } else { self.load(goal_id).unwrap_or(loaded) };
 
         let decision = decide::decide(&goal, &loaded.milestones, &loaded.journal, condition, usage.as_ref(), now, &extra);
@@ -1091,6 +1096,11 @@ impl Engine {
                 if recorded && milestone.state != MilestoneState::Reported {
                     return;
                 }
+                let approvals = super::flow::open_approvals(report.milestone - 1, &milestone.steps);
+                if !approvals.is_empty() {
+                    self.journal(&goal.id, JournalKind::Guard, Some(&milestone.id), &format!("Milestone {} was reported complete before your approval at task {}", report.milestone, approvals.join(", ")), Some(&report.note));
+                    return;
+                }
                 if !recorded {
                     let _ = self.db(|storage| storage.milestone_record_report(&milestone.id, &report.note));
                     self.journal(&goal.id, JournalKind::Report, Some(&milestone.id), &format!("Reported milestone {} complete", report.milestone), Some(&report.note));
@@ -1159,7 +1169,7 @@ impl Engine {
             if open.contains(&ask.question) {
                 continue;
             }
-            let new = NewQuestion { odyssey_id: goal.id.clone(), kind: ask.kind.clone(), question: ask.question.clone(), options: ask.options.clone(), fallback: Some(ask.fallback.clone()).filter(|fallback| !fallback.is_empty()) };
+            let new = NewQuestion { odyssey_id: goal.id.clone(), kind: ask.kind.clone(), question: ask.question.clone(), options: ask.options.clone(), fallback: Some(ask.fallback.clone()).filter(|fallback| !fallback.is_empty()), step_id: None };
             let _ = self.db(|storage| storage.question_add(&new));
             self.journal(&goal.id, JournalKind::Plan, None, &format!("The agent asked you: {}", ask.question), (!ask.fallback.is_empty()).then(|| format!("Meanwhile: {}", ask.fallback)).as_deref());
             asked += 1;
@@ -1174,7 +1184,16 @@ impl Engine {
         let agents = self.watch(&live.handle).map(|watch| watch.state().agents.clone()).unwrap_or_default();
         for line in lines {
             let Some(step) = loaded.milestones.get(line.milestone - 1).and_then(|milestone| milestone.steps.get(line.task - 1)) else { continue };
-            let _ = self.db(|storage| storage.step_set_state(&step.id, line.status.step_state(), Some(&line.note).filter(|note| !note.is_empty()).map(String::as_str)));
+            // The user's approvals move only when the user decides.
+            if step.kind == StepKind::Approval {
+                continue;
+            }
+            if line.status == protocol::TaskStatus::Done && step.state != StepState::Done {
+                let who = line.agent.clone().unwrap_or_else(|| "the orchestrator".into());
+                self.task_finished(&loaded.goal, &loaded.milestones, line.milestone - 1, line.task - 1, Some(&line.note), &line.note, &who);
+            } else if line.status != protocol::TaskStatus::Done {
+                let _ = self.db(|storage| storage.step_set_state(&step.id, line.status.step_state(), Some(&line.note).filter(|note| !note.is_empty()).map(String::as_str)));
+            }
             if let Some(agent) = &line.agent {
                 let seen = agents.values().find(|seen| seen.name == *agent);
                 let _ = self.db(|storage| storage.step_assign(&step.id, Some(agent), seen.map(|seen| seen.harness.as_str()), seen.and_then(|seen| seen.model.as_deref())));

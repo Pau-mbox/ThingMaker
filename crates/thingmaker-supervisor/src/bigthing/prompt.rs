@@ -12,7 +12,7 @@ use super::protocol::{ASK_GRAMMAR, PLAN_GRAMMAR, REPORT_GRAMMAR, TASK_GRAMMAR, t
 use crate::agents::Provider;
 use crate::delegation::{Combo, jobs::BRIEF_PATH};
 use crate::odyssey_notes::{AGENT_NOTES_DIR, STATE_NOTE_PATH, WorkspaceNotes};
-use crate::storage::odyssey::{CheckKind, MilestoneRecord, MilestoneState, OdysseyRecord, OnPlanChange, StopCondition};
+use crate::storage::odyssey::{CheckKind, MilestoneRecord, MilestoneState, OdysseyRecord, OnPlanChange, StepKind, StopCondition};
 
 /// The delegate a Claude orchestrator raises its subagents as.
 pub const DELEGATE_NAME: &str = "big-thing-delegate";
@@ -31,6 +31,10 @@ pub enum Delta {
     QuestionAnswered { question: String, answer: Option<String> },
     /// The runner dispatched tasks to workers, and how they ended.
     TasksFinished { lines: Vec<String> },
+    /// A task sent the work back for another round.
+    SentBack { line: String, tasks: Vec<String> },
+    /// The user approved a task of theirs, or accepted a loop at its limit.
+    Approved { line: String },
 }
 
 fn duration(ms: i64) -> String {
@@ -280,6 +284,8 @@ fn delta_line(delta: &Delta) -> String {
             None => format!("- You asked \"{question}\". The user dismissed it without an answer: keep your default."),
         },
         Delta::TasksFinished { lines } => format!("- The workers finished their tasks:\n{}", lines.iter().map(|line| format!("  {line}")).collect::<Vec<_>>().join("\n")),
+        Delta::SentBack { line, tasks } => format!("- {line}. Tasks {} are open again.", tasks.join(", ")),
+        Delta::Approved { line } => format!("- {line}"),
     }
 }
 
@@ -319,6 +325,15 @@ pub fn build_continuation(input: &ContinuationInput<'_>) -> String {
         lines.push("Tasks:".into());
         lines.extend(task_lines_for(input.index, &milestone.steps));
         lines.push(if input.tools { "Move tasks with `bigthing_task`.".into() } else { format!("Report task moves with: {TASK_GRAMMAR}") });
+        if milestone.steps.iter().any(|step| step.kind == StepKind::Approval) {
+            lines.push("Tasks marked as the user's approval are not yours to move: Big Thing asks the user, and tells you what they decided. Do the work they wait on first, then carry on with what does not wait on them.".into());
+        }
+        if !input.runner_dispatch && milestone.steps.iter().any(|step| step.kind == StepKind::Work && step.loop_to.is_some()) {
+            lines.push("A task that sends the work back decides with its note: when you finish it, end the note with `VERDICT: approve`, or `VERDICT: changes — <what must change>` to send the work back for another round.".into());
+        }
+        if !input.runner_dispatch && milestone.steps.iter().any(|step| !step.uses.is_empty()) {
+            lines.push("A task that uses earlier tasks is given their results: pass them on to whoever does it.".into());
+        }
         let ready = super::protocol::ready_tasks(&milestone.steps).len();
         if ready >= 2 && !input.runner_dispatch {
             lines.push(format!("{ready} tasks are ready and wait on nothing: hand them to subagents or workers at the same time rather than one after another, and as each one finishes give its worker the next ready task."));
@@ -368,6 +383,7 @@ pub fn build_planning_prompt(goal: &OdysseyRecord, document: &str, source: Optio
         "- Break each milestone into `step:` tasks, each one thing a subagent or worker can be given on its own, and `capability:` when a task needs a particular kind of worker (`image`, `review`, `fast`). The run tracks these tasks — who ran each, and when — so they should be real units of work, not headings.".into(),
         "- **Size every task in AI-agent time, not human time.** A task should take one AI agent about 10–30 minutes of work. Agents write and check code roughly 20 times faster than estimates written for people, so a task a developer would put at half a day to two days is about one task, and anything a developer would call a week is several. Do not think in human hours or days at all; split any task an agent would need more than about 30 minutes for, because one long task holds up everything that waits on it, and the team runs many short tasks side by side.".into(),
         "- **Plan for parallel work.** Tasks without `depends:` can run at the same time, on different subagents or workers, so cut the work along lines that do not touch each other — separate files, modules, screens, assets — rather than as one sequence. Add `depends:` (the numbers of earlier tasks in the same milestone) only when a task truly cannot start until another has finished: it needs that task's output, file or decision. The order you list tasks in is not a dependency, and a task that only *reads* what another touches can usually go in parallel. A final integration, verification or review task is the usual one that depends on the others.".into(),
+        "- **Loops, sign-offs and hand-overs.** When the work should go round until something approves it — a reviewer, a test pass, a designer — put that deciding task after the work and give it `repeat_from:` (the number of the task the work goes back to) and, if the brief names one, `max_rounds:`; the tasks between run again with what was asked. When the brief or document asks the user to sign something off, add a task for it with `by: you`: the run stops there and asks them. When a task needs what an earlier one produced — a design, a report, a link — list that task under `uses:`, and its result is written into the task.".into(),
         "- Name where each milestone came from with `section:` — the document's heading, or a line range — so the agent can read that part of the file rather than all of it.".into(),
         check_rule,
         "- Skip anything the document records as already finished, and say so in that milestone's detail rather than adding it as work.".into(),

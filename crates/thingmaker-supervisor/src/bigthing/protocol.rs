@@ -28,6 +28,10 @@ check: <manual | command <cmd> | tests_pass <cmd> | files_exist <paths>>
 step: <task title, repeatable — each about 10–30 minutes of AI-agent work, in order>
 depends: <numbers of earlier tasks in this milestone the one above waits for, optional>
 capability: <what the task needs from a worker, e.g. image or review, optional>
+uses: <numbers of earlier tasks in this milestone whose results the task above is given, optional>
+by: <you, when the task above is the user's own approval rather than work, optional>
+repeat_from: <number of an earlier task to send the work back to when the task above asks for changes, optional>
+max_rounds: <how many rounds that loop may take before the user is asked, optional>
 END-BIGTHING-PLAN";
 
 pub const AMEND_GRAMMAR: &str = "BIGTHING-AMEND
@@ -53,6 +57,10 @@ revise_task: <task number>
 title: <new title, optional>
 detail: <new detail, optional>
 depends: <numbers of the milestone's tasks it waits for, optional>
+uses: <numbers of the milestone's tasks whose results it is given, optional>
+by: <you, to make it the user's own approval, optional>
+repeat_from: <number of an earlier task to send the work back to when it asks for changes, optional>
+max_rounds: <how many rounds that loop may take, optional>
 split_task: <task number>
 step: <each task that replaces it, repeatable>
 depends: <numbers of the milestone's tasks the one above waits for, optional>
@@ -86,8 +94,8 @@ static ASK_LINE: LazyLock<Regex> = LazyLock::new(|| re(r"(?im)^\s*(?:BIGTHING|SU
 static TASK_LINE: LazyLock<Regex> = LazyLock::new(|| re(r"(?im)^\s*(?:BIGTHING|SUPERTHING|ODYSSEY)-TASK:[ \t]*(.+)$"));
 static PLAN_BLOCK: LazyLock<Regex> = LazyLock::new(|| re(r"(?m)^[^\S\n]*(?:\*\*)?(?:BIGTHING|SUPERTHING|ODYSSEY)-PLAN(?:\*\*)?[^\S\n]*$([\s\S]*?)^[^\S\n]*(?:\*\*)?END-(?:BIGTHING|SUPERTHING|ODYSSEY)-PLAN(?:\*\*)?[^\S\n]*$"));
 static AMEND_BLOCK: LazyLock<Regex> = LazyLock::new(|| re(r"(?m)^[^\S\n]*(?:\*\*)?(?:BIGTHING|SUPERTHING|ODYSSEY)-AMEND(?:\*\*)?[^\S\n]*$([\s\S]*?)^[^\S\n]*(?:\*\*)?END-(?:BIGTHING|SUPERTHING|ODYSSEY)-AMEND(?:\*\*)?[^\S\n]*$"));
-static PLAN_KEY: LazyLock<Regex> = LazyLock::new(|| re(r"(?i)^(milestone|detail|section|check|step|task|depends|capability)\s*:\s*(.*)$"));
-static AMEND_KEY: LazyLock<Regex> = LazyLock::new(|| re(r"(?i)^(add|revise|drop|drop_task|revise_task|split_task|move_task|after|title|detail|section|check|step|task|depends|capability|reason)\s*:\s*(.*)$"));
+static PLAN_KEY: LazyLock<Regex> = LazyLock::new(|| re(r"(?i)^(milestone|detail|section|check|step|task|depends|capability|uses|by|repeat_from|max_rounds)\s*:\s*(.*)$"));
+static AMEND_KEY: LazyLock<Regex> = LazyLock::new(|| re(r"(?i)^(add|revise|drop|drop_task|revise_task|split_task|move_task|after|title|detail|section|check|step|task|depends|capability|uses|by|repeat_from|max_rounds|reason)\s*:\s*(.*)$"));
 
 /// `key=value` inside a protocol line: the value runs to the next known key,
 /// or to the end of the line for the last one.
@@ -310,10 +318,12 @@ pub fn task_lines_for(milestone_index: usize, steps: &[StepRecord]) -> Vec<Strin
                     format!("waiting on {}", numbers.iter().map(|n| task_number(milestone_index, *n)).collect::<Vec<_>>().join(", "))
                 }
                 "pending" => "ready".into(),
+                "in_progress" if step.kind == crate::storage::odyssey::StepKind::Approval => "waiting for the user".into(),
                 other => other.replace('_', " "),
             };
             let owner = step.agent_name.as_deref().map(|name| format!(" — {name}")).unwrap_or_default();
-            format!("{} [{label}] {}{owner}", task_number(milestone_index, index), step.title)
+            let flow = super::flow::flow_suffix(steps, milestone_index, index);
+            format!("{} [{label}] {}{flow}{owner}", task_number(milestone_index, index), step.title)
         })
         .collect()
 }
@@ -352,6 +362,49 @@ pub struct ProposedTask {
     /// runner's dispatch.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub capability: Option<String>,
+    /// Numbers of earlier tasks in the same milestone whose results it is given.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub uses: Vec<usize>,
+    /// `you`: the user's own approval rather than work.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub by: Option<String>,
+    /// The earlier task the work goes back to when this one asks for changes.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub repeat_from: Option<usize>,
+    /// Rounds that loop may take before the user is asked.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_rounds: Option<i64>,
+}
+
+impl ProposedTask {
+    /// Whether it is the user's own approval.
+    pub fn by_user(&self) -> bool {
+        read_by(self.by.as_deref().unwrap_or(""))
+    }
+
+    /// Reads one of the flow keys into this task; `count` is how many tasks
+    /// the milestone has so far, this one included. Says whether it was one.
+    fn read_flow_key(&mut self, key: &str, value: &str, count: usize) -> bool {
+        let position = count.saturating_sub(1);
+        match key {
+            "uses" => self.uses = read_depends(value).into_iter().filter(|n| *n <= position).collect(),
+            "by" => self.by = read_by(value).then(|| "you".to_string()),
+            "repeat_from" => self.repeat_from = read_depends(value).into_iter().find(|n| *n <= position),
+            "max_rounds" => self.max_rounds = read_rounds(value),
+            _ => return false,
+        }
+        true
+    }
+}
+
+/// `by: you` (or `user`, `me`): the user's own approval.
+pub fn read_by(value: &str) -> bool {
+    matches!(value.trim().trim_matches('`').to_lowercase().as_str(), "you" | "user" | "the user" | "me")
+}
+
+/// A round limit: a positive number, or none.
+pub fn read_rounds(value: &str) -> Option<i64> {
+    value.split_whitespace().next()?.parse::<i64>().ok().filter(|n| *n > 0)
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -452,7 +505,7 @@ pub fn parse_plan(text: &str) -> Option<ProposedPlan> {
             }
             "step" | "task" => {
                 if !value.is_empty() && current.steps.len() < MAX_STEPS {
-                    current.steps.push(ProposedTask { title: clamp(&value, MAX_TITLE), depends: Vec::new(), capability: None });
+                    current.steps.push(ProposedTask { title: clamp(&value, MAX_TITLE), ..ProposedTask::default() });
                 }
             }
             "depends" => {
@@ -464,6 +517,12 @@ pub fn parse_plan(text: &str) -> Option<ProposedPlan> {
             "capability" => {
                 if let Some(task) = current.steps.last_mut() {
                     task.capability = Some(value.to_lowercase()).filter(|value| !value.is_empty());
+                }
+            }
+            "uses" | "by" | "repeat_from" | "max_rounds" => {
+                let count = current.steps.len();
+                if let Some(task) = current.steps.last_mut() {
+                    task.read_flow_key(&key, &value, count);
                 }
             }
             "check" => {
@@ -519,6 +578,10 @@ pub fn tidy_plan(mut milestones: Vec<ProposedMilestone>) -> Option<ProposedPlan>
             for (index, step) in milestone.steps.iter_mut().enumerate() {
                 step.title = clamp(&step.title, MAX_TITLE);
                 step.depends.retain(|n| *n >= 1 && *n <= index && *n < count);
+                step.uses.retain(|n| *n >= 1 && *n <= index);
+                step.repeat_from = step.repeat_from.filter(|n| *n >= 1 && *n <= index);
+                step.max_rounds = step.max_rounds.filter(|n| *n > 0);
+                step.by = step.by_user().then(|| "you".to_string());
             }
             milestone.steps.retain(|step| !step.title.is_empty());
             milestone
@@ -618,6 +681,14 @@ pub enum AmendOp {
         #[serde(default)]
         depends: Option<Vec<usize>>,
         #[serde(default)]
+        uses: Option<Vec<usize>>,
+        #[serde(default)]
+        by: Option<String>,
+        #[serde(default)]
+        repeat_from: Option<usize>,
+        #[serde(default)]
+        max_rounds: Option<i64>,
+        #[serde(default)]
         reason: String,
     },
     SplitTask {
@@ -699,7 +770,7 @@ pub fn parse_amendment(text: &str) -> Option<Amendment> {
             };
             ops.push(match key.as_str() {
                 "drop_task" => AmendOp::DropTask { task, reason: String::new() },
-                "revise_task" => AmendOp::ReviseTask { task, title: None, detail: None, depends: None, reason: String::new() },
+                "revise_task" => AmendOp::ReviseTask { task, title: None, detail: None, depends: None, uses: None, by: None, repeat_from: None, max_rounds: None, reason: String::new() },
                 "split_task" => AmendOp::SplitTask { task, steps: Vec::new(), reason: String::new() },
                 _ => AmendOp::MoveTask { task, after: start(), reason: String::new() },
             });
@@ -770,10 +841,20 @@ fn apply_amend_key(current: &mut AmendOp, key: &str, value: &str, notes: &mut Ve
         }
         ("step" | "task", AmendOp::Add { steps, .. } | AmendOp::Revise { steps, .. } | AmendOp::SplitTask { steps, .. }) => {
             if !value.is_empty() && steps.len() < MAX_STEPS {
-                steps.push(ProposedTask { title: clamp(value, MAX_TITLE), depends: Vec::new(), capability: None });
+                steps.push(ProposedTask { title: clamp(value, MAX_TITLE), ..ProposedTask::default() });
             }
         }
         ("depends", AmendOp::ReviseTask { depends, .. }) => *depends = Some(read_depends(value)),
+        ("uses", AmendOp::ReviseTask { uses, .. }) => *uses = Some(read_depends(value)),
+        ("by", AmendOp::ReviseTask { by, .. }) => *by = Some(if read_by(value) { "you".into() } else { "team".into() }),
+        ("repeat_from", AmendOp::ReviseTask { repeat_from, .. }) => *repeat_from = read_depends(value).first().copied(),
+        ("max_rounds", AmendOp::ReviseTask { max_rounds, .. }) => *max_rounds = Some(read_rounds(value).unwrap_or(0)),
+        ("uses" | "by" | "repeat_from" | "max_rounds", AmendOp::Add { steps, .. } | AmendOp::Revise { steps, .. } | AmendOp::SplitTask { steps, .. }) => {
+            let count = steps.len();
+            if let Some(task) = steps.last_mut() {
+                task.read_flow_key(key, value, count);
+            }
+        }
         ("depends", AmendOp::Add { steps, .. } | AmendOp::Revise { steps, .. } | AmendOp::SplitTask { steps, .. }) => {
             if let Some(task) = steps.last_mut() {
                 task.depends = read_depends(value);
@@ -910,7 +991,7 @@ pub fn plan_diff(resolved: &[ResolvedOp], milestones: &[MilestoneRecord]) -> Vec
                 }
                 AmendOp::Drop { target, reason } => line("−", format!("Drop milestone {target}{where}"), reason),
                 AmendOp::DropTask { task, reason } => line("−", format!("Drop task {}{task_title}", task.label()), reason),
-                AmendOp::ReviseTask { task, title, detail, depends, reason } => {
+                AmendOp::ReviseTask { task, title, detail, depends, uses, by, repeat_from, max_rounds, reason } => {
                     let mut parts = Vec::new();
                     if let Some(title) = title {
                         parts.push(format!("title → \"{title}\""));
@@ -923,6 +1004,18 @@ pub fn plan_diff(resolved: &[ResolvedOp], milestones: &[MilestoneRecord]) -> Vec
                             "depends on {}",
                             if depends.is_empty() { "nothing".to_string() } else { depends.iter().map(|n| format!("{}.{n}", task.milestone)).collect::<Vec<_>>().join(", ") }
                         ));
+                    }
+                    if let Some(uses) = uses {
+                        parts.push(format!("uses {}", if uses.is_empty() { "nothing".to_string() } else { uses.iter().map(|n| format!("{}.{n}", task.milestone)).collect::<Vec<_>>().join(", ") }));
+                    }
+                    if let Some(by) = by {
+                        parts.push(if read_by(by) { "the user's approval".into() } else { "work for the team".into() });
+                    }
+                    if let Some(from) = repeat_from {
+                        parts.push(format!("sends the work back to {}.{from} when it asks for changes", task.milestone));
+                    }
+                    if let Some(rounds) = max_rounds {
+                        parts.push(if *rounds > 0 { format!("at most {rounds} rounds") } else { "no round limit".into() });
                     }
                     line("~", format!("Revise task {}{task_title}{}", task.label(), if parts.is_empty() { String::new() } else { format!(": {}", parts.join(", ")) }), reason)
                 }
@@ -1082,7 +1175,7 @@ mod tests {
         assert_eq!(first.detail, "Set up the project.\nSecond line.");
         assert_eq!(first.section.as_deref(), Some("## Setup"));
         assert_eq!((first.check_kind, first.check_spec.as_deref()), (CheckKind::TestsPass, Some("pnpm test")));
-        assert_eq!(first.steps[1], ProposedTask { title: "Wire CI".into(), depends: vec![1], capability: Some("review".into()) });
+        assert_eq!(first.steps[1], ProposedTask { title: "Wire CI".into(), depends: vec![1], capability: Some("review".into()), ..ProposedTask::default() });
         assert_eq!(plan.milestones[1].check_kind, CheckKind::Manual, "an unnamed check is never a command");
         assert!(plan.notes.iter().any(|note| note.contains("does not name one of")));
         assert!(parse_plan("no block").is_none());

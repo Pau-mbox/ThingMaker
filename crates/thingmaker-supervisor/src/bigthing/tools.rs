@@ -12,6 +12,7 @@ use serde_json::{Value, json};
 
 use super::{
     engine::{Engine, team_of},
+    flow::Finished,
     protocol::{self, Amendment, Ask, ProposedMilestone, ProposedTask, Report, ReportStatus, TaskLine, TaskStatus, TurnProtocol, ask_kind},
 };
 use crate::{
@@ -22,7 +23,7 @@ use crate::{
     },
     storage::{
         memory::{MEMORY_KINDS, MemoryWrite},
-        odyssey::{CheckKind, JournalKind, MilestoneState, OdysseyRecord, OdysseyState, OnPlanChange},
+        odyssey::{CheckKind, JournalKind, MilestoneState, OdysseyRecord, OdysseyState, OnPlanChange, StepKind},
     },
 };
 
@@ -78,7 +79,11 @@ fn run_tools() -> Vec<Value> {
         "properties": {
             "title": { "type": "string" },
             "depends": { "type": "array", "items": { "type": "integer", "minimum": 1 }, "description": "Numbers of earlier tasks in the same milestone this one cannot start without. Only real dependencies: tasks without any run in parallel." },
-            "capability": { "type": "string", "description": "What the task needs from a worker: image, review, fast, code." }
+            "capability": { "type": "string", "description": "What the task needs from a worker: image, review, fast, code." },
+            "uses": { "type": "array", "items": { "type": "integer", "minimum": 1 }, "description": "Numbers of earlier tasks in the same milestone whose results this one is given, written into its task." },
+            "by": { "type": "string", "enum": ["you", "team"], "description": "`you` when this task is the user's own approval: the run stops there and asks them to approve, send the work back, or stop." },
+            "repeatFrom": { "type": "integer", "minimum": 1, "description": "An earlier task in the same milestone to send the work back to when this task asks for changes (a review, a test pass, the user's approval). The tasks between run again, with what was asked." },
+            "maxRounds": { "type": "integer", "minimum": 1, "description": "How many rounds that loop may take before the user is asked. Leave it out for no limit." }
         },
         "required": ["title"]
     });
@@ -144,7 +149,7 @@ fn run_tools() -> Vec<Value> {
         json!({
             "name": "bigthing_amend",
             "title": "Change the plan",
-            "description": "Changes the plan when it no longer fits what you found. `ops` is a list of operations, each with `op`: `add` (title, after: a milestone number or \"end\", detail, section, checkKind, checkSpec, steps), `revise` (target, title, detail, section, checkKind, checkSpec, steps to add), `drop` (target, reason), `drop_task` (ref {milestone, task}, reason), `revise_task` (ref, title, detail, depends), `split_task` (ref, steps, reason) and `move_task` (ref, after: a task number or \"start\"). Numbers are as the plan shows them now. Verified milestones and done tasks are not rewritten. Size new tasks in AI-agent time: about 10–30 minutes of agent work each, never human-effort estimates; split anything bigger.",
+            "description": "Changes the plan when it no longer fits what you found. `ops` is a list of operations, each with `op`: `add` (title, after: a milestone number or \"end\", detail, section, checkKind, checkSpec, steps), `revise` (target, title, detail, section, checkKind, checkSpec, steps to add), `drop` (target, reason), `drop_task` (ref {milestone, task}, reason), `revise_task` (ref, title, detail, depends, uses, by, repeatFrom, maxRounds), `split_task` (ref, steps, reason) and `move_task` (ref, after: a task number or \"start\"). Numbers are as the plan shows them now. Verified milestones and done tasks are not rewritten. Size new tasks in AI-agent time: about 10–30 minutes of agent work each, never human-effort estimates; split anything bigger.",
             "inputSchema": object(json!({
                 "ops": { "type": "array", "items": { "type": "object", "properties": { "op": { "type": "string", "enum": ["add", "revise", "drop", "drop_task", "revise_task", "split_task", "move_task"] } }, "required": ["op"] } },
                 "reason": { "type": "string" }
@@ -267,6 +272,10 @@ impl Engine {
                     return Err(format!("There is no milestone {milestone}; the plan has {}.", loaded.milestones.len()));
                 };
                 let note = string(arguments, "note").unwrap_or_default();
+                let approvals = super::flow::open_approvals(milestone - 1, &record.steps);
+                if status == ReportStatus::Complete && !approvals.is_empty() {
+                    return Err(format!("Milestone {milestone} waits for the user's approval at task {}; it is not complete before they decide. Carry on with what does not wait on it.", approvals.join(", ")));
+                }
                 // Every milestone a turn reports counts, however long the
                 // turn: one entry per milestone, the latest word winning.
                 let report = Report { milestone, status, note: note.clone() };
@@ -305,12 +314,28 @@ impl Engine {
                     return Err(format!("Milestone {milestone} has {} task{}; there is no task {milestone}.{task}.", record.steps.len(), if record.steps.len() == 1 { "" } else { "s" }));
                 }
                 let line = TaskLine { milestone, task, status, agent: string(arguments, "agent"), note: string(arguments, "note").unwrap_or_default() };
-                // Applied now as well as at the settle: the board is live.
                 let step = &record.steps[task - 1];
-                let _ = self.db(|storage| storage.step_set_state(&step.id, status.step_state(), Some(&line.note).filter(|note| !note.is_empty()).map(String::as_str)));
+                if step.kind == StepKind::Approval {
+                    return Err(format!("Task {milestone}.{task} is the user's approval: Big Thing asks them, and it moves when they decide. Carry on with tasks that do not wait on it."));
+                }
                 if let Some(agent) = &line.agent {
                     let _ = self.db(|storage| storage.step_assign(&step.id, Some(agent), None, None));
                 }
+                // A finished task is settled now, once: it may send the work
+                // back, which a second reading at the settle would undo.
+                if status == TaskStatus::Done {
+                    let who = line.agent.clone().unwrap_or_else(|| "the orchestrator".into());
+                    let finished = self.task_finished(&goal, &loaded.milestones, milestone - 1, task - 1, Some(&line.note), &line.note, &who);
+                    self.changed(&goal.id);
+                    return Ok(match finished {
+                        Finished::SentBack => json!({ "recorded": true, "task": format!("{milestone}.{task}"), "status": "sent_back", "note": "Its verdict asked for changes, so the work went back: the tasks of that loop are open again, with what was asked. Do them again before this one." }),
+                        Finished::AskedYou => json!({ "recorded": true, "task": format!("{milestone}.{task}"), "status": "waiting_for_user", "note": "Its loop has used its rounds, so Big Thing asked the user what to do. Carry on with tasks that do not wait on it." }),
+                        Finished::Stopped => json!({ "recorded": true, "task": format!("{milestone}.{task}"), "status": "stopped", "note": "Its loop has used its rounds and the run stops here." }),
+                        Finished::Done => json!({ "recorded": true, "task": format!("{milestone}.{task}"), "status": "done" }),
+                    });
+                }
+                // Applied now as well as at the settle: the board is live.
+                let _ = self.db(|storage| storage.step_set_state(&step.id, status.step_state(), Some(&line.note).filter(|note| !note.is_empty()).map(String::as_str)));
                 self.with_inbox(&goal.id, |inbox| inbox.tasks.push(line));
                 self.changed(&goal.id);
                 Ok(json!({ "recorded": true, "task": format!("{milestone}.{task}"), "status": string(arguments, "status") }))
@@ -411,6 +436,10 @@ fn read_milestones(value: Option<&Value>) -> Option<Vec<ProposedMilestone>> {
                             title: step.get("title")?.as_str()?.to_string(),
                             depends: step.get("depends").and_then(Value::as_array).map(|depends| depends.iter().filter_map(Value::as_u64).map(|n| n as usize).collect()).unwrap_or_default(),
                             capability: step.get("capability").and_then(Value::as_str).map(|capability| capability.trim().to_lowercase()).filter(|capability| !capability.is_empty()),
+                            uses: step.get("uses").and_then(Value::as_array).map(|uses| uses.iter().filter_map(Value::as_u64).map(|n| n as usize).collect()).unwrap_or_default(),
+                            by: step.get("by").and_then(Value::as_str).map(str::to_string),
+                            repeat_from: step.get("repeatFrom").and_then(Value::as_u64).map(|n| n as usize),
+                            max_rounds: step.get("maxRounds").and_then(Value::as_i64),
                         }),
                         _ => None,
                     })
@@ -454,7 +483,7 @@ mod tests {
         ]);
         let plan = protocol::tidy_plan(read_milestones(Some(&value)).unwrap()).unwrap();
         assert_eq!(plan.milestones.len(), 2, "a blank title is dropped");
-        assert_eq!(plan.milestones[0].steps[1], ProposedTask { title: "b".into(), depends: vec![1], capability: Some("image".into()) });
+        assert_eq!(plan.milestones[0].steps[1], ProposedTask { title: "b".into(), depends: vec![1], capability: Some("image".into()), ..ProposedTask::default() });
         assert_eq!((plan.milestones[1].check_kind, plan.milestones[1].check_spec.as_deref()), (CheckKind::Command, Some("make check")));
         assert!(read_milestones(Some(&json!([{ "detail": "no title" }]))).is_none());
     }

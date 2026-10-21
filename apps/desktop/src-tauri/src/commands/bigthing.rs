@@ -211,6 +211,22 @@ pub async fn bigthing_answer(request: AnswerRequest, state: State<'_, AppState>)
     engine(&state)?.answer_question(&request.goal_id, &request.id, request.answer.as_deref()).await
 }
 
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ApprovalRequest {
+    pub goal_id: String,
+    pub id: String,
+    pub decision: thingmaker_supervisor::bigthing::flow::ApprovalDecision,
+    #[serde(default)]
+    pub comment: Option<String>,
+}
+
+/// The user's decision at one of their approvals, or at a loop's limit.
+#[tauri::command]
+pub async fn bigthing_decide_approval(request: ApprovalRequest, state: State<'_, AppState>) -> CommandResult<()> {
+    engine(&state)?.decide_approval(&request.goal_id, &request.id, request.decision, request.comment.as_deref()).await
+}
+
 #[tauri::command]
 pub fn bigthing_runtime(goal_id: String, state: State<'_, AppState>) -> CommandResult<RuntimeView> {
     Ok(engine(&state)?.runtime(&goal_id))

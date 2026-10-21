@@ -718,6 +718,8 @@ export type QuestionRecord = {
   state: QuestionState;
   answer?: string;
   answeredAt?: number;
+  /** The task it stands for: an approval step (`kind: "approval"`), or a loop at its limit (`kind: "loop_limit"`). */
+  stepId?: string;
 };
 export type NewQuestion = { odysseyId: string; kind: string; question: string; options: string[]; fallback?: string };
 export type MilestoneState = "planned" | "active" | "reported" | "verified" | "failed" | "skipped";
@@ -805,9 +807,32 @@ export type OdysseyStep = {
   jobId?: string;
   /** A cross-provider review of the result. */
   review?: string;
+  /** Work for a worker, or the user's own approval. Absent on older rows: work. */
+  kind?: StepKind;
+  /** Tasks whose results this one is given. */
+  uses?: string[];
+  /** The task's result, bounded, once it has one. */
+  result?: string;
+  /** The task to go back to when this one asks for changes. */
+  loopTo?: string;
+  /** Rounds before the loop stops; absent is no limit. */
+  loopLimit?: number;
+  loopAtLimit?: LoopAtLimit;
+  /** Which attempt the task is on, from 1. */
+  round?: number;
+  /** What the last loop back asked of this task. */
+  feedback?: string;
 };
 
-export type StepEdit = { title?: string; detail?: string; dependsOn?: string[] };
+/** A task is work for a worker, or the user's own approval: the run stops there and asks. */
+export type StepKind = "work" | "approval";
+/** What happens when a loop has used its rounds: ask the user, stop the run, or carry on with the work as it is. */
+export type LoopAtLimit = "ask" | "stop" | "continue";
+/** The user's decision at an approval, or at a loop's limit. */
+export type ApprovalDecision = "approve" | "send_back" | "stop";
+
+/** `loopTo: ""` clears the loop; `loopLimit: 0` is no limit. */
+export type StepEdit = { title?: string; detail?: string; dependsOn?: string[]; kind?: StepKind; uses?: string[]; loopTo?: string; loopLimit?: number; loopAtLimit?: LoopAtLimit };
 
 export type MilestoneRecord = {
   id: string;
@@ -1498,6 +1523,7 @@ export const COMMANDS = {
   bigthingAmend: "bigthing_amend",
   bigthingDecidePlanChange: "bigthing_decide_plan_change",
   bigthingAnswer: "bigthing_answer",
+  bigthingDecideApproval: "bigthing_decide_approval",
   bigthingRuntime: "bigthing_runtime",
   bigthingBriefing: "bigthing_briefing",
   bigthingCommits: "bigthing_commits",

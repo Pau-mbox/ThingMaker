@@ -11,6 +11,7 @@
 use super::{
     decide::Extra,
     engine::{Engine, Loaded},
+    flow::{Finished, inputs_for, round_note, verdict_instruction},
     host::LiveSession,
     prompt::Delta,
     protocol::{ready_tasks, task_number},
@@ -19,7 +20,7 @@ use crate::{
     agents::Provider,
     delegation::{JobStatus, JobView, jobs::DelegateArgs},
     odyssey_notes::{AGENT_NOTES_DIR, STATE_NOTE_PATH},
-    storage::odyssey::{JournalKind, MilestoneRecord, MilestoneState, StepRecord, StepState},
+    storage::odyssey::{JournalKind, MilestoneRecord, MilestoneState, StepKind, StepRecord, StepState},
 };
 
 /// How a job a task was handed to is marked in its review field while the
@@ -43,8 +44,10 @@ pub fn task_slug(milestone_index: usize, task_index: usize, title: &str) -> Stri
     if words.is_empty() { number } else { format!("{number}-{words}") }
 }
 
-/// The task as the worker reads it. It sees nothing else of the run.
-pub fn worker_task(goal_plan_path: Option<&str>, milestone: &MilestoneRecord, milestone_index: usize, task_index: usize, review_feedback: Option<&str>) -> String {
+/// The task as the worker reads it. It sees nothing else of the run but the
+/// results the task names as its inputs.
+pub fn worker_task(goal_plan_path: Option<&str>, milestones: &[MilestoneRecord], milestone_index: usize, task_index: usize, review_feedback: Option<&str>) -> String {
+    let milestone = &milestones[milestone_index];
     let step = &milestone.steps[task_index];
     let slug = task_slug(milestone_index, task_index, &step.title);
     let mut lines = vec![
@@ -74,9 +77,26 @@ pub fn worker_task(goal_plan_path: Option<&str>, milestone: &MilestoneRecord, mi
     if !others.is_empty() {
         lines.push(format!("Other tasks in this milestone, which other workers may be doing at the same time: {}. Stay inside your task.", others.join("; ")));
     }
+    let inputs = inputs_for(step, milestones);
+    if !inputs.is_empty() {
+        lines.push(String::new());
+        lines.push("You are given these results of earlier tasks:".into());
+        for input in inputs {
+            lines.push("---".into());
+            lines.push(input);
+        }
+        lines.push("---".into());
+    }
     if let Some(feedback) = review_feedback {
         lines.push(String::new());
         lines.push(format!("A reviewer asked for changes to an earlier attempt at this task: {feedback}"));
+    } else if let Some(note) = round_note(step) {
+        lines.push(String::new());
+        lines.push(note);
+    }
+    if let Some(verdict) = verdict_instruction(&milestone.steps, milestone_index, task_index) {
+        lines.push(String::new());
+        lines.push(verdict);
     }
     lines.push(String::new());
     lines.push(format!("Read `{STATE_NOTE_PATH}` first if it exists. Use `memory_read` for decisions the project has already made and `memory_write` for any you make; `board` shows the run's tasks."));
@@ -140,12 +160,13 @@ impl Engine {
 
         for task_index in ready_tasks(&milestone.steps) {
             let step = &milestone.steps[task_index];
-            if step.job_id.is_some() {
+            // The user's approvals are opened by the engine, never handed out.
+            if step.job_id.is_some() || step.kind == StepKind::Approval {
                 continue;
             }
             // A capability no worker has goes to whoever the router picks.
             let capability = step.capability.clone().filter(|capability| combo.workers.iter().any(|worker| worker.has(capability)));
-            let args = DelegateArgs { task: worker_task(loaded.goal.plan_path.as_deref(), milestone, index, task_index, None), worker: None, capability, files: Vec::new(), continue_job: None };
+            let args = DelegateArgs { task: worker_task(loaded.goal.plan_path.as_deref(), &loaded.milestones, index, task_index, None), worker: None, capability, files: Vec::new(), continue_job: None };
             match delegation.delegate(&live.handle, args) {
                 Ok(job) => {
                     let slug = task_slug(index, task_index, &step.title);
@@ -170,7 +191,7 @@ impl Engine {
         if !dispatched_open.is_empty() {
             self.changed(&loaded.goal.id);
         }
-        Extra { dispatched_open }
+        Extra { dispatched_open, ..Extra::default() }
     }
 
     /// A job moved. Runner-dispatched tasks follow their jobs; a job the
@@ -237,7 +258,7 @@ impl Engine {
                         storage.step_set_state(&step.id, StepState::Pending, Some("reworked after review"))
                     });
                     self.journal(&goal.id, JournalKind::Check, Some(&milestone.id), &format!("{} asked for changes to task {number}", job.worker), Some(&changes));
-                    let args = DelegateArgs { task: worker_task(goal.plan_path.as_deref(), milestone, milestone_index, task_index, Some(&changes)), worker: None, capability: step.capability.clone(), files: Vec::new(), continue_job: None };
+                    let args = DelegateArgs { task: worker_task(goal.plan_path.as_deref(), &loaded.milestones, milestone_index, task_index, Some(&changes)), worker: None, capability: step.capability.clone(), files: Vec::new(), continue_job: None };
                     if let Some(live) = self.live_for(goal, false).await
                         && let Some(delegation) = &self.inner.delegation
                         && let Ok(rework) = delegation.delegate(&live.handle, args)
@@ -272,6 +293,19 @@ impl Engine {
             JobStatus::Succeeded => {
                 let report = first_line(job.result.as_deref().unwrap_or(""), 240);
                 self.write_job_note(loaded, milestone_index, task_index, job);
+                // A task that decides a loop gives its own verdict; it is not
+                // reviewed on top of that.
+                if step.loop_to.is_some() {
+                    let finished = self.task_finished(goal, &loaded.milestones, milestone_index, task_index, job.result.as_deref(), &report, &job.worker);
+                    if finished == Finished::Done {
+                        self.journal(&goal.id, JournalKind::Plan, Some(&milestone.id), &format!("{} finished task {number}", job.worker), Some(&report));
+                        self.task_settled(goal, milestone_index, &format!("{number} done by {} ({}): {report}", job.worker, job.provider.label()));
+                    }
+                    self.changed(&goal.id);
+                    self.nudge(&goal.id);
+                    return;
+                }
+                let _ = self.db(|storage| storage.step_set_result(&step.id, job.result.as_deref()));
                 // A review on another provider, when the run asks for one and
                 // the team has someone who can give it.
                 if goal.review_tasks
@@ -362,7 +396,9 @@ mod tests {
         let mut second = step("b", StepState::Pending);
         second.title = "Price the ships".into();
         m.steps = vec![first, second];
-        let text = worker_task(Some("docs/plan.md"), &m, 5, 1, Some("round the prices"));
+        let mut plan: Vec<MilestoneRecord> = (0..5).map(|n| milestone(&format!("m{n}"), MilestoneState::Verified)).collect();
+        plan.push(m);
+        let text = worker_task(Some("docs/plan.md"), &plan, 5, 1, Some("round the prices"));
         assert!(text.starts_with("6.2-price-the-ships: Price the ships"));
         assert!(text.contains("Spec: ## Economy in `docs/plan.md`."));
         assert!(text.contains("6.1 Model (done)"));

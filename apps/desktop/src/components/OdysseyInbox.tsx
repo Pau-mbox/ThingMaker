@@ -14,6 +14,7 @@ import { useStore } from "../store";
 import { ASK_KIND_LABEL, type AskKind } from "../odysseyAsk";
 import { inboxItems, type InboxItem } from "../odysseyInbox";
 import { exhaustedCeiling } from "../odysseyRunner";
+import { canSendBack, locateStep, taskInputs, taskNumber } from "../odysseyTasks";
 import { IconAlertCircle, IconCheckCircle, IconMessage } from "./icons";
 import { t } from "../i18n";
 
@@ -94,6 +95,79 @@ function QuestionItem({ sessionId, question }: { sessionId: string; question: Qu
   );
 }
 
+/**
+ * One of the user's own steps (`kind: "approval"`), or a loop that used its
+ * rounds (`kind: "loop_limit"`): what was done, and the three ways on.
+ */
+function ApprovalItem({ sessionId, question, view }: { sessionId: string; question: QuestionRecord; view: OdysseyView }) {
+  const decide = useStore((s) => s.odysseyDecideApproval);
+  const [comment, setComment] = useState("");
+  const [busy, setBusy] = useState(false);
+  const found = question.stepId ? locateStep(view.milestones, question.stepId) : null;
+  if (!found) return <QuestionItem question={question} sessionId={sessionId} />;
+  const { step, milestoneIndex, stepIndex } = found;
+  const atLimit = question.kind === "loop_limit";
+  const inputs = taskInputs(view.milestones, step);
+  const target = step.loopTo ? locateStep(view.milestones, step.loopTo) : null;
+  const run = (decision: "approve" | "send_back" | "stop") => {
+    setBusy(true);
+    void decide(sessionId, question.id, decision, comment.trim() || null).finally(() => setBusy(false));
+  };
+  return (
+    <li className="card odyssey-inbox-item" data-kind="approval">
+      <header className="row wrap">
+        <IconCheckCircle size={13} />
+        <strong className="small">{atLimit ? t("A loop used its rounds") : t("Your approval")}</strong>
+        <span className="small muted">
+          {t("task {number}", { number: taskNumber(milestoneIndex, stepIndex) })} · {ago(Date.now() - question.at)}
+        </span>
+      </header>
+      <p className="odyssey-inbox-question">{atLimit ? question.question : step.title}</p>
+      {!atLimit && step.detail && <p className="small">{step.detail}</p>}
+      {atLimit && question.fallback && (
+        <p className="small muted">
+          {t("It still asks:")} <em>{question.fallback}</em>
+        </p>
+      )}
+      {inputs.map((input) => (
+        <details className="odyssey-approval-input" key={input.number} open={inputs.length === 1}>
+          <summary className="small">
+            {t("Result of task {number}", { number: input.number })} · {input.title}
+          </summary>
+          {input.result ? <pre className="text odyssey-inbox-output">{input.result}</pre> : <p className="small muted">{t("No result recorded yet.")}</p>}
+        </details>
+      ))}
+      <textarea
+        aria-label={t("Your comments")}
+        className="input odyssey-approval-comment"
+        onChange={(event) => setComment(event.target.value)}
+        placeholder={t("Comments: what to change if you send it back, or a note with your approval")}
+        rows={3}
+        value={comment}
+      />
+      <div className="row wrap">
+        <button className="button button-small button-primary" disabled={busy} onClick={() => run("approve")} type="button">
+          {atLimit ? t("Accept it as it is") : t("Approve")}
+        </button>
+        {canSendBack(step) && (
+          <button
+            className="button button-small"
+            disabled={busy}
+            onClick={() => run("send_back")}
+            title={target ? t("Task {number} and the tasks after it run again, with your comments", { number: taskNumber(target.milestoneIndex, target.stepIndex) }) : t("The tasks it waits on run again, with your comments")}
+            type="button"
+          >
+            {atLimit ? t("Another round") : t("Send it back")}
+          </button>
+        )}
+        <button className="button button-small" disabled={busy} onClick={() => run("stop")} type="button">
+          {t("Stop the run")}
+        </button>
+      </div>
+    </li>
+  );
+}
+
 export function PlanChangeDiff({ change }: { change: PlanChangeRecord }) {
   return (
     <ul className="odyssey-plan-diff">
@@ -157,7 +231,7 @@ export function InboxPanel({ sessionId, view }: { sessionId: string; view: Odyss
   const discard = useStore((s) => s.odysseyDiscardAmendment);
   const setSessionTab = useStore((s) => s.setSessionTab);
 
-  const openQuestions = items.filter((item) => item.kind === "question").length;
+  const openQuestions = items.filter((item) => item.kind === "question" && !item.question.stepId).length;
   // The one remedy Resume genuinely cannot apply.
   const ceiling = exhaustedCeiling(view.goal);
 
@@ -178,7 +252,11 @@ export function InboxPanel({ sessionId, view }: { sessionId: string; view: Odyss
       {items.map((item) => {
         switch (item.kind) {
           case "question":
-            return <QuestionItem key={item.id} question={item.question} sessionId={sessionId} />;
+            return item.question.stepId ? (
+              <ApprovalItem key={item.id} question={item.question} sessionId={sessionId} view={view} />
+            ) : (
+              <QuestionItem key={item.id} question={item.question} sessionId={sessionId} />
+            );
           case "plan_change":
             return <PlanChangeItem change={item.change} key={item.id} sessionId={sessionId} />;
           case "amendment_stuck":

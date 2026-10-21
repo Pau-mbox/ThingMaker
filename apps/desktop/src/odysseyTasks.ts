@@ -76,3 +76,58 @@ export function matchAgentToTask(agentName: string, milestones: MilestoneRecord[
   }
   return null;
 }
+
+/** Where a task sits in the plan, by id. */
+export function locateStep(milestones: MilestoneRecord[], stepId: string): { milestoneIndex: number; stepIndex: number; step: OdysseyStep } | null {
+  for (const [milestoneIndex, milestone] of milestones.entries()) {
+    const stepIndex = milestone.steps.findIndex((step) => step.id === stepId);
+    if (stepIndex >= 0) return { milestoneIndex, stepIndex, step: milestone.steps[stepIndex] as OdysseyStep };
+  }
+  return null;
+}
+
+/** An earlier task's result as an approval or a task shows it. */
+export type TaskInput = { number: string; title: string; result: string | null };
+
+/**
+ * What a task is given: the tasks it names under `uses`, or — for an
+ * approval that names none — the tasks it waits on, which are what it
+ * approves.
+ */
+export function taskInputs(milestones: MilestoneRecord[], step: OdysseyStep): TaskInput[] {
+  const ids = (step.uses ?? []).length > 0 ? (step.uses ?? []) : step.kind === "approval" ? step.dependsOn : [];
+  return ids.flatMap((id) => {
+    const found = locateStep(milestones, id);
+    if (!found) return [];
+    return [{ number: taskNumber(found.milestoneIndex, found.stepIndex), title: found.step.title, result: found.step.result?.trim() || null }];
+  });
+}
+
+/** Whether sending the work back from this task reruns anything: it names a loop, or waits on something. */
+export function canSendBack(step: OdysseyStep): boolean {
+  return Boolean(step.loopTo) || step.dependsOn.length > 0;
+}
+
+/** The short facts a task's row shows about its place in the flow. */
+export function flowBadges(step: OdysseyStep, milestones: MilestoneRecord[], milestoneIndex: number): string[] {
+  const siblings = milestones[milestoneIndex]?.steps ?? [];
+  const badges: string[] = [];
+  if (step.kind === "approval") badges.push(t("your approval"));
+  const target = step.loopTo ? siblings.findIndex((sibling) => sibling.id === step.loopTo) : -1;
+  const round = step.round ?? 1;
+  if (target >= 0) {
+    badges.push(
+      step.loopLimit
+        ? t("↺ back to {task} · round {round} of {limit}", { task: taskNumber(milestoneIndex, target), round, limit: step.loopLimit })
+        : t("↺ back to {task} · round {round}", { task: taskNumber(milestoneIndex, target), round }),
+    );
+  } else if (round > 1) {
+    badges.push(t("round {round}", { round }));
+  }
+  const uses = (step.uses ?? []).flatMap((id) => {
+    const found = locateStep(milestones, id);
+    return found ? [taskNumber(found.milestoneIndex, found.stepIndex)] : [];
+  });
+  if (uses.length > 0) badges.push(t("uses {tasks}", { tasks: uses.join(", ") }));
+  return badges;
+}

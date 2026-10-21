@@ -4475,6 +4475,53 @@ button.odyssey-task-title svg {
   color: var(--text-2);
   max-width: 72ch;
 }
+.odyssey-task-badges {
+  gap: 4px;
+  margin-top: 4px;
+}
+.chip-accent {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.odyssey-task-flow {
+  display: grid;
+  gap: 8px;
+  margin-top: 10px;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  max-width: 72ch;
+}
+.odyssey-task-flow label.row {
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.odyssey-task-uses {
+  display: grid;
+  gap: 2px;
+  max-height: 140px;
+  overflow-y: auto;
+  margin: 0;
+  padding: 6px 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+.odyssey-task-uses label.row {
+  gap: 6px;
+}
+.odyssey-task-rounds {
+  width: 80px;
+}
+.odyssey-task-result {
+  margin-top: 6px;
+}
+.odyssey-approval-input {
+  margin: 6px 0;
+}
+.odyssey-approval-comment {
+  width: 100%;
+  resize: vertical;
+}
 .odyssey-task-note {
   font-style: italic;
 }

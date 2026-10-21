@@ -116,6 +116,21 @@ Options per goal:
 - **A team preset**, so the run starts with the orchestrator and workers you
   saved, and keeps them on every account it moves to.
 
+Tasks can also say how the work moves between them — written by the agent
+when your brief or plan asks for it (`repeat_from:`, `max_rounds:`, `by: you`,
+`uses:`), or set by hand on any task:
+
+- **Loops.** A deciding task — a review, a test pass, a designer's feedback —
+  ends with a verdict. "Changes" sends the work back to an earlier task, and
+  every task in between runs again with what was asked, until it approves. A
+  round limit decides what happens then: ask you, stop, or carry on.
+- **Your approval as a step.** A task done by *you*: the run stops there,
+  notifies you (on the phone too), and shows what you are approving. You
+  approve, send it back with comments, or stop the run.
+- **Results passed on.** A task names the earlier tasks whose results it
+  needs, and they are written into its task instead of left for the worker to
+  dig out.
+
 The **Team** tab shows who led each milestone on which provider and model,
 which worker did each task, and the project memory.
 

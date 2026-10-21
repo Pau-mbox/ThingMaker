@@ -38,6 +38,7 @@ import {
   type QuestionRecord,
   type QuestionState,
   type StepEdit,
+  type ApprovalDecision,
   type OdysseyView,
   type AdoptedPlan,
   type AmendmentRecord,
@@ -270,6 +271,8 @@ export const api = {
   bigthingDecidePlanChange: (goalId: string, id: string, apply: boolean, note?: string) =>
     call<void>(COMMANDS.bigthingDecidePlanChange, { request: { goalId, id, apply, note: note ?? null } }),
   bigthingAnswer: (goalId: string, id: string, answer: string | null) => call<void>(COMMANDS.bigthingAnswer, { request: { goalId, id, answer } }),
+  bigthingDecideApproval: (goalId: string, id: string, decision: ApprovalDecision, comment: string | null) =>
+    call<void>(COMMANDS.bigthingDecideApproval, { request: { goalId, id, decision, comment } }),
   bigthingRuntime: (goalId: string) => call<BigThingRuntime>(COMMANDS.bigthingRuntime, { goalId }),
   bigthingBriefing: (goalId: string) => call<string>(COMMANDS.bigthingBriefing, { goalId }),
   bigthingCommits: (goalId: string) => call<RunCommit[]>(COMMANDS.bigthingCommits, { goalId }),

@@ -9,11 +9,11 @@
 use super::protocol::{AmendOp, Place, ProposedPlan, ProposedTask, ResolvedOp, describe_op};
 use crate::storage::{
     Storage, StorageError,
-    odyssey::{MilestoneEdit, MilestoneRecord, StepEdit, StepRecord},
+    odyssey::{MilestoneEdit, MilestoneRecord, StepEdit, StepKind, StepRecord},
 };
 
-/// Writes proposed tasks under a milestone and wires their dependencies.
-/// Numbers count the tasks that already exist first.
+/// Writes proposed tasks under a milestone and wires their dependencies,
+/// inputs and loops. Numbers count the tasks that already exist first.
 pub fn create_tasks(storage: &Storage, milestone_id: &str, tasks: &[ProposedTask], existing: &[StepRecord]) -> Result<Vec<StepRecord>, StorageError> {
     let mut created = Vec::new();
     for task in tasks {
@@ -22,15 +22,26 @@ pub fn create_tasks(storage: &Storage, milestone_id: &str, tasks: &[ProposedTask
     let all: Vec<&StepRecord> = existing.iter().chain(created.iter()).collect();
     for (index, task) in tasks.iter().enumerate() {
         let step = &created[index];
-        if task.depends.is_empty() {
-            continue;
-        }
-        let ids: Vec<String> = task.depends.iter().filter_map(|n| all.get(n.wrapping_sub(1)).map(|step| step.id.clone())).filter(|id| *id != step.id).collect();
-        if !ids.is_empty() {
-            storage.step_edit(&step.id, &StepEdit { depends_on: Some(ids), ..StepEdit::default() })?;
+        let edit = flow_edit(task, &all, &step.id);
+        if edit != StepEdit::default() {
+            storage.step_edit(&step.id, &edit)?;
         }
     }
     Ok(created)
+}
+
+/// What a proposed task says about its dependencies, inputs, kind and loop,
+/// as an edit of the task `own` against the milestone's tasks `all`.
+fn flow_edit(task: &ProposedTask, all: &[&StepRecord], own: &str) -> StepEdit {
+    let ids = |numbers: &[usize]| -> Vec<String> { numbers.iter().filter_map(|n| all.get(n.wrapping_sub(1)).map(|step| step.id.clone())).filter(|id| id != own).collect() };
+    StepEdit {
+        depends_on: Some(ids(&task.depends)).filter(|ids| !ids.is_empty()),
+        uses: Some(ids(&task.uses)).filter(|ids| !ids.is_empty()),
+        kind: task.by_user().then_some(StepKind::Approval),
+        loop_to: task.repeat_from.and_then(|n| ids(&[n]).into_iter().next()),
+        loop_limit: task.max_rounds,
+        ..StepEdit::default()
+    }
 }
 
 fn dedupe(ids: impl IntoIterator<Item = String>) -> Vec<String> {
@@ -80,9 +91,21 @@ pub fn apply_ops(storage: &Storage, goal_id: &str, milestones: &[MilestoneRecord
                 }
                 storage.step_delete(&step.id)?;
             }
-            (AmendOp::ReviseTask { title, detail, depends, .. }, Some(milestone), Some(step)) => {
-                let depends = depends.as_ref().map(|numbers| numbers.iter().filter_map(|n| milestone.steps.get(n.wrapping_sub(1)).map(|step| step.id.clone())).filter(|id| *id != step.id).collect());
-                storage.step_edit(&step.id, &StepEdit { title: title.clone(), detail: detail.clone(), depends_on: depends })?;
+            (AmendOp::ReviseTask { title, detail, depends, uses, by, repeat_from, max_rounds, .. }, Some(milestone), Some(step)) => {
+                let ids = |numbers: &Vec<usize>| -> Vec<String> { numbers.iter().filter_map(|n| milestone.steps.get(n.wrapping_sub(1)).map(|step| step.id.clone())).filter(|id| *id != step.id).collect() };
+                storage.step_edit(
+                    &step.id,
+                    &StepEdit {
+                        title: title.clone(),
+                        detail: detail.clone(),
+                        depends_on: depends.as_ref().map(ids),
+                        uses: uses.as_ref().map(ids),
+                        kind: by.as_deref().map(|by| if super::protocol::read_by(by) { StepKind::Approval } else { StepKind::Work }),
+                        loop_to: repeat_from.map(|n| ids(&vec![n]).into_iter().next().unwrap_or_default()),
+                        loop_limit: *max_rounds,
+                        ..StepEdit::default()
+                    },
+                )?;
             }
             (AmendOp::SplitTask { steps, .. }, Some(milestone), Some(step)) => {
                 // The pieces inherit what the whole waited on and sit where it
@@ -94,10 +117,12 @@ pub fn apply_ops(storage: &Storage, goal_id: &str, milestones: &[MilestoneRecord
                 let all: Vec<&StepRecord> = milestone.steps.iter().chain(pieces.iter()).collect();
                 for (index, piece) in steps.iter().enumerate() {
                     let created = &pieces[index];
-                    let own = piece.depends.iter().filter_map(|n| all.get(n.wrapping_sub(1)).map(|step| step.id.clone())).filter(|id| *id != created.id && *id != step.id);
+                    let mut edit = flow_edit(piece, &all, &created.id);
+                    let own = edit.depends_on.take().unwrap_or_default().into_iter().filter(|id| *id != step.id);
                     let depends = dedupe(step.depends_on.iter().cloned().chain(own));
-                    if !depends.is_empty() {
-                        storage.step_edit(&created.id, &StepEdit { depends_on: Some(depends), ..StepEdit::default() })?;
+                    edit.depends_on = Some(depends).filter(|depends| !depends.is_empty());
+                    if edit != StepEdit::default() {
+                        storage.step_edit(&created.id, &edit)?;
                     }
                 }
                 if let Some(last) = pieces.last() {
@@ -206,6 +231,33 @@ mod tests {
         assert_eq!(list[0].check_kind, CheckKind::TestsPass);
         assert_eq!(list[0].steps[1].depends_on, vec![list[0].steps[0].id.clone()]);
         assert_eq!(list[0].steps[1].capability.as_deref(), Some("image"));
+    }
+
+    #[test]
+    fn a_plan_can_loop_ask_the_user_and_hand_results_on() {
+        use crate::storage::odyssey::{LoopAtLimit, StepKind};
+        let (_temp, storage, goal) = storage_with_goal();
+        let plan = parse_plan(
+            "BIGTHING-PLAN\nmilestone: Game\nstep: Write the design\nstep: Build it\ndepends: 1\nuses: 1\nstep: Test it\ndepends: 2\nrepeat_from: 2\nmax_rounds: 4\nstep: Sign it off\ndepends: 3\nby: you\nuses: 1, 9\nEND-BIGTHING-PLAN",
+        )
+        .unwrap();
+        write_plan(&storage, &goal, &plan).unwrap();
+        let steps = &milestones(&storage, &goal)[0].steps;
+        assert_eq!(steps[1].uses, vec![steps[0].id.clone()]);
+        assert_eq!(steps[2].loop_to.as_deref(), Some(steps[1].id.as_str()));
+        assert_eq!((steps[2].loop_limit, steps[2].loop_at_limit), (Some(4), LoopAtLimit::Ask));
+        assert_eq!(steps[3].kind, StepKind::Approval);
+        assert_eq!(steps[3].uses, vec![steps[0].id.clone()], "a task that is not earlier is dropped");
+        assert_eq!(steps[0].kind, StepKind::Work);
+
+        let before = milestones(&storage, &goal);
+        let amendment = parse_amendment("BIGTHING-AMEND\nrevise_task: 1.3\nmax_rounds: none\nrevise_task: 1.4\nby: team\nEND-BIGTHING-AMEND").unwrap();
+        let lines = apply_ops(&storage, &goal, &before, &resolve_ops(&amendment.ops, &before)).unwrap();
+        assert!(lines[0].contains("no round limit"), "{lines:?}");
+        let steps = &milestones(&storage, &goal)[0].steps;
+        assert_eq!(steps[2].loop_limit, None);
+        assert_eq!(steps[2].loop_to.as_deref(), Some(steps[1].id.as_str()), "the loop itself stays");
+        assert_eq!(steps[3].kind, StepKind::Work);
     }
 
     #[test]

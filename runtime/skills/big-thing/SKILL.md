@@ -60,12 +60,17 @@ check: <manual | command <cmd> | tests_pass <cmd> | files_exist <paths>>
 step: <task title, repeatable — each about 10–30 minutes of AI-agent work, in order>
 depends: <numbers of earlier tasks in this milestone the one above waits for, optional>
 capability: <what the task needs from a worker, e.g. image or review, optional>
+uses: <numbers of earlier tasks in this milestone whose results the task above is given, optional>
+by: <you, when the task above is the user's own approval rather than work, optional>
+repeat_from: <number of an earlier task to send the work back to when the task above asks for changes, optional>
+max_rounds: <how many rounds that loop may take before the user is asked, optional>
 END-BIGTHING-PLAN
 ```
 
 Repeat the `milestone:` group once per milestone, in the order the work has to
 happen. `detail:`, `section:`, `check:` and `step:` attach to the `milestone:`
-above them; `depends:` and `capability:` attach to the `step:` above it.
+above them; `depends:`, `capability:`, `uses:`, `by:`, `repeat_from:` and
+`max_rounds:` attach to the `step:` above it.
 
 - One reviewable outcome per milestone. Three to twelve is usual.
 - `detail:` is the working specification for that milestone: carry the
@@ -88,6 +93,12 @@ above them; `depends:` and `capability:` attach to the `step:` above it.
   needs that task's output, file or decision. Listing order is not a
   dependency. A closing integration, verification or review task is usually
   the one that waits on the others.
+- **Loops, sign-offs and hand-overs**, when the brief or document asks for
+  them (see Tasks below): `repeat_from:` under a deciding task — a review, a
+  test pass, a designer's feedback — sends the work back to that earlier task
+  when it asks for changes, and `max_rounds:` bounds the loop. `by: you` makes
+  a task the user's own approval. `uses:` names earlier tasks whose results
+  are written into the task.
 - **A check is a command Big Thing will run itself**, in the workspace root, and
   its exit code is what marks the milestone done. The planning prompt names
   the project's test command when the user has set one; use
@@ -174,6 +185,10 @@ revise_task: <task number>
 title: <new title, optional>
 detail: <new detail, optional>
 depends: <numbers of the milestone's tasks it waits for, optional>
+uses: <numbers of the milestone's tasks whose results it is given, optional>
+by: <you, to make it the user's own approval, optional>
+repeat_from: <number of an earlier task to send the work back to when it asks for changes, optional>
+max_rounds: <how many rounds that loop may take, optional>
 split_task: <task number>
 step: <each task that replaces it, repeatable>
 depends: <numbers of the milestone's tasks the one above waits for, optional>
@@ -370,6 +385,23 @@ BIGTHING-TASK: milestone=6 task=5 status=blocked note=needs the harbour data fro
   what verifies the milestone. A number the record does not have is ignored.
   To add tasks to a milestone that has none, or too few, use `revise:` with
   `step:` lines in an amendment block.
+
+Three things a task can carry beyond its dependencies; the continuation shows
+them after the title:
+
+- **The user's approval** (`by: you`): nobody but the user does it. Big Thing
+  asks them when the work it waits on is done, and the run waits there until
+  they approve, send the work back with comments, or stop the run. You cannot
+  move it, and a milestone with one open is not complete. Carry on with what
+  does not wait on it.
+- **A loop** (`repeat_from:`): the task decides whether the work so far is
+  good enough. Finish it with a note ending `VERDICT: approve`, or
+  `VERDICT: changes — <what must change>`; changes send the work back to the
+  named task, every task between runs again with what was asked, and the
+  continuation says so. After `max_rounds:` rounds the user is asked instead.
+- **Inputs** (`uses:`): the task needs what earlier tasks produced. When
+  Big Thing hands tasks out itself, their results are written into the task;
+  when you do, pass them on.
 
 ## Your handoff note
 

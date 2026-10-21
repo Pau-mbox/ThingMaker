@@ -130,10 +130,15 @@ def run_turn(turn_id, prompt="hi"):
                                         "receiverThreadIds": ["sub"], "prompt": "7.3-pricing: price the tiers", "model": "gpt-6-luna", "reasoningEffort": "low", "agentsStates": {}}})
     # A subagent's own stream is not the session's.
     notify("item/agentMessage/delta", {"threadId": "sub", "turnId": "t_sub", "itemId": "m_sub", "delta": "subagent chatter"})
-    for delta in ["Looking ", "at it."]:
+    # A task that decides a Big Thing loop asks for changes in its first
+    # round and approves in its second.
+    reply = "Looking at it."
+    if "decides whether the work so far is good enough" in prompt:
+        reply = "VERDICT: approve" if "This is round 2" in prompt else "Read it.\nVERDICT: changes — make it shorter"
+    for delta in [reply]:
         notify("item/agentMessage/delta", {"threadId": THREAD, "turnId": turn_id, "itemId": "msg_1", "delta": delta})
     notify("item/completed", {"threadId": THREAD, "turnId": turn_id, "completedAtMs": 6,
-                               "item": {"type": "agentMessage", "id": "msg_1", "text": "Looking at it.", "phase": None, "memoryCitation": None, "delivery": None, "questions": None}})
+                               "item": {"type": "agentMessage", "id": "msg_1", "text": reply, "phase": None, "memoryCitation": None, "delivery": None, "questions": None}})
     notify("thread/tokenUsage/updated", {"threadId": THREAD, "turnId": turn_id, "tokenUsage": {
         "total": {"totalTokens": 17198, "inputTokens": 17193, "cachedInputTokens": 12032, "cacheWriteInputTokens": 0, "outputTokens": 5, "reasoningOutputTokens": 0},
         "last": {"totalTokens": 17198, "inputTokens": 17193, "cachedInputTokens": 12032, "cacheWriteInputTokens": 0, "outputTokens": 5, "reasoningOutputTokens": 0},

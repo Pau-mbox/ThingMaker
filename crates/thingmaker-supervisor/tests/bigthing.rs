@@ -377,3 +377,49 @@ async fn the_runner_hands_ready_tasks_to_workers_in_parallel_and_has_them_review
     assert!(continuation.detail.as_deref().unwrap().contains("The workers finished their tasks"), "{}", continuation.detail.as_deref().unwrap());
     assert_eq!(view.milestones[0].state, MilestoneState::Verified);
 }
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 6)]
+async fn a_review_loop_sends_the_work_back_and_the_run_waits_for_your_approval() {
+    use thingmaker_supervisor::bigthing::flow::ApprovalDecision;
+    use thingmaker_supervisor::delegation::WorkerSlot;
+    use thingmaker_supervisor::storage::odyssey::{Dispatch, GoalEdit, QuestionState, StepEdit, StepKind, StepState};
+    let Some(fixture) = fixture_with(&["--follow-plan"]) else { return };
+    let team = Combo {
+        workers: vec![WorkerSlot { name: "luna".into(), provider: Provider::Codex, model: Some("gpt-6-luna".into()), effort: None, capabilities: vec!["code".into()], note: None }],
+        native_subagents: false,
+    };
+    let (goal_id, live) = fixture.goal_with(1, Some(team)).await;
+    {
+        let storage = fixture.storage.lock().unwrap();
+        storage.odyssey_edit_goal(&goal_id, &GoalEdit { dispatch: Some(Dispatch::Runner), ..GoalEdit::default() }).unwrap();
+        let milestone = storage.odyssey_view(&goal_id).unwrap().unwrap().milestones[0].id.clone();
+        let write = storage.step_add_with(&milestone, "Write the copy", "", &[], Some("code")).unwrap();
+        let review = storage.step_add_with(&milestone, "Review the copy", "", std::slice::from_ref(&write.id), Some("code")).unwrap();
+        storage.step_edit(&review.id, &StepEdit { uses: Some(vec![write.id.clone()]), loop_to: Some(write.id.clone()), loop_limit: Some(3), ..StepEdit::default() }).unwrap();
+        let sign_off = storage.step_add(&milestone, "Your sign-off", "", std::slice::from_ref(&review.id)).unwrap();
+        storage.step_edit(&sign_off.id, &StepEdit { kind: Some(StepKind::Approval), uses: Some(vec![write.id]), ..StepEdit::default() }).unwrap();
+    }
+    fixture.engine.start_goal(&goal_id).await.unwrap();
+
+    // The review asks for changes once, the copy is written again, the review
+    // approves, and the run stops at the user's sign-off.
+    let view = fixture.until(&goal_id, "the sign-off to wait for the user", 90, |view| view.milestones[0].steps[2].state == StepState::InProgress).await;
+    let steps = &view.milestones[0].steps;
+    assert_eq!((steps[0].round, steps[1].round), (2, 2), "both went round again");
+    assert_eq!(steps[0].feedback.as_deref(), Some("make it shorter"));
+    assert_eq!(steps[1].state, StepState::Done);
+    assert!(view.journal.iter().any(|entry| entry.summary == "Task 1.2 sent the work back to task 1.1 (round 2)"));
+    let tasks: Vec<String> = fixture.delegation.jobs(&live.handle).into_iter().map(|job| job.task).collect();
+    assert!(tasks.iter().any(|task| task.starts_with("1.2-review-the-copy") && task.contains("Result of task 1.1 (\"Write the copy\")")), "the review was given the copy: {tasks:?}");
+    assert!(tasks.iter().any(|task| task.starts_with("1.1-write-the-copy") && task.contains("sent back with: make it shorter")), "the rewrite was told why: {tasks:?}");
+    let question = fixture.storage.lock().unwrap().question_list(&goal_id, 10).unwrap().into_iter().find(|question| question.step_id.as_deref() == Some(steps[2].id.as_str())).expect("an approval question");
+    assert_eq!(question.state, QuestionState::Open);
+    tokio::time::sleep(Duration::from_secs(2)).await;
+    let waiting = fixture.storage.lock().unwrap().odyssey_view(&goal_id).unwrap().unwrap();
+    assert_ne!(waiting.goal.state, OdysseyState::Complete, "nothing completes past the user's approval");
+
+    fixture.engine.decide_approval(&goal_id, &question.id, ApprovalDecision::Approve, Some("ship it")).await.unwrap();
+    let view = fixture.until(&goal_id, "the goal to complete", 60, |view| view.goal.state == OdysseyState::Complete).await;
+    assert_eq!(view.milestones[0].steps[2].result.as_deref(), Some("ship it"));
+    assert_eq!(view.milestones[0].state, MilestoneState::Verified);
+}

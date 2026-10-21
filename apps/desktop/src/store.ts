@@ -36,6 +36,8 @@ import type {
   OdysseyView,
   PlanChangeRecord,
   QuestionRecord,
+  ApprovalDecision,
+  StepEdit,
   RepositoryInfo,
   StepState,
   WorkspaceNotes,
@@ -380,6 +382,10 @@ type State = {
   odysseyDecidePlanChange: (sessionId: string, id: string, decision: "apply" | "reject", note?: string) => Promise<void>;
   /** Answers a question the agent asked, or dismisses it; the agent is told either way. */
   odysseyAnswerQuestion: (sessionId: string, id: string, answer: string | null) => Promise<void>;
+  /** The user's decision at one of their approvals, or at a loop's limit. */
+  odysseyDecideApproval: (sessionId: string, id: string, decision: ApprovalDecision, comment: string | null) => Promise<void>;
+  /** Changes a task: its kind, the results it uses, its loop. */
+  odysseyEditStep: (sessionId: string, stepId: string, edit: StepEdit) => Promise<void>;
   refreshOdyssey: (sessionId: string, id: string) => Promise<void>;
   odysseyStart: (sessionId: string) => Promise<void>;
   /** Points the goal at another open session, or a fresh one of either agent. */
@@ -1515,6 +1521,29 @@ export const useStore = create<State>((set, get) => ({
     try {
       await api.bigthingDecidePlanChange(view.goal.id, id, decision === "apply", note);
       await get().odysseyLoadInbox(sessionId, view.goal.id);
+      await get().refreshOdyssey(sessionId, view.goal.id);
+    } catch (error) {
+      set({ error: asError(error) });
+    }
+  },
+
+  async odysseyDecideApproval(sessionId, id, decision, comment) {
+    const view = get().odyssey[sessionId];
+    if (!view) return;
+    try {
+      await api.bigthingDecideApproval(view.goal.id, id, decision, comment);
+      await get().odysseyLoadInbox(sessionId, view.goal.id);
+      await get().refreshOdyssey(sessionId, view.goal.id);
+    } catch (error) {
+      set({ error: asError(error) });
+    }
+  },
+
+  async odysseyEditStep(sessionId, stepId, edit) {
+    const view = get().odyssey[sessionId];
+    if (!view) return;
+    try {
+      await api.odysseyEditStep(stepId, edit);
       await get().refreshOdyssey(sessionId, view.goal.id);
     } catch (error) {
       set({ error: asError(error) });
