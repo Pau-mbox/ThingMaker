@@ -109,6 +109,22 @@ describe("the team chart", () => {
     expect(orchestrator).toEqual({ provider: "codex", model: "gpt-6.1-sol", effort: "xhigh" });
   });
 
+  it("keeps a helper's own instructions, sent with every task it gets", () => {
+    draw();
+    fireEvent.click(screen.getByRole("button", { name: /Sonnet 5.5/ }));
+    fireEvent.change(screen.getByRole("textbox", { name: "Its own instructions" }), { target: { value: "Cite the files you read." } });
+    expect(combo.workers[0]?.prompt).toBe("Cite the files you read.");
+    cleanup();
+    draw();
+    expect(screen.getByText("instructions")).toBeTruthy();
+  });
+
+  it("says when a helper's model is no longer in its provider's list", () => {
+    combo = { ...combo, workers: [{ ...combo.workers[0]!, model: "sonnet-4" }] };
+    draw();
+    expect(screen.getByText("Not in Claude Code's model list now")).toBeTruthy();
+  });
+
   it("gives a helper another role, and removes it", () => {
     draw();
     fireEvent.click(screen.getByRole("button", { name: /Sonnet 5.5/ }));

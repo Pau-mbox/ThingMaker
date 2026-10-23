@@ -416,7 +416,7 @@ mod tests {
 
     #[test]
     fn the_reviewer_is_on_another_provider() {
-        let worker = |name: &str, provider, capabilities: &[&str]| WorkerSlot { name: name.into(), provider, model: None, effort: None, capabilities: capabilities.iter().map(|c| c.to_string()).collect(), note: None };
+        let worker = |name: &str, provider, capabilities: &[&str]| WorkerSlot { name: name.into(), provider, model: None, effort: None, capabilities: capabilities.iter().map(|c| c.to_string()).collect(), note: None, prompt: None };
         let team = vec![worker("luna", Provider::Codex, &["image"]), worker("sonnet", Provider::Claude, &["review"]), worker("gem", Provider::Gemini, &[])];
         assert_eq!(pick_reviewer(&team, Provider::Codex).as_deref(), Some("sonnet"));
         assert_ne!(pick_reviewer(&team, Provider::Claude).as_deref(), Some("sonnet"), "never the author's own provider");

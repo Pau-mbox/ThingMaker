@@ -41,7 +41,14 @@ pub struct WorkerSlot {
     /// A line for the orchestrator: when to use this worker.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub note: Option<String>,
+    /// The user's own standing instructions for this worker, sent with every
+    /// new task it is given.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub prompt: Option<String>,
 }
+
+/// How much of a worker's own instructions is sent with a task.
+pub const WORKER_PROMPT_CHARS: usize = 4_000;
 
 impl WorkerSlot {
     pub fn has(&self, capability: &str) -> bool {
@@ -90,6 +97,7 @@ impl Combo {
             let count = seen.entry(base.to_ascii_lowercase()).or_insert(0);
             *count += 1;
             worker.name = if *count == 1 { base } else { format!("{base}-{count}") };
+            worker.prompt = worker.prompt.take().map(|prompt| prompt.trim().chars().take(WORKER_PROMPT_CHARS).collect::<String>()).filter(|prompt| !prompt.is_empty());
             worker.capabilities.retain(|capability| !capability.trim().is_empty());
             for capability in &mut worker.capabilities {
                 *capability = capability.trim().to_ascii_lowercase();
@@ -310,6 +318,7 @@ mod tests {
             effort: None,
             capabilities: capabilities.iter().map(|c| c.to_string()).collect(),
             note: None,
+            prompt: None,
         }
     }
 

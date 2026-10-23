@@ -5089,6 +5089,19 @@ button.odyssey-task-title svg {
   white-space: nowrap;
 }
 
+.chart-tags-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.chart-prompt {
+  width: 100%;
+  resize: vertical;
+  min-height: 64px;
+  font: inherit;
+}
+
 .chart-role-tag {
   display: inline-flex;
   align-items: center;

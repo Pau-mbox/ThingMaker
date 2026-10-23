@@ -238,6 +238,21 @@ function WorkerCard({ worker, models, quota, onChange, onRemove }: { worker: Wor
           value={worker.note ?? ""}
         />
       </label>
+      <label className="field">
+        {t("Its own instructions")}
+        <textarea
+          aria-label={t("Its own instructions")}
+          className="input chart-prompt"
+          maxLength={4000}
+          onChange={(e) => {
+            const { prompt: _prompt, ...rest } = worker;
+            onChange({ ...rest, ...(e.target.value ? { prompt: e.target.value } : {}) });
+          }}
+          placeholder={t("Sent with every task it gets, for example “Write tests with Vitest” or “Flat pastel art style, no gradients”")}
+          rows={2}
+          value={worker.prompt ?? ""}
+        />
+      </label>
     </li>
   );
 }

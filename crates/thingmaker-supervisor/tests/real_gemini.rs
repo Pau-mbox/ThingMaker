@@ -106,7 +106,7 @@ async fn a_claude_orchestrator_delegates_to_a_gemini_worker() {
     let scratch = tempfile::tempdir().unwrap();
     let delegation = Delegation::new(Arc::new(Launcher), |job| eprintln!("job {} {:?} {:?}", job.id, job.status, job.error));
     let socket = DelegationSocket::bind(delegation.clone(), scratch.path().join("mcp.sock")).unwrap();
-    let worker = WorkerSlot { name: "flash".into(), provider: Provider::Gemini, model: Some(MODEL.into()), effort: None, capabilities: vec!["fast".into()], note: None };
+    let worker = WorkerSlot { name: "flash".into(), provider: Provider::Gemini, model: Some(MODEL.into()), effort: None, capabilities: vec!["fast".into()], note: None, prompt: None };
     let home = PathBuf::from(std::env::var("HOME").unwrap());
     let (node, script) = locate_adapter(&home, None, std::env::var("THINGMAKER_CLAUDE_ACP").ok()).expect("claude-agent-acp");
     let mut options = ClaudeLaunchOptions::new(scratch.path(), node.clone(), vec![script.to_string_lossy().into_owned()]);

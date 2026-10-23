@@ -455,7 +455,7 @@ mod tests {
     #[test]
     fn a_team_changes_how_the_run_delegates() {
         let team = Combo {
-            workers: vec![WorkerSlot { name: "luna".into(), provider: Provider::Codex, model: Some("gpt-6-luna".into()), effort: None, capabilities: vec!["image".into()], note: None }],
+            workers: vec![WorkerSlot { name: "luna".into(), provider: Provider::Codex, model: Some("gpt-6-luna".into()), effort: None, capabilities: vec!["image".into()], note: None, prompt: None }],
             native_subagents: false,
         };
         let text = build_briefing(&goal(), &plan(), &BriefingOptions { team: Some(&team), agent: Some(Provider::Claude), tools: true, ..Default::default() });

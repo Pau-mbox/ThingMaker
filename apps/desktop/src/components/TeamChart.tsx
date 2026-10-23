@@ -10,7 +10,7 @@ import { ORCHESTRATOR_PROVIDERS, PROVIDERS, PROVIDER_LABELS, WORKER_CAPABILITIES
 import { useStore } from "../store";
 import { ROLE_IDS, modelName, roleEffort, roleOf, roleWorker, suggestModel, usableProviders, withRole, type Catalogs, type RoleId } from "../teamRoles";
 import { ProviderLogo } from "./ProviderLogo";
-import { IconAgents, IconBolt, IconCode, IconEyeCheck, IconPalette, IconPlus, IconSearch } from "./icons";
+import { IconAgents, IconBolt, IconCode, IconDoc, IconEyeCheck, IconPalette, IconPlus, IconSearch } from "./icons";
 import { t } from "../i18n";
 
 export function roleLabel(role: RoleId | null): string {
@@ -99,6 +99,7 @@ function EffortBar({ model, effort }: { model: ProviderModel | undefined; effort
 
 function EffortSwitch({ model, value, onChange }: { model: ProviderModel | undefined; value: string | undefined; onChange: (effort: string | undefined) => void }) {
   const efforts = model?.efforts ?? [];
+  if (!model) return <span className="small muted">{value ? t("{effort}, kept as it was: the provider does not list this model now.", { effort: value }) : t("The provider does not list this model now.")}</span>;
   if (efforts.length === 0) return <span className="small muted">{t("This model has one effort.")}</span>;
   return (
     <div aria-label={t("Effort")} className="chart-seg" role="group">
@@ -262,6 +263,7 @@ export function TeamChart({ orchestrator, combo, onChange }: { orchestrator: Orc
   const hintFor = (worker: WorkerSlot): string | null => {
     if (!usable.includes(worker.provider)) return t("{provider} is not signed in", { provider: PROVIDER_LABELS[worker.provider] });
     if (quotas[worker.provider]?.status === "rejected") return t("{provider} is out of quota", { provider: PROVIDER_LABELS[worker.provider] });
+    if (worker.model && (catalogs[worker.provider]?.length ?? 0) > 0 && !findModel(catalogs, worker.provider, worker.model)) return t("Not in {provider}'s model list now", { provider: PROVIDER_LABELS[worker.provider] });
     if (findModel(catalogs, worker.provider, worker.model)?.needsCredits) return t("Uses credits beyond the plan");
     if (roleOf(worker) === "reviewer") {
       const others = [orchestrator.provider, ...workers.filter((other) => other !== worker).map((other) => other.provider)];
@@ -365,9 +367,17 @@ export function TeamChart({ orchestrator, combo, onChange }: { orchestrator: Orc
                     <span className="chart-sub">{modelName(catalogs, worker.provider, worker.model) ?? t("Account default")}</span>
                   </span>
                 </span>
-                <span className="chart-role-tag">
-                  <RoleIcon role={role} size={12} />
-                  {roleLabel(role)}
+                <span className="chart-tags-row">
+                  <span className="chart-role-tag">
+                    <RoleIcon role={role} size={12} />
+                    {roleLabel(role)}
+                  </span>
+                  {worker.prompt && (
+                    <span className="chart-role-tag" title={worker.prompt}>
+                      <IconDoc size={12} />
+                      {t("instructions")}
+                    </span>
+                  )}
                 </span>
                 <EffortBar effort={worker.effort} model={model} />
                 {hint && <span className="chart-hint">{hint}</span>}
@@ -481,6 +491,21 @@ export function TeamChart({ orchestrator, combo, onChange }: { orchestrator: Orc
               }}
               placeholder={t("Read by the lead, for example “all image and icon work”")}
               value={selectedWorker.note ?? ""}
+            />
+          </label>
+          <label className="field">
+            {t("Its own instructions")}
+            <textarea
+              aria-label={t("Its own instructions")}
+              className="input chart-prompt"
+              maxLength={4000}
+              onChange={(event) => {
+                const { prompt: _prompt, ...rest } = selectedWorker;
+                setWorker(selected, { ...rest, ...(event.target.value ? { prompt: event.target.value } : {}) });
+              }}
+              placeholder={t("Sent with every task it gets, for example “Write tests with Vitest” or “Flat pastel art style, no gradients”")}
+              rows={3}
+              value={selectedWorker.prompt ?? ""}
             />
           </label>
           <details className="chart-tags">

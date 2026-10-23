@@ -416,6 +416,8 @@ export type WorkerSlot = {
   capabilities: string[];
   /** A line for the orchestrator: when to use this worker. */
   note?: string;
+  /** The user's own standing instructions for this worker, sent with every new task it gets. */
+  prompt?: string;
 };
 
 /** The team behind one orchestrator session. */

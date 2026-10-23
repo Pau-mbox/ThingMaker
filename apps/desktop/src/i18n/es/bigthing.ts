@@ -581,4 +581,10 @@ export const bigthing: Record<string, string> = {
   "1 helper": "1 ayudante",
   "{count} helpers": "{count} ayudantes",
   "Make your first team: someone who leads, and helpers it can hand work to.": "Crea tu primer equipo: alguien que dirige y ayudantes a los que puede pasar trabajo.",
+  "{effort}, kept as it was: the provider does not list this model now.": "{effort}, se mantiene: el proveedor ya no muestra este modelo.",
+  "The provider does not list this model now.": "El proveedor ya no muestra este modelo.",
+  "Not in {provider}'s model list now": "Ya no está en la lista de modelos de {provider}",
+  "instructions": "instrucciones",
+  "Its own instructions": "Sus propias instrucciones",
+  "Sent with every task it gets, for example “Write tests with Vitest” or “Flat pastel art style, no gradients”": "Se envían con cada tarea que recibe, por ejemplo “Escribe los tests con Vitest” o “Estilo plano y pastel, sin degradados”",
 };

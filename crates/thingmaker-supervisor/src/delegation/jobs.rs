@@ -624,7 +624,7 @@ impl Delegation {
         self.bump();
         // A worker that already did a task here has read the brief.
         let brief = if view.continues.is_some() || view.warm { None } else { read_brief(&root) };
-        let mut prompt = worker_prompt(task, &args.files, orchestrator_provider, view.continues.is_some(), brief.as_deref());
+        let mut prompt = worker_prompt(task, &args.files, orchestrator_provider, view.continues.is_some(), brief.as_deref(), slot.prompt.as_deref());
         if view.warm {
             prompt = format!("Your previous task is finished. This is a new one: treat it on its own, using what you learned only where it applies.\n\n{prompt}");
         }
@@ -1271,7 +1271,7 @@ fn warm_worker(state: &State, session: &str, slot: &WorkerSlot) -> Option<Sessio
     None
 }
 
-pub fn worker_prompt(task: &str, files: &[String], orchestrator: Provider, follow_up: bool, brief: Option<&str>) -> String {
+pub fn worker_prompt(task: &str, files: &[String], orchestrator: Provider, follow_up: bool, brief: Option<&str>, standing: Option<&str>) -> String {
     let mut prompt = String::new();
     if follow_up {
         prompt.push_str("Follow-up from the orchestrator on the task you just did:\n\n");
@@ -1283,6 +1283,9 @@ Check your work with the narrowest command that proves it — the one test file,
 End with a short report as your final message, a few lines at most: what you did, the files you created or changed (paths), and anything the orchestrator should check. It can read the files itself, so do not paste their contents.\n\n",
             orchestrator.label()
         ));
+        if let Some(standing) = standing.map(str::trim).filter(|text| !text.is_empty()) {
+            prompt.push_str(&format!("The user's own instructions for you, for every task you are given:\n\n{standing}\n\n"));
+        }
         if let Some(brief) = brief {
             prompt.push_str(&format!("Project brief ({BRIEF_PATH}, kept by the orchestrator) — start from this instead of exploring the codebase; open only the files the task needs:\n\n{brief}\n\n"));
         }
@@ -1307,13 +1310,16 @@ mod tests {
 
     #[test]
     fn a_worker_is_told_the_task_stands_alone_and_its_last_message_is_the_report() {
-        let prompt = worker_prompt("Draw the app icon", &["assets/".into(), " ".into()], Provider::Claude, false, Some("# Brief\nRust + React."));
+        let prompt = worker_prompt("Draw the app icon", &["assets/".into(), " ".into()], Provider::Claude, false, Some("# Brief\nRust + React."), Some("Flat pastel style, no gradients."));
+        assert!(prompt.contains("The user's own instructions for you, for every task you are given:\n\nFlat pastel style, no gradients."));
+        assert!(prompt.find("Flat pastel style") < prompt.find("Draw the app icon"), "the instructions come before the task");
         assert!(prompt.contains("narrowest command that proves it"), "a worker checks its own change, not the whole project");
         assert!(prompt.contains("Project brief (docs/big-thing/BRIEF.md") && prompt.contains("Rust + React.") && prompt.find("Rust + React.") < prompt.find("Draw the app icon"));
         assert!(prompt.contains("orchestrator (Claude Code)"));
         assert!(prompt.contains("final message"));
         assert!(prompt.ends_with("Files to start from:\n- assets/\n"));
-        let follow = worker_prompt("Make it blue", &[], Provider::Codex, true, Some("ignored"));
+        let follow = worker_prompt("Make it blue", &[], Provider::Codex, true, Some("ignored"), Some("also ignored"));
+        assert!(!follow.contains("also ignored"), "a follow-up has the instructions already");
         assert!(!follow.contains("ignored"), "a follow-up has the brief already");
         assert!(follow.starts_with("Follow-up"));
         assert!(!follow.contains("worker on a team in ThingMaker"));

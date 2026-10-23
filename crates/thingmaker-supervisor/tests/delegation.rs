@@ -88,8 +88,8 @@ impl WorkerLauncher for MockLauncher {
 fn team() -> Combo {
     Combo {
         workers: vec![
-            WorkerSlot { name: "luna".into(), provider: Provider::Codex, model: Some("gpt-6-luna".into()), effort: Some("low".into()), capabilities: vec!["image".into(), "fast".into(), "code".into()], note: Some("images and quick edits".into()) },
-            WorkerSlot { name: "sonnet".into(), provider: Provider::Claude, model: Some("sonnet".into()), effort: None, capabilities: vec!["code".into(), "review".into()], note: None },
+            WorkerSlot { name: "luna".into(), provider: Provider::Codex, model: Some("gpt-6-luna".into()), effort: Some("low".into()), capabilities: vec!["image".into(), "fast".into(), "code".into()], note: Some("images and quick edits".into()), prompt: None },
+            WorkerSlot { name: "sonnet".into(), provider: Provider::Claude, model: Some("sonnet".into()), effort: None, capabilities: vec!["code".into(), "review".into()], note: None, prompt: None },
         ],
         native_subagents: false,
     }

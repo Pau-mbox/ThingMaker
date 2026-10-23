@@ -142,7 +142,7 @@ async fn a_claude_orchestrator_delegates_to_a_codex_worker() {
         eprintln!("set THINGMAKER_REAL_DELEGATION=1 to spend real turns; skipping");
         return;
     }
-    let worker = WorkerSlot { name: "luna".into(), provider: Provider::Codex, model: Some("gpt-6-luna".into()), effort: Some("low".into()), capabilities: vec!["fast".into()], note: None };
+    let worker = WorkerSlot { name: "luna".into(), provider: Provider::Codex, model: Some("gpt-6-luna".into()), effort: Some("low".into()), capabilities: vec!["fast".into()], note: None, prompt: None };
     run(Provider::Claude, worker).await;
 }
 
@@ -152,6 +152,6 @@ async fn a_codex_orchestrator_delegates_to_a_claude_worker() {
         eprintln!("set THINGMAKER_REAL_DELEGATION=1 to spend real turns; skipping");
         return;
     }
-    let worker = WorkerSlot { name: "sonnet".into(), provider: Provider::Claude, model: Some("sonnet".into()), effort: Some("low".into()), capabilities: vec!["code".into()], note: None };
+    let worker = WorkerSlot { name: "sonnet".into(), provider: Provider::Claude, model: Some("sonnet".into()), effort: Some("low".into()), capabilities: vec!["code".into()], note: None, prompt: None };
     run(Provider::Codex, worker).await;
 }
