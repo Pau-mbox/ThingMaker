@@ -426,4 +426,11 @@ export const session: Record<string, string> = {
   "stop session": "detener sesión",
   "last submission {id}: {state}": "último envío {id}: {state}",
   "steer {id}: {state}": "redirección {id}: {state}",
+  "Lead": "Líder",
+  "waiting on the team": "esperando al equipo",
+  "The lead waits while its helpers work": "Quien dirige espera mientras trabajan sus ayudantes",
+  "ready": "listo",
+  "stopped": "detenido",
+  "On the team, with nothing to do yet": "En el equipo, sin nada que hacer todavía",
+  "Who is working": "Quién está trabajando",
 };

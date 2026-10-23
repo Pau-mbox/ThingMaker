@@ -73,8 +73,9 @@ describe("work the session has gone quiet about", () => {
   it("reports it as running while the session is still talking", () => {
     seed(30_000);
     render(<ActivityBar onOpenAgents={() => undefined} sessionId={SESSION} />);
-    expect(screen.getByText("Working in the background")).toBeTruthy();
-    expect(screen.getByText(/1 background agent/)).toBeTruthy();
+    // The lead waits; its subagent is a robot of its own, at work.
+    expect(screen.getByText("waiting on the team")).toBeTruthy();
+    expect(screen.getByText("android-build").closest("li")?.className).toContain("crew-working");
     expect(screen.queryByRole("button", { name: "Clear" })).toBeNull();
   });
 
@@ -106,7 +107,9 @@ describe("work the session has gone quiet about", () => {
     const job = (id: string, status: JobView["status"]): JobView => ({ id, orchestrator: SESSION, worker: "cx", provider: "codex", task: "t", status, toolCalls: 0, attempts: 0, startedAtUnixMs: Date.now() - 60_000 });
     useStore.setState({ jobs: { [SESSION]: [job("j1", "running"), job("j2", "waiting"), job("j3", "succeeded")] } });
     render(<ActivityBar onOpenAgents={() => undefined} sessionId={SESSION} />);
-    expect(screen.getByText(/2 worker jobs \(1 waiting out a limit\)/)).toBeTruthy();
+    // One robot for the helper, at work on its running job, and the wait counted after the row.
+    expect(screen.getByText("cx").closest("li")?.className).toContain("crew-working");
+    expect(screen.getByText(/1 waiting out a limit/)).toBeTruthy();
     expect(screen.queryByText("Reported running, but silent")).toBeNull();
     expect(screen.queryByText(/no reported work/)).toBeNull();
   });
@@ -116,5 +119,21 @@ describe("work the session has gone quiet about", () => {
     render(<ActivityBar onOpenAgents={() => undefined} sessionId={SESSION} />);
     expect(screen.queryByText("Reported running, but silent")).toBeNull();
     expect(screen.queryByRole("button", { name: "Clear" })).toBeNull();
+  });
+
+  it("stands the whole team in a row: the lead at work, a helper ready, one done", () => {
+    seed(1_000, "running");
+    const done: JobView = { id: "j9", orchestrator: SESSION, worker: "Reviewer", provider: "codex", task: "Review it", status: "succeeded", toolCalls: 0, attempts: 0, startedAtUnixMs: Date.now() - 60_000 };
+    useStore.setState({
+      jobs: { [SESSION]: [done] },
+      teams: { [SESSION]: { workers: [{ name: "Artist", provider: "codex", capabilities: ["image"] }, { name: "Reviewer", provider: "codex", capabilities: ["review"] }], nativeSubagents: false } },
+    });
+    render(<ActivityBar onOpenAgents={() => undefined} sessionId={SESSION} />);
+    const member = (name: string) => screen.getByText(name).closest("li") as HTMLElement;
+    expect(member("Lead").className).toContain("crew-working");
+    expect(member("Artist").className).toContain("crew-idle");
+    expect(member("Artist").textContent).toContain("ready");
+    expect(member("Reviewer").className).toContain("crew-done");
+    expect(member("Reviewer").querySelector(".tinybot-codex.tinybot-done")).toBeTruthy();
   });
 });

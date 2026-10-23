@@ -1,7 +1,9 @@
 /**
- * Live activity strip (UX-08, INS-01). Shows that something is running and
- * what exactly is in flight: the foreground turn, running tool calls, compose
- * children, detached calls and background subagents, with elapsed time.
+ * Live activity strip (UX-08, INS-01): the crew at work. The lead and every
+ * helper on the session's team stand in a row as tiny robots in their
+ * provider's colour — working while they have something in flight, idle
+ * while they wait, done once their last job finished — with the lead's own
+ * subagents beside them, and the elapsed time and step count after them.
  *
  * It sits between the transcript and the composer rather than inside the
  * transcript, so it cannot scroll out of view while work continues — the case
@@ -16,6 +18,14 @@ import { staleActivity } from "../odysseyRunner";
 import { stepDoing, stepOf } from "../toolSteps";
 import { UsageLine } from "./UsageLine";
 import { IconChevron } from "./icons";
+import { TinyBot, type BotState } from "./TinyBot";
+import type { JobView, Provider } from "@thingmaker/contracts";
+
+/** One robot in the row. */
+type CrewMember = { key: string; provider: Provider; name: string; state: BotState; status: string; title: string };
+
+/** How many robots the row shows before it says "+n". */
+const CREW_LIMIT = 8;
 
 function elapsed(ms: number): string {
   const s = Math.floor(ms / 1000);
@@ -29,6 +39,7 @@ export function ActivityBar({ sessionId, onOpenAgents }: { sessionId: string; on
   const sampleUsage = useStore((s) => s.sampleUsage);
   const clearStaleActivity = useStore((s) => s.clearStaleActivity);
   const jobs = useStore((s) => s.jobs[sessionId]);
+  const team = useStore((s) => s.teams[sessionId]);
   // A string, so the selection is stable between updates.
   const roots = useStore((s) => {
     const workspace = s.workspaces.find((entry) => entry.id === s.sessions[sessionId]?.workspaceId);
@@ -96,15 +107,64 @@ export function ActivityBar({ sessionId, onOpenAgents }: { sessionId: string; on
     if (card?.kind === "message" && card.message.role === "user") break;
     if (card?.kind === "tool") turnSteps += 1;
   }
+  // The robots say who is working; the line after them says on what.
   const counts = [
     doing ? `${stepDoing(stepOf(doing, roots.split("\n").filter(Boolean)))}${runningTools.length > 1 ? ` (${t("+{n} more", { n: runningTools.length - 1 })})` : ""}` : null,
     foreground && turnSteps > 0 ? (turnSteps === 1 ? t("{n} step so far", { n: turnSteps }) : t("{n} steps so far", { n: turnSteps })) : null,
-    agents.length > 0 ? (agents.length === 1 ? t("{n} background agent", { n: agents.length }) : t("{n} background agents", { n: agents.length })) : null,
     detached.length > 0 ? t("{n} detached", { n: detached.length }) : null,
-    openJobs.length > 0
-      ? `${openJobs.length === 1 ? t("{n} worker job", { n: openJobs.length }) : t("{n} worker jobs", { n: openJobs.length })}${waitingJobs > 0 ? ` ${t("({n} waiting out a limit)", { n: waitingJobs })}` : ""}`
-      : null,
+    waitingJobs > 0 ? t("({n} waiting out a limit)", { n: waitingJobs }) : null,
   ].filter(Boolean);
+
+  // The lead, each helper on the team by its latest job, and the lead's own
+  // subagents, which run on the lead's provider.
+  const crew: CrewMember[] = [
+    {
+      key: "lead",
+      provider: session.snapshot.provider,
+      name: t("Lead"),
+      state: foreground ? "working" : "idle",
+      status: foreground ? phase.toLowerCase() : t("waiting on the team"),
+      title: foreground ? phase : t("The lead waits while its helpers work"),
+    },
+  ];
+  // A helper's job that says most about it now: one running, else one
+  // waiting, else the one that finished last.
+  const rank = (job: JobView) => (job.status === "starting" || job.status === "running" ? 2 : job.status === "waiting" ? 1 : 0);
+  const latest = new Map<string, JobView>();
+  for (const job of jobs ?? []) {
+    const known = latest.get(job.worker);
+    if (!known || rank(job) > rank(known) || (rank(job) === rank(known) && job.startedAtUnixMs >= known.startedAtUnixMs)) latest.set(job.worker, job);
+  }
+  const names = [...(team?.workers.map((worker) => worker.name) ?? []), ...[...latest.keys()].filter((name) => !team?.workers.some((worker) => worker.name === name))];
+  for (const name of names) {
+    const job = latest.get(name);
+    const provider = job?.provider ?? team?.workers.find((worker) => worker.name === name)?.provider ?? session.snapshot.provider;
+    const open = job && (job.status === "starting" || job.status === "running");
+    const state: BotState = open ? "working" : job && (job.status === "succeeded" || job.status === "failed" || job.status === "cancelled") ? "done" : "idle";
+    const status = !job
+      ? t("ready")
+      : open
+        ? elapsed(now - job.startedAtUnixMs)
+        : job.status === "waiting"
+          ? t("waiting out a limit")
+          : job.status === "succeeded"
+            ? t("done")
+            : job.status === "failed"
+              ? t("failed")
+              : t("stopped");
+    crew.push({ key: `job:${name}`, provider, name, state, status, title: job ? job.task.split("\n")[0]?.slice(0, 140) ?? name : t("On the team, with nothing to do yet") });
+  }
+  for (const agent of agents) {
+    crew.push({
+      key: `agent:${agent.id}`,
+      provider: session.snapshot.provider,
+      name: agent.name,
+      state: "working",
+      status: typeof agent.generationStartedAtUnixMs === "number" ? elapsed(now - agent.generationStartedAtUnixMs) : t("working"),
+      title: agent.task,
+    });
+  }
+  const shown = crew.slice(0, CREW_LIMIT);
 
   const lastRuntime = [...projection.cards].reverse().find((c) => c.kind === "runtime");
   const detail = runningTools.length > 0 || agents.length > 0;
@@ -112,8 +172,19 @@ export function ActivityBar({ sessionId, onOpenAgents }: { sessionId: string; on
   return (
     <div aria-live="off" className={`activity ${foreground ? "" : "activity-background"}`} role="status">
       <div className="activity-head">
-        {stale ? <span className="activity-stale-dot" /> : <span className="spinner" />}
-        <strong>{stale ? t("Reported running, but silent") : phase}</strong>
+        <ul aria-label={t("Who is working")} className="crew">
+          {shown.map((member) => (
+            <li className={`crew-member crew-${member.state}`} key={member.key} title={member.title}>
+              <TinyBot provider={member.provider} state={member.state} />
+              <span className="crew-text">
+                <span className="crew-name">{member.name}</span>
+                <span className="crew-status">{member.status}</span>
+              </span>
+            </li>
+          ))}
+          {crew.length > shown.length && <li className="crew-more">+{crew.length - shown.length}</li>}
+        </ul>
+        {stale && <strong className="small">{t("Reported running, but silent")}</strong>}
         {startedAt && <span className="muted small activity-clock">{elapsed(now - startedAt)}</span>}
         <span className="muted small activity-counts">
           {stale ? t("nothing has been reported for {time}; it probably ended without saying so", { time: elapsed(stale.silentMs) }) : counts.join(" · ")}

@@ -2719,8 +2719,8 @@ code {
 
 .activity-head {
   display: flex;
-  align-items: center;
-  gap: 10px;
+  align-items: flex-end;
+  gap: 10px 14px;
   flex-wrap: wrap;
 }
 
@@ -6551,5 +6551,283 @@ html[data-platform="android"] { --traffic-lights: 8px; --titlebar: 52px; height:
 @media (prefers-reduced-motion: reduce) {
   .provider-status.busy i {
     animation: none;
+  }
+}
+
+/* The crew row (ActivityBar) and its tiny robots (TinyBot). One palette per
+   provider; a robot that is done turns grey. */
+.crew {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 4px 14px;
+}
+
+.crew-member {
+  display: flex;
+  align-items: flex-end;
+  gap: 6px;
+}
+
+.crew-text {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.25;
+  padding-bottom: 1px;
+}
+
+.crew-name {
+  font-size: 12px;
+  font-weight: 600;
+  max-width: 120px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.crew-status {
+  font-size: 11px;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.crew-done .crew-name {
+  color: var(--muted);
+}
+
+.crew-more {
+  font-size: 12px;
+  color: var(--muted);
+  padding-bottom: 4px;
+}
+
+.tinybot {
+  display: block;
+  flex: none;
+  overflow: visible;
+}
+
+.tinybot-claude {
+  --bot-ball: #ef8a5b;
+  --bot-ear: #e0784b;
+  --bot-shell: #f6dccb;
+  --bot-shade: #d4a88d;
+  --bot-visor: #2b1e1a;
+  --bot-eye: #ffe9dc;
+  --bot-chassis: #efcdb8;
+  --bot-stick: #8a6a5c;
+}
+
+.tinybot-gemini {
+  --bot-ball: #45d6a0;
+  --bot-ear: #2fbf8a;
+  --bot-shell: #d4f7e9;
+  --bot-shade: #8fd4b8;
+  --bot-visor: #11241d;
+  --bot-eye: #c8ffe9;
+  --bot-chassis: #bdeed9;
+  --bot-stick: #4f8a74;
+}
+
+.tinybot-codex {
+  --bot-ball: #7b98ff;
+  --bot-ear: #5a7cf2;
+  --bot-shell: #e1e8ff;
+  --bot-shade: #a3b4ee;
+  --bot-visor: #151a33;
+  --bot-eye: #d6e2ff;
+  --bot-chassis: #c7d3fb;
+  --bot-stick: #5d6aa6;
+}
+
+/* Done: the provider's colour, dimmed, so a finished robot still says
+   whose it is. */
+.tinybot-done.tinybot-claude {
+  --bot-ball: #6b5249;
+  --bot-ear: #5e463d;
+  --bot-shell: #7a6a63;
+  --bot-shade: #5e504a;
+  --bot-visor: #2a2321;
+  --bot-eye: #9a8a83;
+  --bot-chassis: #6b5d57;
+  --bot-stick: #4f423d;
+}
+
+.tinybot-done.tinybot-gemini {
+  --bot-ball: #3f6358;
+  --bot-ear: #36574c;
+  --bot-shell: #5f716b;
+  --bot-shade: #4a5a54;
+  --bot-visor: #1c2522;
+  --bot-eye: #7f948c;
+  --bot-chassis: #55665f;
+  --bot-stick: #3c4a45;
+}
+
+.tinybot-done.tinybot-codex {
+  --bot-ball: #4b5478;
+  --bot-ear: #424a6b;
+  --bot-shell: #656b80;
+  --bot-shade: #4f5468;
+  --bot-visor: #1e2030;
+  --bot-eye: #858ba3;
+  --bot-chassis: #5a6075;
+  --bot-stick: #40455a;
+}
+
+.tinybot-ball,
+.tinybot-bit {
+  fill: var(--bot-ball);
+}
+
+.tinybot-stick {
+  fill: var(--bot-stick);
+}
+
+.tinybot-ear {
+  fill: var(--bot-ear);
+}
+
+.tinybot-shell {
+  fill: var(--bot-shell);
+}
+
+.tinybot-shade {
+  fill: var(--bot-shade);
+}
+
+.tinybot-visor {
+  fill: var(--bot-visor);
+}
+
+.tinybot-eyes {
+  fill: var(--bot-eye);
+}
+
+.tinybot-chassis {
+  fill: var(--bot-chassis);
+}
+
+/* Idle: a slow bob, a blink now and then, the antenna breathing. */
+.tinybot-idle .tinybot-body {
+  animation: bot-bob 2.8s ease-in-out infinite;
+}
+
+.tinybot-idle .tinybot-eyes,
+.tinybot-working .tinybot-eyes {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: bot-blink 4.6s infinite;
+}
+
+.tinybot-idle .tinybot-ball {
+  animation: bot-breathe 2.8s ease-in-out infinite;
+}
+
+/* Working: a quick bob, glances side to side, bits thrown off the antenna. */
+.tinybot-working .tinybot-body {
+  animation: bot-bob 0.7s ease-in-out infinite;
+}
+
+.tinybot-working .tinybot-eyes {
+  animation: bot-glance 2.4s steps(1) infinite;
+}
+
+.tinybot-working .tinybot-ball {
+  animation: bot-breathe 0.7s ease-in-out infinite;
+}
+
+.tinybot-bit {
+  opacity: 0;
+  animation: bot-bit 1.4s linear infinite;
+}
+
+.tinybot-bit-1 {
+  animation-delay: 0.35s;
+}
+
+.tinybot-bit-2 {
+  animation-delay: 0.7s;
+}
+
+.tinybot-bit-3 {
+  animation-delay: 1.05s;
+}
+
+@keyframes bot-bob {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-0.8px);
+  }
+}
+
+@keyframes bot-blink {
+  0%,
+  90%,
+  100% {
+    transform: scaleY(1);
+  }
+  93% {
+    transform: scaleY(0.15);
+  }
+  96% {
+    transform: scaleY(1);
+  }
+}
+
+@keyframes bot-glance {
+  0%,
+  100% {
+    transform: translateX(0);
+  }
+  30% {
+    transform: translateX(-1px);
+  }
+  55% {
+    transform: translateX(1px);
+  }
+  80% {
+    transform: translateX(0);
+  }
+}
+
+@keyframes bot-breathe {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.55;
+  }
+}
+
+@keyframes bot-bit {
+  0% {
+    opacity: 0;
+    transform: translate(0, 2px);
+  }
+  15% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+    transform: translate(1.5px, -4px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tinybot *,
+  .tinybot .tinybot-body {
+    animation: none !important;
+  }
+  .tinybot-bit {
+    opacity: 0.8;
   }
 }
