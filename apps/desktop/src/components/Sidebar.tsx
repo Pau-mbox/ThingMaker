@@ -663,7 +663,7 @@ export function Sidebar() {
           <button
             className={`icon-button ${view.kind === "teams" ? "on" : ""}`}
             onClick={() => setView({ kind: "teams" })}
-            title={t("Teams: orchestrator and worker presets")}
+            title={t("Teams: an orchestrator and its workers")}
             type="button"
           >
             <IconAgents />

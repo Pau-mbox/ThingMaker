@@ -350,7 +350,7 @@ export function SettingsPanel() {
           </select>
           <span className="small muted">
             {t(
-              "For new Claude sessions and goals, unless a team preset or the session picks another. Fable is the default; a session that cannot select it (the adapter does not list it, or the account cannot use it) falls back to Opus — a working run on another model beats no run.",
+              "For new Claude sessions and goals, unless a team or the session picks another. Fable is the default; a session that cannot select it (the adapter does not list it, or the account cannot use it) falls back to Opus — a working run on another model beats no run.",
             )}
             {claudeModelsProblem ? ` ${t("The catalog could not be read ({problem}), so this is the built-in list.", { problem: claudeModelsProblem })}` : ""}
           </span>

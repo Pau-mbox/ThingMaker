@@ -60,7 +60,7 @@ function ProviderSwitch({ sessionId }: { sessionId: string }) {
   const chosen = pending?.provider ?? provider;
   const preset = presets.find((candidate) => presetMatches(candidate, provider, team));
   const why = (other: Provider): string | null => {
-    if (preset) return t("This session runs the team preset “{preset}”, led by {provider}. Change the team to switch.", { preset: preset.name, provider: PROVIDER_LABELS[provider] });
+    if (preset) return t("This session runs the team “{preset}”, led by {provider}. Change the team to switch.", { preset: preset.name, provider: PROVIDER_LABELS[provider] });
     if (running) return t("Wait for the running turn to finish.");
     const info = providers?.find((candidate) => candidate.provider === other);
     if (info && (!info.resolved || info.auth?.loggedIn === false))

@@ -4807,6 +4807,26 @@ button.odyssey-task-title svg {
   overflow: auto;
 }
 
+.teams-advanced {
+  border-top: 1px solid var(--border);
+  padding-top: 10px;
+}
+
+.teams-advanced > summary {
+  cursor: pointer;
+  color: var(--muted);
+  font-size: 12.5px;
+}
+
+.teams-advanced[open] > summary {
+  margin-bottom: 8px;
+}
+
+.teams-advanced .team-section {
+  border-top: none;
+  padding-top: 0;
+}
+
 .teams-layout {
   display: grid;
   grid-template-columns: minmax(220px, 280px) minmax(0, 1fr);

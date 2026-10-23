@@ -228,7 +228,7 @@ export const session: Record<string, string> = {
   "{n} tool": "{n} herramienta",
   "{n} tools": "{n} herramientas",
   // ConfigPickers
-  "This session runs the team preset “{preset}”, led by {provider}. Change the team to switch.": "Esta sesión usa el preajuste de equipo “{preset}”, dirigido por {provider}. Cambia el equipo para cambiar de proveedor.",
+  "This session runs the team “{preset}”, led by {provider}. Change the team to switch.": "Esta sesión usa el equipo “{preset}”, dirigido por {provider}. Cambia el equipo para cambiar de proveedor.",
   "Wait for the running turn to finish.": "Espera a que termine el turno en curso.",
   "{provider} is not signed in.": "{provider} no tiene la sesión iniciada.",
   "{provider} is not installed.": "{provider} no está instalado.",

@@ -142,7 +142,7 @@ export function WorkspaceView({ workspaceId }: { workspaceId: string }) {
             );
           })}
           <button className="link small" onClick={() => setView({ kind: "teams" })} type="button">
-            {presets.length === 0 ? t("Make a team preset…") : t("Edit teams…")}
+            {presets.length === 0 ? t("Make a team…") : t("Edit teams…")}
           </button>
         </div>
         {listed.length > 0 ? (

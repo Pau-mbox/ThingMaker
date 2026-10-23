@@ -377,10 +377,10 @@ export function TeamPanel({ sessionId, onClose }: { sessionId: string; onClose: 
         </div>
 
         <section className="team-section">
-          <h3>{t("Preset")}</h3>
+          <h3>{t("Saved team")}</h3>
           <div className="row wrap">
-            <select aria-label={t("Team preset")} className="input select team-preset-select" onChange={(e) => pickPreset(e.target.value)} value={presetId}>
-              <option value="">{presets.length === 0 ? t("No presets yet") : t("Custom (this session's own)")}</option>
+            <select aria-label={t("Saved team")} className="input select team-preset-select" onChange={(e) => pickPreset(e.target.value)} value={presetId}>
+              <option value="">{presets.length === 0 ? t("No saved teams yet") : t("Custom (this session's own)")}</option>
               {presets.map((preset) => (
                 <option key={preset.id} value={preset.id}>
                   {preset.combo.workers.length === 1
@@ -394,12 +394,12 @@ export function TeamPanel({ sessionId, onClose }: { sessionId: string; onClose: 
                 {t("Update “{name}”", { name: selected.name })}
               </button>
             )}
-            <input aria-label={t("New preset name")} className="input team-preset-name" onChange={(e) => setNewName(e.target.value)} placeholder={t("New preset name")} value={newName} />
+            <input aria-label={t("New team name")} className="input team-preset-name" onChange={(e) => setNewName(e.target.value)} placeholder={t("New team name")} value={newName} />
             <button className="button button-small" disabled={busy} onClick={() => void saveAsNew()} type="button">
-              {t("Save as new preset")}
+              {t("Save as a new team")}
             </button>
           </div>
-          <p className="small muted">{t("Picking a preset fills the fields below; nothing changes until you apply. Presets are managed in Teams, beside Settings.")}</p>
+          <p className="small muted">{t("Picking a saved team fills the fields below; nothing changes until you apply. Edit saved teams in Teams, beside Settings.")}</p>
         </section>
 
         <section className="team-section">

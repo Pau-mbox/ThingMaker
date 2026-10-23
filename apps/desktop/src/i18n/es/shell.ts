@@ -101,7 +101,7 @@ export const shell: Record<string, string> = {
   "Providers (⌘,): {count} updates available": "Proveedores (⌘,): {count} actualizaciones disponibles",
   "Providers (⌘,)": "Proveedores (⌘,)",
   "update available": "actualización disponible",
-  "Teams: orchestrator and worker presets": "Equipos: preajustes de orquestador y workers",
+  "Teams: an orchestrator and its workers": "Equipos: un orquestador y sus workers",
   "Settings (⌘;)": "Ajustes (⌘;)",
 
   // Top bar
@@ -137,7 +137,7 @@ export const shell: Record<string, string> = {
   "Enter Chill mode": "Entrar en el modo Chill",
   "Add workspace…": "Añadir espacio de trabajo…",
   "Provider sign-in": "Inicio de sesión de proveedores",
-  "Teams (orchestrator and worker presets)": "Equipos (preajustes de orquestador y workers)",
+  "Teams (an orchestrator and its workers)": "Equipos (un orquestador y sus workers)",
   "Integration configuration (MCP, plugins, skills, harnesses)": "Configuración de integraciones (MCP, plugins, skills, harnesses)",
   Welcome: "Bienvenida",
   "Open workspace {name}": "Abrir el espacio de trabajo {name}",
@@ -180,7 +180,7 @@ export const shell: Record<string, string> = {
   "{lead} leads; {workers}": "Dirige {lead}; {workers}",
   "no workers": "sin workers",
   "(default)": "(predeterminado)",
-  "Make a team preset…": "Crear un preajuste de equipo…",
+  "Make a team…": "Crear un equipo…",
   "Edit teams…": "Editar equipos…",
   Resume: "Reanudar",
   "No sessions in this workspace yet.": "Aún no hay sesiones en este espacio de trabajo.",

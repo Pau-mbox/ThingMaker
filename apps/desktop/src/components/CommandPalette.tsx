@@ -51,7 +51,7 @@ export function CommandPalette() {
       { id: "workspace.add", label: t("Add workspace…"), hint: "⌘O", run: () => void state.addWorkspaceByPicker() },
       { id: "view.signin", label: t("Provider sign-in"), hint: "⌘,", run: () => { state.setView({ kind: "signin" }); void state.loadProviders(); } },
       { id: "view.settings", label: t("Settings"), hint: "⌘;", run: () => { state.setView({ kind: "settings" }); void state.loadSettings(); } },
-      { id: "view.teams", label: t("Teams (orchestrator and worker presets)"), run: () => state.setView({ kind: "teams" }) },
+      { id: "view.teams", label: t("Teams (an orchestrator and its workers)"), run: () => state.setView({ kind: "teams" }) },
       { id: "view.integrations", label: t("Integration configuration (MCP, plugins, skills, harnesses)"), hint: "⌘I", run: () => state.setView({ kind: "integrations" }) },
       { id: "view.welcome", label: t("Welcome"), run: () => state.setView({ kind: "welcome" }) },
     ];

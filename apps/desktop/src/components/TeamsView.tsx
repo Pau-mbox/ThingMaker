@@ -1,7 +1,8 @@
 /**
- * Teams: saved team presets — an orchestrator and its workers — to start a
- * session with or apply to one. One preset can be the default a new session
- * starts from.
+ * Teams: saved teams — an orchestrator and its workers — to start a session
+ * with or apply to one. One can be the default a new session starts from.
+ * The list and the editor take the screen; the retry policy waits behind
+ * Advanced at the bottom.
  */
 import { useEffect, useState } from "react";
 import { PROVIDER_LABELS, type JobRetryPolicy, type TeamPreset } from "@thingmaker/contracts";
@@ -31,8 +32,8 @@ function PresetEditor({ preset, isDefault }: { preset: TeamPreset; isDefault: bo
   return (
     <div className="teams-editor">
       <label className="field">
-        {t("Preset name")}
-        <input aria-label={t("Preset name")} className="input teams-name" onChange={(e) => setDraft({ ...draft, name: e.target.value })} value={draft.name} />
+        {t("Team name")}
+        <input aria-label={t("Team name")} className="input teams-name" onChange={(e) => setDraft({ ...draft, name: e.target.value })} value={draft.name} />
       </label>
 
       <section className="team-section">
@@ -47,7 +48,7 @@ function PresetEditor({ preset, isDefault }: { preset: TeamPreset; isDefault: bo
 
       <div className="row wrap team-footer">
         <button className="button button-primary" disabled={!dirty} onClick={() => void saveTeamPreset({ ...draft, combo: tidyCombo(draft.combo) })} type="button">
-          {t("Save preset")}
+          {t("Save team")}
         </button>
         {dirty && (
           <button className="button" onClick={() => setDraft(preset)} type="button">
@@ -191,19 +192,13 @@ export function TeamsView() {
     <div className="panel teams-view">
       <header className="teams-header">
         <h2>{t("Teams")}</h2>
-        <p className="small muted">
-          {t(
-            "A team is an orchestrator and the workers it may delegate to, on any provider and model. Save the combinations you use as presets, then start a session with one or apply one from a session's team button. Workers run on your subscriptions through each provider's own program.",
-          )}
-        </p>
       </header>
-      <RetrySettings />
       <div className="teams-layout">
-        <nav aria-label={t("Team presets")} className="teams-list">
+        <nav aria-label={t("Teams")} className="teams-list">
           <button className="button button-primary" onClick={() => void create()} type="button">
-            {t("+ New preset")}
+            {t("+ New team")}
           </button>
-          {presets.length === 0 && <p className="small muted">{t("No presets yet.")}</p>}
+          {presets.length === 0 && <p className="small muted">{t("No teams yet.")}</p>}
           <ul>
             {presets.map((preset) => (
               <li key={preset.id}>
@@ -225,12 +220,16 @@ export function TeamsView() {
             <div className="teams-empty">
               <p>{t("Make your first team: for example Claude Opus leading, with a Codex worker for images and quick edits and a Sonnet worker for reviews.")}</p>
               <button className="button button-primary" onClick={() => void create()} type="button">
-                {t("+ New preset")}
+                {t("+ New team")}
               </button>
             </div>
           )}
         </div>
       </div>
+      <details className="teams-advanced">
+        <summary>{t("Advanced")}</summary>
+        <RetrySettings />
+      </details>
     </div>
   );
 }
