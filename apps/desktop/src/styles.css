@@ -6611,144 +6611,10 @@ html[data-platform="android"] { --traffic-lights: 8px; --titlebar: 52px; height:
   overflow: visible;
 }
 
-.tinybot-claude {
-  --bot-ball: #ef8a5b;
-  --bot-ear: #e0784b;
-  --bot-shell: #f6dccb;
-  --bot-shade: #d4a88d;
-  --bot-visor: #2b1e1a;
-  --bot-eye: #ffe9dc;
-  --bot-chassis: #efcdb8;
-  --bot-stick: #8a6a5c;
-}
-
-/* Gemini: white, like its app icon, with the spark's colours in touches. */
-.tinybot-gemini {
-  --bot-ball: #4285f4;
-  --bot-ear: #4285f4;
-  --bot-shell: #f7f8fc;
-  --bot-shade: #cfd5e2;
-  --bot-visor: #1a1c24;
-  --bot-eye: #8ab4f8;
-  --bot-chassis: #e6e9f1;
-  --bot-stick: #9aa0b0;
-}
-
-.tinybot-codex {
-  --bot-ball: #7b98ff;
-  --bot-ear: #5a7cf2;
-  --bot-shell: #e1e8ff;
-  --bot-shade: #a3b4ee;
-  --bot-visor: #151a33;
-  --bot-eye: #d6e2ff;
-  --bot-chassis: #c7d3fb;
-  --bot-stick: #5d6aa6;
-}
-
-/* Done: the provider's colour, dimmed, so a finished robot still says
-   whose it is. */
-.tinybot-done.tinybot-claude {
-  --bot-ball: #6b5249;
-  --bot-ear: #5e463d;
-  --bot-shell: #7a6a63;
-  --bot-shade: #5e504a;
-  --bot-visor: #2a2321;
-  --bot-eye: #9a8a83;
-  --bot-chassis: #6b5d57;
-  --bot-stick: #4f423d;
-}
-
-.tinybot-done.tinybot-gemini {
-  --bot-ball: #55585f;
-  --bot-ear: #55585f;
-  --bot-shell: #7c7f87;
-  --bot-shade: #5f626a;
-  --bot-visor: #23252b;
-  --bot-eye: #8f93a0;
-  --bot-chassis: #6c6f77;
-  --bot-stick: #44474e;
-}
-
-/* The ears' pixels run top to bottom, left then right on each row. */
-.tinybot-gemini:not(.tinybot-done) .tinybot-ear rect:nth-child(1),
-.tinybot-gemini:not(.tinybot-done) .tinybot-ear rect:nth-child(2) {
-  fill: #ea4335;
-}
-.tinybot-gemini:not(.tinybot-done) .tinybot-ear rect:nth-child(3) {
-  fill: #f27b2b;
-}
-.tinybot-gemini:not(.tinybot-done) .tinybot-ear rect:nth-child(4) {
-  fill: #9b6fe8;
-}
-.tinybot-gemini:not(.tinybot-done) .tinybot-ear rect:nth-child(5) {
-  fill: #fbbc04;
-}
-.tinybot-gemini:not(.tinybot-done) .tinybot-ear rect:nth-child(6),
-.tinybot-gemini:not(.tinybot-done) .tinybot-ear rect:nth-child(8) {
-  fill: #4285f4;
-}
-.tinybot-gemini:not(.tinybot-done) .tinybot-ear rect:nth-child(7) {
-  fill: #a5c83c;
-}
-.tinybot-gemini:not(.tinybot-done) .tinybot-ear rect:nth-child(9),
-.tinybot-gemini:not(.tinybot-done) .tinybot-ear rect:nth-child(10) {
-  fill: #34a853;
-}
-.tinybot-gemini .tinybot-bit-0 {
-  fill: #ea4335;
-}
-.tinybot-gemini .tinybot-bit-1 {
-  fill: #fbbc04;
-}
-.tinybot-gemini .tinybot-bit-2 {
-  fill: #34a853;
-}
-.tinybot-gemini .tinybot-bit-3 {
-  fill: #4285f4;
-}
-
-.tinybot-done.tinybot-codex {
-  --bot-ball: #4b5478;
-  --bot-ear: #424a6b;
-  --bot-shell: #656b80;
-  --bot-shade: #4f5468;
-  --bot-visor: #1e2030;
-  --bot-eye: #858ba3;
-  --bot-chassis: #5a6075;
-  --bot-stick: #40455a;
-}
-
-.tinybot-ball,
-.tinybot-bit {
-  fill: var(--bot-ball);
-}
-
-.tinybot-stick {
-  fill: var(--bot-stick);
-}
-
-.tinybot-ear {
-  fill: var(--bot-ear);
-}
-
-.tinybot-shell {
-  fill: var(--bot-shell);
-}
-
-.tinybot-shade {
-  fill: var(--bot-shade);
-}
-
-.tinybot-visor {
-  fill: var(--bot-visor);
-}
-
-.tinybot-eyes {
-  fill: var(--bot-eye);
-}
-
-.tinybot-chassis {
-  fill: var(--bot-chassis);
+/* A robot's colours are in its drawing; the stylesheet moves it. Done
+   robots' headgear and props dim with them. */
+.tinybot-done .tinybot-gear {
+  opacity: 0.5;
 }
 
 /* Idle: a slow bob, a blink now and then, the antenna breathing. */
@@ -6763,7 +6629,7 @@ html[data-platform="android"] { --traffic-lights: 8px; --titlebar: 52px; height:
   animation: bot-blink 4.6s infinite;
 }
 
-.tinybot-idle .tinybot-ball {
+.tinybot-idle .tinybot-glow {
   animation: bot-breathe 2.8s ease-in-out infinite;
 }
 
@@ -6776,8 +6642,25 @@ html[data-platform="android"] { --traffic-lights: 8px; --titlebar: 52px; height:
   animation: bot-glance 2.4s steps(1) infinite;
 }
 
-.tinybot-working .tinybot-ball {
+.tinybot-working .tinybot-glow {
   animation: bot-breathe 0.7s ease-in-out infinite;
+}
+
+/* What it holds wiggles while it works. */
+.tinybot-working .tinybot-prop {
+  transform-box: fill-box;
+  transform-origin: 0% 100%;
+  animation: bot-wiggle 0.7s ease-in-out infinite;
+}
+
+@keyframes bot-wiggle {
+  0%,
+  100% {
+    transform: rotate(0deg);
+  }
+  50% {
+    transform: rotate(-8deg);
+  }
 }
 
 .tinybot-bit {

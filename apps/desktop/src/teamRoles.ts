@@ -43,6 +43,18 @@ export function roleOf(worker: Pick<WorkerSlot, "capabilities">): RoleId | null 
   return ROLE_IDS.filter((role) => ROLE_CAPABILITIES[role].every((tag) => own.has(tag))).sort((a, b) => ROLE_CAPABILITIES[b].length - ROLE_CAPABILITIES[a].length)[0] ?? null;
 }
 
+/** The role a helper looks most like, for its robot: its own role, else the
+ *  one its first tag belongs to; none when no tag says anything. */
+export function closestRole(worker: Pick<WorkerSlot, "capabilities">): RoleId | null {
+  const own = roleOf(worker);
+  if (own) return own;
+  for (const tag of worker.capabilities) {
+    const role = ROLE_IDS.find((id) => ROLE_CAPABILITIES[id].includes(tag));
+    if (role) return role;
+  }
+  return null;
+}
+
 export type Catalogs = Partial<Record<Provider, ProviderModel[]>>;
 
 /** The model to suggest for a role, among the providers that can run. */

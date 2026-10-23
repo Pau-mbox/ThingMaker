@@ -18,11 +18,16 @@ import { staleActivity } from "../odysseyRunner";
 import { stepDoing, stepOf } from "../toolSteps";
 import { UsageLine } from "./UsageLine";
 import { IconChevron } from "./icons";
-import { TinyBot, type BotState } from "./TinyBot";
+import { TinyBot, type BotRole, type BotState } from "./TinyBot";
+import { closestRole } from "../teamRoles";
 import type { JobView, Provider } from "@thingmaker/contracts";
 
 /** One robot in the row. */
-type CrewMember = { key: string; provider: Provider; name: string; state: BotState; status: string; title: string };
+type CrewMember = { key: string; provider: Provider; role: BotRole | null; name: string; state: BotState; status: string; title: string };
+
+/** The lead stands a size bigger than its helpers. */
+const LEAD_SIZE = 38;
+const HELPER_SIZE = 30;
 
 /** How many robots the row shows before it says "+n". */
 const CREW_LIMIT = 8;
@@ -121,6 +126,7 @@ export function ActivityBar({ sessionId, onOpenAgents }: { sessionId: string; on
     {
       key: "lead",
       provider: session.snapshot.provider,
+      role: "lead",
       name: t("Lead"),
       state: foreground ? "working" : "idle",
       status: foreground ? phase.toLowerCase() : t("waiting on the team"),
@@ -138,7 +144,8 @@ export function ActivityBar({ sessionId, onOpenAgents }: { sessionId: string; on
   const names = [...(team?.workers.map((worker) => worker.name) ?? []), ...[...latest.keys()].filter((name) => !team?.workers.some((worker) => worker.name === name))];
   for (const name of names) {
     const job = latest.get(name);
-    const provider = job?.provider ?? team?.workers.find((worker) => worker.name === name)?.provider ?? session.snapshot.provider;
+    const slot = team?.workers.find((worker) => worker.name === name);
+    const provider = job?.provider ?? slot?.provider ?? session.snapshot.provider;
     const open = job && (job.status === "starting" || job.status === "running");
     const state: BotState = open ? "working" : job && (job.status === "succeeded" || job.status === "failed" || job.status === "cancelled") ? "done" : "idle";
     const status = !job
@@ -152,12 +159,13 @@ export function ActivityBar({ sessionId, onOpenAgents }: { sessionId: string; on
             : job.status === "failed"
               ? t("failed")
               : t("stopped");
-    crew.push({ key: `job:${name}`, provider, name, state, status, title: job ? job.task.split("\n")[0]?.slice(0, 140) ?? name : t("On the team, with nothing to do yet") });
+    crew.push({ key: `job:${name}`, provider, role: slot ? closestRole(slot) : null, name, state, status, title: job ? job.task.split("\n")[0]?.slice(0, 140) ?? name : t("On the team, with nothing to do yet") });
   }
   for (const agent of agents) {
     crew.push({
       key: `agent:${agent.id}`,
       provider: session.snapshot.provider,
+      role: null,
       name: agent.name,
       state: "working",
       status: typeof agent.generationStartedAtUnixMs === "number" ? elapsed(now - agent.generationStartedAtUnixMs) : t("working"),
@@ -175,7 +183,7 @@ export function ActivityBar({ sessionId, onOpenAgents }: { sessionId: string; on
         <ul aria-label={t("Who is working")} className="crew">
           {shown.map((member) => (
             <li className={`crew-member crew-${member.state}`} key={member.key} title={member.title}>
-              <TinyBot provider={member.provider} state={member.state} />
+              <TinyBot provider={member.provider} role={member.role} size={member.role === "lead" ? LEAD_SIZE : HELPER_SIZE} state={member.state} />
               <span className="crew-text">
                 <span className="crew-name">{member.name}</span>
                 <span className="crew-status">{member.status}</span>

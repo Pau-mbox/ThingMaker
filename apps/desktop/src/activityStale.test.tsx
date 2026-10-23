@@ -135,5 +135,11 @@ describe("work the session has gone quiet about", () => {
     expect(member("Artist").textContent).toContain("ready");
     expect(member("Reviewer").className).toContain("crew-done");
     expect(member("Reviewer").querySelector(".tinybot-codex.tinybot-done")).toBeTruthy();
+    // Roles show: the lead's crown and a bigger robot, the artist's beret and brush.
+    const lead = member("Lead").querySelector("svg") as SVGElement;
+    const artist = member("Artist").querySelector("svg") as SVGElement;
+    expect(Number(lead.getAttribute("height"))).toBeGreaterThan(Number(artist.getAttribute("height")));
+    expect(lead.querySelector(".tinybot-gear")).toBeTruthy();
+    expect(artist.querySelector(".tinybot-prop .tinybot-gear")).toBeTruthy();
   });
 });
