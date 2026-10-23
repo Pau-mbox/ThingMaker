@@ -229,3 +229,19 @@ export const IconUndo = (p: IconProps) => (
     <path d="M4 4v5h5" />
   </Svg>
 );
+export const IconPalette = (p: IconProps) => (
+  <Svg {...p}>
+    <path d="M12 21a9 9 0 1 1 9-9c0 2.2-1.8 3.5-3.6 3.5h-1.9a1.6 1.6 0 0 0-1.2 2.7 1.6 1.6 0 0 1-1.2 2.8Z" />
+    <circle cx="7.5" cy="11" r="1" />
+    <circle cx="10.5" cy="7.2" r="1" />
+    <circle cx="15" cy="7.8" r="1" />
+  </Svg>
+);
+export const IconEyeCheck = (p: IconProps) => (
+  <Svg {...p}>
+    <path d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12" />
+    <path d="M2.5 12s3.5 6.5 9.5 6.5c.9 0 1.7-.1 2.5-.4" />
+    <circle cx="12" cy="12" r="2.5" />
+    <path d="m15.5 18 2 2 4-4" />
+  </Svg>
+);

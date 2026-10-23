@@ -2,8 +2,9 @@
  * Teams: who leads a session and who it may delegate to
  * (docs/research/multi-provider-viability.md §2.2).
  *
- * - `OrchestratorFields` and `WorkersEditor` are controlled editors shared by
- *   the session's team panel and the Teams view's presets.
+ * - `OrchestratorFields` and `WorkersEditor` are the session team panel's
+ *   controlled editors. The Teams view edits saved teams as an org chart
+ *   (`TeamChart`).
  * - `TeamPanel` is the session's own: pick a preset or edit freely, then
  *   apply. Workers change at once (the next `delegate` uses them); the
  *   orchestrator's model and effort go through its own options; another

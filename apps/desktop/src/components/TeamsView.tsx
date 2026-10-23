@@ -5,16 +5,46 @@
  * Advanced at the bottom.
  */
 import { useEffect, useState } from "react";
-import { PROVIDER_LABELS, type JobRetryPolicy, type TeamPreset } from "@thingmaker/contracts";
+import { type JobRetryPolicy, type TeamPreset } from "@thingmaker/contracts";
 import { api } from "../ipc";
 import { useStore } from "../store";
 import { newPreset, teamSummary } from "../team";
-import { OrchestratorFields, WorkersEditor, tidyCombo } from "./TeamEditor";
+import { STARTERS, modelName, starterCombo, starterLead, usableProviders, type Catalogs, type StarterId } from "../teamRoles";
+import { tidyCombo } from "./TeamEditor";
+import { TeamChart, roleNames, useCatalogs } from "./TeamChart";
+import { ProviderBadge } from "./ProviderMark";
 import { t } from "../i18n";
 
-function describe(preset: TeamPreset): string {
-  const lead = [PROVIDER_LABELS[preset.orchestrator.provider], preset.orchestrator.model, preset.orchestrator.effort].filter(Boolean).join(" · ");
-  return t("{lead} leads; {workers}", { lead, workers: preset.combo.workers.length === 0 ? t("no workers") : teamSummary(preset.combo) });
+/** `Opus 5.5 leads · 2 helpers`, under a team's name in the list. */
+function describe(preset: TeamPreset, catalogs: Catalogs): string {
+  const lead = modelName(catalogs, preset.orchestrator.provider, preset.orchestrator.model) ?? t("Account default");
+  const count = preset.combo.workers.length;
+  return count === 0 ? t("{lead} leads, on its own", { lead }) : count === 1 ? t("{lead} leads · 1 helper", { lead }) : t("{lead} leads · {count} helpers", { lead, count });
+}
+
+/** The providers on a team, lead first, as a row of faces. */
+function Faces({ preset }: { preset: TeamPreset }) {
+  const providers = [preset.orchestrator.provider, ...preset.combo.workers.map((worker) => worker.provider)].slice(0, 6);
+  return (
+    <span className="teams-faces">
+      {providers.map((provider, index) => (
+        <ProviderBadge key={index} provider={provider} />
+      ))}
+    </span>
+  );
+}
+
+function starterLabel(starter: StarterId): string {
+  switch (starter) {
+    case "solo":
+      return t("Solo");
+    case "reviewed":
+      return t("Lead and reviewer");
+    case "studio":
+      return t("Lead, artist and reviewer");
+    case "coders":
+      return t("Lead and three coders");
+  }
 }
 
 function PresetEditor({ preset, isDefault }: { preset: TeamPreset; isDefault: boolean }) {
@@ -31,20 +61,15 @@ function PresetEditor({ preset, isDefault }: { preset: TeamPreset; isDefault: bo
   const dirty = JSON.stringify(draft) !== JSON.stringify(preset);
   return (
     <div className="teams-editor">
-      <label className="field">
-        {t("Team name")}
-        <input aria-label={t("Team name")} className="input teams-name" onChange={(e) => setDraft({ ...draft, name: e.target.value })} value={draft.name} />
-      </label>
+      <div className="row wrap teams-head">
+        <input aria-label={t("Team name")} className="teams-name" onChange={(e) => setDraft({ ...draft, name: e.target.value })} value={draft.name} />
+        <label className="small row">
+          <input checked={isDefault} onChange={(e) => void setDefaultPreset(e.target.checked ? preset.id : null)} type="checkbox" />
+          {t("New sessions start with this team")}
+        </label>
+      </div>
 
-      <section className="team-section">
-        <h3>{t("Orchestrator")}</h3>
-        <OrchestratorFields onChange={(orchestrator) => setDraft({ ...draft, orchestrator })} value={draft.orchestrator} />
-      </section>
-
-      <section className="team-section">
-        <h3>{t("Workers")}</h3>
-        <WorkersEditor combo={draft.combo} onChange={(combo) => setDraft({ ...draft, combo })} orchestrator={draft.orchestrator.provider} />
-      </section>
+      <TeamChart combo={draft.combo} onChange={(orchestrator, combo) => setDraft({ ...draft, orchestrator, combo })} orchestrator={draft.orchestrator} />
 
       <div className="row wrap team-footer">
         <button className="button button-primary" disabled={!dirty} onClick={() => void saveTeamPreset({ ...draft, combo: tidyCombo(draft.combo) })} type="button">
@@ -55,10 +80,6 @@ function PresetEditor({ preset, isDefault }: { preset: TeamPreset; isDefault: bo
             {t("Discard changes")}
           </button>
         )}
-        <label className="small row">
-          <input checked={isDefault} onChange={(e) => void setDefaultPreset(e.target.checked ? preset.id : null)} type="checkbox" />
-          {t("New sessions start with this team")}
-        </label>
         <span className="composer-spacer" />
         <button
           className="button"
@@ -176,17 +197,38 @@ export function TeamsView() {
   const defaultPresetId = useStore((s) => s.defaultPresetId);
   const saveTeamPreset = useStore((s) => s.saveTeamPreset);
   const loadTeamPresets = useStore((s) => s.loadTeamPresets);
+  const providers = useStore((s) => s.providers);
+  const catalogs = useCatalogs();
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [starting, setStarting] = useState(false);
   useEffect(() => {
     void loadTeamPresets();
   }, [loadTeamPresets]);
   const selected = presets.find((preset) => preset.id === selectedId) ?? presets[0];
 
-  const create = async () => {
-    const preset = newPreset(t("New team"), presets.map((entry) => entry.name));
+  const create = async (starter: StarterId) => {
+    const usable = usableProviders(providers);
+    const orchestrator = starterLead(catalogs, usable);
+    const preset = {
+      ...newPreset(starterLabel(starter), presets.map((entry) => entry.name)),
+      orchestrator,
+      combo: starterCombo(starter, catalogs, usable, orchestrator.provider, roleNames()),
+    };
     await saveTeamPreset(preset);
     setSelectedId(preset.id);
+    setStarting(false);
   };
+  const starters = (
+    <div className="teams-starters" role="group" aria-label={t("Start from")}>
+      <span className="small muted">{t("Start from")}</span>
+      {(Object.keys(STARTERS) as StarterId[]).map((starter) => (
+        <button className="teams-starter" key={starter} onClick={() => void create(starter)} type="button">
+          {starterLabel(starter)}
+          <span className="small muted">{STARTERS[starter].length === 0 ? t("one lead") : STARTERS[starter].length === 1 ? t("1 helper") : t("{count} helpers", { count: STARTERS[starter].length })}</span>
+        </button>
+      ))}
+    </div>
+  );
 
   return (
     <div className="panel teams-view">
@@ -195,19 +237,21 @@ export function TeamsView() {
       </header>
       <div className="teams-layout">
         <nav aria-label={t("Teams")} className="teams-list">
-          <button className="button button-primary" onClick={() => void create()} type="button">
+          <button aria-expanded={starting} className="button button-primary" onClick={() => setStarting(!starting)} type="button">
             {t("+ New team")}
           </button>
+          {starting && starters}
           {presets.length === 0 && <p className="small muted">{t("No teams yet.")}</p>}
           <ul>
             {presets.map((preset) => (
               <li key={preset.id}>
-                <button className={`teams-item ${selected?.id === preset.id ? "selected" : ""}`} onClick={() => setSelectedId(preset.id)} title={describe(preset)} type="button">
+                <button className={`teams-item ${selected?.id === preset.id ? "selected" : ""}`} onClick={() => setSelectedId(preset.id)} title={teamSummary(preset.combo)} type="button">
                   <span className="teams-item-name">
                     {preset.name}
                     {preset.id === defaultPresetId && <span className="chip small">{t("default")}</span>}
                   </span>
-                  <span className="small muted">{describe(preset)}</span>
+                  <Faces preset={preset} />
+                  <span className="small muted">{describe(preset, catalogs)}</span>
                 </button>
               </li>
             ))}
@@ -218,10 +262,8 @@ export function TeamsView() {
             <PresetEditor isDefault={selected.id === defaultPresetId} key={selected.id} preset={selected} />
           ) : (
             <div className="teams-empty">
-              <p>{t("Make your first team: for example Claude Opus leading, with a Codex worker for images and quick edits and a Sonnet worker for reviews.")}</p>
-              <button className="button button-primary" onClick={() => void create()} type="button">
-                {t("+ New team")}
-              </button>
+              <p>{t("Make your first team: someone who leads, and helpers it can hand work to.")}</p>
+              {starters}
             </div>
           )}
         </div>
