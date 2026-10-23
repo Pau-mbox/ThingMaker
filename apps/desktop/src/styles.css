@@ -1304,38 +1304,48 @@ code {
 
 .plan-mark {
   flex: none;
-  box-sizing: border-box;
   width: 14px;
   height: 14px;
   margin-top: 2px;
-  border: 1.5px dotted var(--muted);
-  border-radius: 50%;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
+  overflow: visible;
 }
 
-.plan-completed .plan-mark {
-  border: none;
-  background: var(--ok);
-  color: #10251a;
+.plan-mark circle,
+.plan-mark path {
+  fill: none;
+  stroke-linecap: round;
+  stroke-linejoin: round;
 }
 
-.plan-completed .plan-text {
-  color: var(--muted);
-  text-decoration: line-through;
-  text-decoration-color: rgba(255, 255, 255, 0.25);
+.plan-mark-dots {
+  stroke: var(--muted);
+  stroke-width: 1.5;
+  stroke-dasharray: 1.6 2.4;
 }
 
-.plan-in_progress .plan-mark,
-.plan-bar-row .plan-mark {
-  border: 2px solid var(--accent-soft);
-  border-top-color: var(--accent);
-  border-right-color: var(--accent);
+.plan-mark-track {
+  stroke: var(--accent-soft);
+  stroke-width: 2;
+}
+
+.plan-mark-arc {
+  stroke: var(--accent);
+  stroke-width: 2;
+  stroke-dasharray: 32 68;
+}
+
+.plan-mark .plan-mark-fill {
+  fill: var(--ok);
+}
+
+.plan-mark-tick {
+  stroke: #10251a;
+  stroke-width: 1.8;
 }
 
 .plan-mark-live {
   animation: plan-turn 0.9s linear infinite;
+  transform-origin: 50% 50%;
 }
 
 @keyframes plan-turn {
@@ -1348,6 +1358,12 @@ code {
   .plan-mark-live {
     animation: none;
   }
+}
+
+.plan-completed .plan-text {
+  color: var(--muted);
+  text-decoration: line-through;
+  text-decoration-color: rgba(255, 255, 255, 0.25);
 }
 
 .plan-in_progress .plan-text {

@@ -25,7 +25,8 @@ it("turns the current step only while the turn runs", () => {
   const live = render(<PlanCard live plan={plan} />);
   expect(item(live.container, "Running the build").querySelector(".plan-mark-live")).toBeTruthy();
   expect(item(live.container, "Draft the PR").querySelector(".plan-mark-live")).toBeNull();
-  expect(item(live.container, "Set up workspace").querySelector(".plan-mark svg")).toBeTruthy();
+  expect(item(live.container, "Set up workspace").querySelector(".plan-mark-completed .plan-mark-tick")).toBeTruthy();
+  expect(item(live.container, "Draft the PR").querySelector(".plan-mark-pending .plan-mark-dots")).toBeTruthy();
   cleanup();
   const settled = render(<PlanCard plan={plan} />);
   expect(settled.container.querySelector(".plan-mark-live")).toBeNull();

@@ -10,7 +10,7 @@ import { useState } from "react";
 import type { PlanContent, PlanEntry } from "@thingmaker/contracts";
 import { t } from "../i18n";
 import { Markdown } from "../markdown";
-import { IconCheck, IconChevron, IconX } from "./icons";
+import { IconChevron, IconX } from "./icons";
 
 type Status = "completed" | "in_progress" | "pending";
 
@@ -50,13 +50,26 @@ export function planText(plan: PlanContent): string {
   }
 }
 
-/** A step's mark: a dotted ring to do, a turning arc while the agent is on
- *  it (still when the turn is not running), a filled check when done. */
+/** A step's mark, drawn rather than bordered so it stays even at this size:
+ *  a ring of ten round dashes to do, an arc on a faint ring while the agent
+ *  is on it (turning only while the turn runs), a filled check when done. */
 function PlanMark({ status, live }: { status: Status; live: boolean }) {
   return (
-    <span aria-hidden="true" className={`plan-mark ${status === "in_progress" && live ? "plan-mark-live" : ""}`}>
-      {status === "completed" && <IconCheck size={9} strokeWidth={3} />}
-    </span>
+    <svg aria-hidden="true" className={`plan-mark plan-mark-${status} ${status === "in_progress" && live ? "plan-mark-live" : ""}`} height="14" viewBox="0 0 14 14" width="14">
+      {status === "completed" ? (
+        <>
+          <circle className="plan-mark-fill" cx="7" cy="7" r="7" />
+          <path className="plan-mark-tick" d="M4.1 7.2 6.1 9.1 9.9 5.2" />
+        </>
+      ) : status === "in_progress" ? (
+        <>
+          <circle className="plan-mark-track" cx="7" cy="7" r="5.6" />
+          <circle className="plan-mark-arc" cx="7" cy="7" pathLength="100" r="5.6" />
+        </>
+      ) : (
+        <circle className="plan-mark-dots" cx="7" cy="7" pathLength="40" r="5.6" />
+      )}
+    </svg>
   );
 }
 
