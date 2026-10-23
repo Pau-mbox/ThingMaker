@@ -1279,8 +1279,9 @@ code {
 }
 
 /* Plan checklist: the agent's todo list, in the transcript and pinned above
-   the composer. A done step is checked and dimmed, the step in progress is
-   marked in the accent, the rest are empty boxes. */
+   the composer. A step to do is a dotted ring, the step in progress an
+   accent arc that turns while the turn runs, a done step a filled check with
+   its words dimmed and struck through. */
 .plan-head {
   margin-bottom: 4px;
 }
@@ -1291,32 +1292,33 @@ code {
   padding: 0;
   display: flex;
   flex-direction: column;
-  gap: 3px;
+  gap: 4px;
 }
 
 .plan-item {
   display: flex;
-  align-items: baseline;
-  gap: 8px;
+  align-items: flex-start;
+  gap: 9px;
   line-height: 18px;
 }
 
 .plan-mark {
   flex: none;
-  width: 13px;
-  height: 13px;
-  border: 1.5px solid var(--muted);
-  border-radius: 4px;
+  box-sizing: border-box;
+  width: 14px;
+  height: 14px;
+  margin-top: 2px;
+  border: 1.5px dotted var(--muted);
+  border-radius: 50%;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  transform: translateY(2px);
 }
 
 .plan-completed .plan-mark {
-  border-color: var(--ok);
-  background: rgba(143, 211, 161, 0.16);
-  color: var(--ok);
+  border: none;
+  background: var(--ok);
+  color: #10251a;
 }
 
 .plan-completed .plan-text {
@@ -1325,14 +1327,36 @@ code {
   text-decoration-color: rgba(255, 255, 255, 0.25);
 }
 
-.plan-in_progress .plan-mark {
-  border-color: var(--accent);
-  background: var(--accent-soft);
+.plan-in_progress .plan-mark,
+.plan-bar-row .plan-mark {
+  border: 2px solid var(--accent-soft);
+  border-top-color: var(--accent);
+  border-right-color: var(--accent);
+}
+
+.plan-mark-live {
+  animation: plan-turn 0.9s linear infinite;
+}
+
+@keyframes plan-turn {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .plan-mark-live {
+    animation: none;
+  }
 }
 
 .plan-in_progress .plan-text {
   color: var(--text);
   font-weight: 600;
+}
+
+.plan-bar-row .plan-mark {
+  margin-top: 0;
 }
 
 .plan-priority {

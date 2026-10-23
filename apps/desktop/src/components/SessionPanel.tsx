@@ -235,6 +235,12 @@ function CardBody({ card, sessionId }: { card: Card; sessionId: string }) {
   const patch = useStore((s) => (card.kind === "tool" ? s.sessions[sessionId]?.projection.toolCalls.get(card.toolCallId) : undefined));
   const detached = useStore((s) => (card.kind === "tool" ? s.sessions[sessionId]?.projection.detached.get(card.toolCallId) : undefined));
   const openUrl = useStore((s) => s.openUrl);
+  // The plan the running turn is revising: its current step turns.
+  const livePlan = useStore((s) => {
+    if (card.kind !== "plan") return false;
+    const projection = s.sessions[sessionId]?.projection;
+    return projection?.plan?.key === card.key && (projection.foreground === "running" || projection.foreground === "awaiting_user");
+  });
   const onLink = (url: string) => void openUrl(url);
   switch (card.kind) {
     case "message":
@@ -283,7 +289,7 @@ function CardBody({ card, sessionId }: { card: Card; sessionId: string }) {
         </div>
       );
     case "plan":
-      return <PlanCard plan={card.plan} />;
+      return <PlanCard live={livePlan} plan={card.plan} />;
     case "permission":
       // Answered by the workspace's trust: an allowed request is routine
       // and not worth a line; a refused one is shown, since it changed what

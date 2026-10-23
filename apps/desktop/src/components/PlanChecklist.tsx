@@ -50,16 +50,24 @@ export function planText(plan: PlanContent): string {
   }
 }
 
-function PlanItems({ entries }: { entries: PlanEntry[] }) {
+/** A step's mark: a dotted ring to do, a turning arc while the agent is on
+ *  it (still when the turn is not running), a filled check when done. */
+function PlanMark({ status, live }: { status: Status; live: boolean }) {
+  return (
+    <span aria-hidden="true" className={`plan-mark ${status === "in_progress" && live ? "plan-mark-live" : ""}`}>
+      {status === "completed" && <IconCheck size={9} strokeWidth={3} />}
+    </span>
+  );
+}
+
+function PlanItems({ entries, live }: { entries: PlanEntry[]; live: boolean }) {
   return (
     <ol className="plan-list">
       {entries.map((entry, index) => {
         const status = statusOf(entry);
         return (
           <li className={`plan-item plan-${status}`} key={`${index}|${entry.content}`}>
-            <span aria-hidden="true" className="plan-mark">
-              {status === "completed" && <IconCheck size={10} />}
-            </span>
+            <PlanMark live={live} status={status} />
             <span className="plan-text">{entry.content}</span>
             {entry.priority === "high" && <span className="chip small plan-priority">{t("high")}</span>}
             <span className="sr-only">, {statusWord(status)}</span>
@@ -70,7 +78,7 @@ function PlanItems({ entries }: { entries: PlanEntry[] }) {
   );
 }
 
-export function PlanCard({ plan }: { plan: PlanContent }) {
+export function PlanCard({ plan, live = false }: { plan: PlanContent; live?: boolean }) {
   const progress = planProgress(plan);
   return (
     <div className="card card-plan">
@@ -84,7 +92,7 @@ export function PlanCard({ plan }: { plan: PlanContent }) {
         )}
       </div>
       {plan.planType === "items" ? (
-        <PlanItems entries={plan.entries} />
+        <PlanItems entries={plan.entries} live={live} />
       ) : plan.planType === "markdown" ? (
         <Markdown source={plan.content} />
       ) : plan.planType === "file" ? (
@@ -118,6 +126,7 @@ export function PlanBar({ plan, active }: { plan: PlanContent; active: boolean }
           <span className="plan-bar-count">
             {t("Plan {done}/{total}", { done: progress.done, total: progress.total })}
           </span>
+          {progress.current && <PlanMark live={active} status="in_progress" />}
           <span className="plan-bar-current">{headline}</span>
         </button>
         <button aria-label={t("Hide the plan until it changes")} className="icon-button icon-button-xs" onClick={() => setHidden(signature)} title={t("Hide until the plan changes")} type="button">
@@ -127,7 +136,7 @@ export function PlanBar({ plan, active }: { plan: PlanContent; active: boolean }
       <div aria-hidden="true" className="plan-meter">
         <span style={{ width: `${(100 * progress.done) / progress.total}%` }} />
       </div>
-      {open && <PlanItems entries={plan.entries} />}
+      {open && <PlanItems entries={plan.entries} live={active} />}
     </div>
   );
 }
