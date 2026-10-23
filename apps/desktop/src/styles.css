@@ -6622,15 +6622,16 @@ html[data-platform="android"] { --traffic-lights: 8px; --titlebar: 52px; height:
   --bot-stick: #8a6a5c;
 }
 
+/* Gemini: white, like its app icon, with the spark's colours in touches. */
 .tinybot-gemini {
-  --bot-ball: #45d6a0;
-  --bot-ear: #2fbf8a;
-  --bot-shell: #d4f7e9;
-  --bot-shade: #8fd4b8;
-  --bot-visor: #11241d;
-  --bot-eye: #c8ffe9;
-  --bot-chassis: #bdeed9;
-  --bot-stick: #4f8a74;
+  --bot-ball: #4285f4;
+  --bot-ear: #4285f4;
+  --bot-shell: #f7f8fc;
+  --bot-shade: #cfd5e2;
+  --bot-visor: #1a1c24;
+  --bot-eye: #8ab4f8;
+  --bot-chassis: #e6e9f1;
+  --bot-stick: #9aa0b0;
 }
 
 .tinybot-codex {
@@ -6658,14 +6659,52 @@ html[data-platform="android"] { --traffic-lights: 8px; --titlebar: 52px; height:
 }
 
 .tinybot-done.tinybot-gemini {
-  --bot-ball: #3f6358;
-  --bot-ear: #36574c;
-  --bot-shell: #5f716b;
-  --bot-shade: #4a5a54;
-  --bot-visor: #1c2522;
-  --bot-eye: #7f948c;
-  --bot-chassis: #55665f;
-  --bot-stick: #3c4a45;
+  --bot-ball: #55585f;
+  --bot-ear: #55585f;
+  --bot-shell: #7c7f87;
+  --bot-shade: #5f626a;
+  --bot-visor: #23252b;
+  --bot-eye: #8f93a0;
+  --bot-chassis: #6c6f77;
+  --bot-stick: #44474e;
+}
+
+/* The ears' pixels run top to bottom, left then right on each row. */
+.tinybot-gemini:not(.tinybot-done) .tinybot-ear rect:nth-child(1),
+.tinybot-gemini:not(.tinybot-done) .tinybot-ear rect:nth-child(2) {
+  fill: #ea4335;
+}
+.tinybot-gemini:not(.tinybot-done) .tinybot-ear rect:nth-child(3) {
+  fill: #f27b2b;
+}
+.tinybot-gemini:not(.tinybot-done) .tinybot-ear rect:nth-child(4) {
+  fill: #9b6fe8;
+}
+.tinybot-gemini:not(.tinybot-done) .tinybot-ear rect:nth-child(5) {
+  fill: #fbbc04;
+}
+.tinybot-gemini:not(.tinybot-done) .tinybot-ear rect:nth-child(6),
+.tinybot-gemini:not(.tinybot-done) .tinybot-ear rect:nth-child(8) {
+  fill: #4285f4;
+}
+.tinybot-gemini:not(.tinybot-done) .tinybot-ear rect:nth-child(7) {
+  fill: #a5c83c;
+}
+.tinybot-gemini:not(.tinybot-done) .tinybot-ear rect:nth-child(9),
+.tinybot-gemini:not(.tinybot-done) .tinybot-ear rect:nth-child(10) {
+  fill: #34a853;
+}
+.tinybot-gemini .tinybot-bit-0 {
+  fill: #ea4335;
+}
+.tinybot-gemini .tinybot-bit-1 {
+  fill: #fbbc04;
+}
+.tinybot-gemini .tinybot-bit-2 {
+  fill: #34a853;
+}
+.tinybot-gemini .tinybot-bit-3 {
+  fill: #4285f4;
 }
 
 .tinybot-done.tinybot-codex {
