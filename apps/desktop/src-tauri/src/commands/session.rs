@@ -240,8 +240,9 @@ pub async fn session_open(request: OpenRequest, state: State<'_, AppState>) -> C
     let opened_model = model.clone();
     let (target, mut launch) = build_launch(&state, &record, provider, model, effort, resume, session_id.clone())?;
     let generation = 1;
+    let program = target.executable.clone();
     let mut config = SessionActorConfig::new(target, launch.clone());
-    config.environment = launch_environment(&state);
+    config.environment = launch_environment(&state).with_program_dir(&program);
     config.attachment_generation = generation;
 
     // Every session the user opens leads a team, even an empty one: workers

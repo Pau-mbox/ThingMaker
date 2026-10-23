@@ -156,8 +156,9 @@ impl WorkerLauncher for HostLauncher {
             let record = super::workspace::ensure_trusted(&state, record)?;
             let reserved = SessionId::reserve();
             let (target, launch) = super::session::build_launch(&state, &record, spec.slot.provider, spec.slot.model.clone(), spec.slot.effort.clone(), None, reserved.clone())?;
+            let program = target.executable.clone();
             let mut config = SessionActorConfig::new(target, launch);
-            config.environment = super::session::launch_environment(&state);
+            config.environment = super::session::launch_environment(&state).with_program_dir(&program);
             // The worker's own reduced team server: the project memory and the
             // run's board (ADR-010). A provider that cannot load one goes without.
             if let (Some(token), Some(socket), Some(program)) = (spec.mcp_token.as_deref(), state.delegation_socket.get(), relay_program())

@@ -175,7 +175,7 @@ pub fn provider_login_start(provider: Provider, on_event: Channel<LoginEvent>, s
     // `agy` has no headless sign-in; it shares the Antigravity app's.
     let (args, environment) = match provider {
         Provider::Claude => (claude::auth::login_args(&resolved.prefix_args, true), EnvironmentProfile::trusted_local()),
-        Provider::Codex => (codex::probe::login_args(), codex::probe::environment(None)),
+        Provider::Codex => (codex::probe::login_args(), codex::probe::environment(None).with_program_dir(&resolved.program)),
         Provider::Gemini => return Err(DesktopError::unsupported(gemini::probe::SIGN_IN_HINT)),
     };
     let program: PathBuf = resolved.program;
@@ -270,7 +270,7 @@ pub async fn provider_logout(provider: Provider, state: State<'_, AppState>) -> 
     let resolved = state.resolve_provider(provider)?;
     let (args, environment) = match provider {
         Provider::Claude => (claude::auth::logout_args(&resolved.prefix_args), EnvironmentProfile::trusted_local()),
-        Provider::Codex => (codex::probe::logout_args(), codex::probe::environment(None)),
+        Provider::Codex => (codex::probe::logout_args(), codex::probe::environment(None).with_program_dir(&resolved.program)),
         Provider::Gemini => {
             return Err(DesktopError::unsupported("Antigravity signs in and out through its own app: switch the account there, or run `agy` in a terminal."));
         }

@@ -66,6 +66,11 @@ pub struct EnvironmentProfile {
     /// servers are started with — would not be found without them.
     #[serde(default)]
     pub extra_path: Vec<String>,
+    /// Folders put in front of `PATH`: the folder a provider's program was
+    /// installed in, so a script program (`#!/usr/bin/env node`) runs on the
+    /// interpreter it was installed with.
+    #[serde(default)]
+    pub first_path: Vec<String>,
 }
 
 impl EnvironmentProfile {
@@ -77,7 +82,22 @@ impl EnvironmentProfile {
             allow_names: Vec::new(),
             set: BTreeMap::new(),
             extra_path: Vec::new(),
+            first_path: Vec::new(),
         }
+    }
+
+    /// Puts the folder `program` sits in first on `PATH`. An npm-installed
+    /// CLI is a script whose `#!/usr/bin/env node` finds `node` on `PATH`;
+    /// the Node it was installed with sits beside it, and an app opened from
+    /// the Dock has no other.
+    pub fn with_program_dir(mut self, program: &std::path::Path) -> Self {
+        if let Some(dir) = program.parent().filter(|dir| !dir.as_os_str().is_empty() && dir.is_dir()) {
+            let dir = dir.to_string_lossy().into_owned();
+            if !self.first_path.contains(&dir) {
+                self.first_path.push(dir);
+            }
+        }
+        self
     }
 
     /// Appends the folders developer tools are usually installed in, when
@@ -136,9 +156,15 @@ impl EnvironmentProfile {
                 env.insert(name, value);
             }
         }
-        if !self.extra_path.is_empty() {
+        if !self.extra_path.is_empty() || !self.first_path.is_empty() {
             let current = env.get("PATH").cloned().unwrap_or_default();
-            let mut parts: Vec<std::path::PathBuf> = std::env::split_paths(&current).collect();
+            let inherited: Vec<std::path::PathBuf> = std::env::split_paths(&current).collect();
+            let mut parts: Vec<std::path::PathBuf> = self.first_path.iter().map(std::path::PathBuf::from).collect();
+            for dir in inherited {
+                if !parts.contains(&dir) {
+                    parts.push(dir);
+                }
+            }
             for dir in &self.extra_path {
                 let dir = std::path::PathBuf::from(dir);
                 if !parts.contains(&dir) {
@@ -233,5 +259,19 @@ mod tests {
             .resolve(parent());
         assert_eq!(env.get("OPENROUTER_API_KEY").map(String::as_str), Some("sk-or"));
         assert!(!env.contains_key("GITHUB_TOKEN"));
+    }
+
+    #[test]
+    fn a_program_runs_on_the_interpreter_installed_beside_it() {
+        let temp = tempfile::tempdir().unwrap();
+        let bin = temp.path().join("node-24/bin");
+        std::fs::create_dir_all(&bin).unwrap();
+        let program = bin.join("codex");
+        let env = EnvironmentProfile::trusted_local().with_tool_paths(temp.path()).with_program_dir(&program).resolve(parent());
+        let path = env.get("PATH").unwrap();
+        assert!(path.starts_with(&bin.to_string_lossy().into_owned()), "the program's own folder comes first: {path}");
+        assert!(path.contains("/usr/bin"), "the inherited PATH stays");
+        let missing = EnvironmentProfile::trusted_local().with_program_dir(std::path::Path::new("codex")).resolve(parent());
+        assert_eq!(missing.get("PATH").map(String::as_str), Some("/usr/bin:/bin"), "a bare name adds nothing");
     }
 }

@@ -37,7 +37,7 @@ pub fn environment(codex_home: Option<&Path>) -> EnvironmentProfile {
 /// Runs `codex app-server`, sends `initialize`, then each call in order, and
 /// returns each call's result (or its error, as `Err`).
 pub fn ask(program: &Path, codex_home: Option<&Path>, calls: &[(&str, Value)], timeout: Duration) -> Result<Vec<Result<Value, String>>, String> {
-    let env = environment(codex_home).resolve(std::env::vars());
+    let env = environment(codex_home).with_program_dir(program).resolve(std::env::vars());
     let scratch = std::env::temp_dir();
     let mut child = crate::platform::command(program)
         .arg("app-server")
@@ -46,9 +46,26 @@ pub fn ask(program: &Path, codex_home: Option<&Path>, calls: &[(&str, Value)], t
         .envs(&env)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
-        .stderr(Stdio::null())
+        .stderr(Stdio::piped())
         .spawn()
         .map_err(|error| format!("could not start Codex: {error}"))?;
+    // The last thing it said on stderr, for when it stops before answering.
+    let said: std::sync::Arc<std::sync::Mutex<Option<String>>> = std::sync::Arc::default();
+    if let Some(stderr) = child.stderr.take() {
+        let said = said.clone();
+        std::thread::spawn(move || {
+            for line in BufReader::new(stderr).lines().map_while(Result::ok) {
+                let line = line.trim();
+                if !line.is_empty() {
+                    *said.lock().unwrap_or_else(|poisoned| poisoned.into_inner()) = Some(line.chars().take(300).collect());
+                }
+            }
+        });
+    }
+    let stopped = |said: &std::sync::Arc<std::sync::Mutex<Option<String>>>| match said.lock().unwrap_or_else(|poisoned| poisoned.into_inner()).clone() {
+        Some(line) => format!("Codex stopped before it answered: {line}"),
+        None => "Codex stopped before it answered".to_string(),
+    };
     let mut stdin = child.stdin.take().ok_or("Codex took no input")?;
     let stdout = child.stdout.take().ok_or("Codex produced no output")?;
     let wanted = calls.len();
@@ -85,6 +102,11 @@ pub fn ask(program: &Path, codex_home: Option<&Path>, calls: &[(&str, Value)], t
         Ok((_, Err(error))) => {
             finish(child);
             return Err(error);
+        }
+        Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {
+            finish(child);
+            std::thread::sleep(Duration::from_millis(50));
+            return Err(stopped(&said));
         }
         _ => {
             finish(child);
