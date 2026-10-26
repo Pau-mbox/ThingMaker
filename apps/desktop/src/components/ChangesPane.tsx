@@ -81,7 +81,13 @@ function UnifiedView({
  * review cannot destroy newer edits.
  */
 export function ChangesPane({ workspaceId, sessionId, isGit }: { workspaceId: string; sessionId: string; isGit: boolean }) {
-  const [scope, setScope] = useState<DiffScope>(isGit ? "working_tree" : "baseline");
+  const focus = useStore((s) => s.changesFocus);
+  const [scope, setScope] = useState<DiffScope>(focus ?? (isGit ? "working_tree" : "baseline"));
+  useEffect(() => {
+    if (!focus) return;
+    setScope(focus);
+    useStore.setState({ changesFocus: null });
+  }, [focus]);
   const [response, setResponse] = useState<DiffResponse | null>(null);
   const [selected, setSelected] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -211,9 +217,9 @@ export function ChangesPane({ workspaceId, sessionId, isGit }: { workspaceId: st
     <div className="changes-pane">
       <div className="row wrap">
         <span className="segmented" role="radiogroup" aria-label={t("Diff scope")}>
-          {(["baseline", "working_tree", "staged"] as DiffScope[]).map((s) => (
-            <button aria-checked={scope === s} className={`seg ${scope === s ? "seg-on" : ""}`} disabled={s !== "baseline" && !isGit} key={s} onClick={() => setScope(s)} role="radio" type="button">
-              {s === "baseline" ? t("Session baseline") : s === "working_tree" ? t("Working tree") : t("Staged")}
+          {(["turn", "baseline", "working_tree", "staged"] as DiffScope[]).map((s) => (
+            <button aria-checked={scope === s} className={`seg ${scope === s ? "seg-on" : ""}`} disabled={(s === "working_tree" || s === "staged") && !isGit} key={s} onClick={() => setScope(s)} role="radio" type="button">
+              {s === "turn" ? t("Last prompt") : s === "baseline" ? t("Session baseline") : s === "working_tree" ? t("Working tree") : t("Staged")}
             </button>
           ))}
         </span>

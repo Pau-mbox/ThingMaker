@@ -17,6 +17,7 @@ use thingmaker_supervisor::{
         git_status, is_git_repository,
     },
     storage::{review::BaselineRecord, workspaces::{TrustState, WorkspaceRecord}},
+    supervisor::BeforePrompt,
     workspace::{DirEntry, FileRead, WriteOutcome, list_dir, read_text, write_checked},
 };
 
@@ -91,6 +92,39 @@ pub fn capture_for(state: &AppState, workspace_id: &str, session_id: Option<&str
         .map_err(storage_error)
 }
 
+/// Stored scope of the snapshot taken as each prompt is sent.
+pub const TURN_SCOPE: &str = "turn_baseline";
+
+/// Snapshots the workspace as each prompt of a session is sent, so the
+/// transcript can show what the latest prompt changed rather than everything
+/// uncommitted. Only the newest snapshot per session is kept. Failures are
+/// logged; the prompt goes out regardless.
+pub fn turn_snapshots(state: &AppState, workspace_id: &str, root: &str) -> BeforePrompt {
+    let storage = state.inner_arc();
+    let store = blobs(state);
+    let workspace_id = workspace_id.to_string();
+    let root = std::path::PathBuf::from(root);
+    BeforePrompt(std::sync::Arc::new(move |agent_session_id: &str| {
+        let Some(session) = storage.with_storage(|s| s.session_by_agent_id(&workspace_id, agent_session_id)).ok().flatten() else {
+            return;
+        };
+        let manifest = match capture_baseline(&root, &store) {
+            Ok(manifest) => manifest,
+            Err(error) => {
+                tracing::warn!(?error, "prompt snapshot capture failed");
+                return;
+            }
+        };
+        let result = storage.with_storage(|s| {
+            let record = s.baseline_insert(&workspace_id, Some(&session.id), TURN_SCOPE, None, &manifest)?;
+            s.baseline_prune(&session.id, TURN_SCOPE, &record.id)
+        });
+        if let Err(error) = result {
+            tracing::warn!(%error, "prompt snapshot insert failed");
+        }
+    }))
+}
+
 /// Captures a content-addressed baseline of the workspace now.
 #[tauri::command]
 pub async fn review_capture_baseline(request: CaptureRequest, state: State<'_, AppState>) -> CommandResult<BaselineRecord> {
@@ -112,6 +146,9 @@ pub enum DiffScope {
     WorkingTree,
     /// Git index versus HEAD.
     Staged,
+    /// Working tree versus the snapshot taken as the session's latest prompt
+    /// was sent (no Git required).
+    Turn,
 }
 
 #[derive(Debug, Deserialize)]
@@ -227,7 +264,8 @@ pub async fn review_diff(request: DiffRequest, state: State<'_, AppState>) -> Co
     let root = Path::new(&record.canonical_root).to_path_buf();
     let git = is_git_repository(&root);
     match request.scope {
-        DiffScope::Baseline => {
+        DiffScope::Baseline | DiffScope::Turn => {
+            let stored_scope = if request.scope == DiffScope::Turn { TURN_SCOPE } else { "session_baseline" };
             let baseline = match &request.baseline_id {
                 Some(id) => state.with_storage(|s| s.baseline_get(id)).map_err(storage_error)?,
                 None => {
@@ -235,7 +273,7 @@ pub async fn review_diff(request: DiffRequest, state: State<'_, AppState>) -> Co
                         state.with_storage(|s| s.session_by_agent_id(&record.id, kit_id)).ok().flatten().map(|s| s.id)
                     });
                     let latest = state
-                        .with_storage(|s| s.baseline_latest(&record.id, desktop_session.as_deref()))
+                        .with_storage(|s| s.baseline_latest(&record.id, desktop_session.as_deref(), stored_scope))
                         .map_err(storage_error)?;
                     match latest {
                         Some(latest) => state.with_storage(|s| s.baseline_get(&latest.id)).map_err(storage_error)?,
@@ -244,12 +282,19 @@ pub async fn review_diff(request: DiffRequest, state: State<'_, AppState>) -> Co
                 }
             };
             let Some((baseline_record, manifest)) = baseline else {
+                if request.scope == DiffScope::Turn {
+                    return Err(DesktopError::not_ready("No prompt has been sent in this session yet."));
+                }
                 return Err(DesktopError::not_ready("No baseline exists for this workspace yet. Capture one first."));
             };
             let store = blobs(&state);
             let current = capture_baseline(&root, &store)?;
-            let label = format!("Working tree versus baseline captured {}", baseline_record.created_at);
-            let report = diff_against_baseline(&manifest, &current, &store, "session_baseline", &label, baseline_record.base_ref.as_deref().unwrap_or("no Git ref"))?;
+            let label = if request.scope == DiffScope::Turn {
+                "Working tree versus the tree when the last prompt was sent".to_string()
+            } else {
+                format!("Working tree versus baseline captured {}", baseline_record.created_at)
+            };
+            let report = diff_against_baseline(&manifest, &current, &store, stored_scope, &label, baseline_record.base_ref.as_deref().unwrap_or("no Git ref"))?;
             Ok(DiffResponse { report, baseline: Some(baseline_record), is_git_repository: git })
         }
         DiffScope::WorkingTree | DiffScope::Staged => {

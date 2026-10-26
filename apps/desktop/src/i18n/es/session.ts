@@ -84,6 +84,7 @@ export const session: Record<string, string> = {
   "{n} file changed": "{n} archivo cambiado",
   "{n} files changed": "{n} archivos cambiados",
   "View diff": "Ver diff",
+  "Since the last prompt was sent": "Desde que se envió el último prompt",
   "{path} (renamed from {from})": "{path} (renombrado desde {from})",
   "binary": "binario",
   "{n} more file": "{n} archivo más",

@@ -170,13 +170,13 @@ pub fn review_file_versions(request: VersionsRequest, state: State<'_, AppState>
         _ => (None, current.as_ref().map(|r| r.content_hash.clone())),
     };
     match request.scope.as_str() {
-        "baseline" | "session_baseline" => {
+        "baseline" | "session_baseline" | "turn" => {
             let blobs = BlobStore::new(state.data_dir.join("blobs"));
             let before = match &request.before_hash {
                 Some(hash) => blobs.get(hash)?.map(|bytes| String::from_utf8_lossy(&bytes).into_owned()),
                 None => None,
             };
-            Ok(FileVersions { path: request.path, before, after, before_label: "baseline".into(), after_label: "working tree".into(), after_hash })
+            Ok(FileVersions { path: request.path, before, after, before_label: if request.scope == "turn" { "last prompt".into() } else { "baseline".into() }, after_label: "working tree".into(), after_hash })
         }
         "working_tree" => {
             let before = review::show_file(&root, ":0", &request.path)?;

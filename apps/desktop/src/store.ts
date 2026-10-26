@@ -11,6 +11,7 @@ import { create } from "zustand";
 import { listen } from "@tauri-apps/api/event";
 import type {
   AmendmentRecord,
+  DiffScope,
   NewAmendment,
   AttachmentSnapshot,
   ContextBundle,
@@ -253,6 +254,9 @@ type State = {
    *  is taken by the view that shows it. */
   odysseyFocus: { sessionId: string; milestone: number } | null;
   transcriptFocus: { sessionId: string; cardKey: string } | null;
+  /** A diff scope the Changes tab should switch to, asked for from the
+   *  transcript's code-changes card; taken by the tab. */
+  changesFocus: DiffScope | null;
   transcriptSearchOpen: boolean;
   /** Text for the screen-reader live region (settled events only, UX-11). */
   announcement: string;
@@ -860,6 +864,7 @@ export const useStore = create<State>((set, get) => ({
   navHistory: [{ view: { kind: "welcome" }, tab: null }],
   navIndex: 0,
   odysseyFocus: null,
+  changesFocus: null,
   transcriptFocus: null,
   transcriptSearchOpen: false,
   announcement: "",

@@ -159,6 +159,7 @@ impl WorkerLauncher for HostLauncher {
             let program = target.executable.clone();
             let mut config = SessionActorConfig::new(target, launch);
             config.environment = super::session::launch_environment(&state).with_program_dir(&program);
+            config.before_prompt = Some(super::review::turn_snapshots(&state, &record.id, &record.canonical_root));
             // The worker's own reduced team server: the project memory and the
             // run's board (ADR-010). A provider that cannot load one goes without.
             if let (Some(token), Some(socket), Some(program)) = (spec.mcp_token.as_deref(), state.delegation_socket.get(), relay_program())

@@ -86,6 +86,19 @@ impl Default for Timeouts {
     }
 }
 
+/// Runs, off the actor loop, before each `session/prompt` is written, with
+/// the agent's session id. The prompt waits for it, so whatever it records
+/// (the desktop's per-prompt file snapshot) sees the tree before the turn
+/// can touch it.
+#[derive(Clone)]
+pub struct BeforePrompt(pub Arc<dyn Fn(&str) + Send + Sync>);
+
+impl std::fmt::Debug for BeforePrompt {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("BeforePrompt")
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct SessionActorConfig {
     pub target: LaunchTarget,
@@ -102,6 +115,7 @@ pub struct SessionActorConfig {
     /// Opens the session as a copy of this one (ACP `session/fork`), with its
     /// whole conversation as context, instead of a fresh `session/new`.
     pub fork_from: Option<String>,
+    pub before_prompt: Option<BeforePrompt>,
 }
 
 impl SessionActorConfig {
@@ -119,6 +133,7 @@ impl SessionActorConfig {
             event_capacity: 4096,
             mcp_servers: Vec::new(),
             fork_from: None,
+            before_prompt: None,
         }
     }
 }
@@ -1496,7 +1511,12 @@ impl ActorState {
         self.pending_submits.insert(request_id.clone(), reply);
         let transport = self.transport.clone();
         let internal = self.internal.clone();
+        let before_prompt = self.config.before_prompt.clone();
         tokio::spawn(async move {
+            if let Some(BeforePrompt(hook)) = before_prompt {
+                let id = session_id.clone();
+                let _ = tokio::task::spawn_blocking(move || hook(&id)).await;
+            }
             let result = transport.request_observed(
                 "session/prompt",
                 json!({ "sessionId": session_id, "prompt": blocks }),

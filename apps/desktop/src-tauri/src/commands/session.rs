@@ -259,6 +259,7 @@ pub async fn session_open(request: OpenRequest, state: State<'_, AppState>) -> C
     if let OpenRequestMode::Fork { session_id } = &request.mode {
         config.fork_from = Some(session_id.clone());
     }
+    config.before_prompt = Some(super::review::turn_snapshots(&state, &record.id, &record.canonical_root));
 
     // Every session the user opens leads a team, even an empty one: workers
     // can be added while it runs.

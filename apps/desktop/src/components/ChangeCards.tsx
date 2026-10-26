@@ -68,24 +68,20 @@ function FilePath({ path, title }: { path: string; title?: string }) {
 const FILE_LIMIT = 8;
 
 /**
- * Files this workspace has changed, with the real per-file line counts from
- * the review diff. Rendered against the newest settled turn, so it reads as
- * "changes so far" rather than a snapshot of a past moment.
+ * Files the session's latest prompt has changed, against a snapshot of the
+ * tree taken as that prompt was sent, with the real per-file line counts.
+ * Before the first prompt there is no snapshot, and with nothing changed
+ * there are no files, so the card stays away in both cases.
  */
 export function CodeChangesCard({ workspaceId, sessionId, refreshKey }: { workspaceId: string; sessionId: string; refreshKey: number }) {
-  const setSessionTab = useStore((s) => s.setSessionTab);
-  const repo = useStore((s) => s.repoInfo[workspaceId]);
   const [report, setReport] = useState<DiffReport | null>(null);
   const [failed, setFailed] = useState(false);
   const [expanded, setExpanded] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
-    // Match the Changes tab's default so the card and the tab agree: the
-    // working tree for a repository, the session baseline otherwise.
-    const scope = repo ? "working_tree" : "baseline";
     api
-      .reviewDiff(workspaceId, scope, sessionId)
+      .reviewDiff(workspaceId, "turn", sessionId)
       .then((response) => {
         if (cancelled) return;
         setReport(response.report);
@@ -97,7 +93,7 @@ export function CodeChangesCard({ workspaceId, sessionId, refreshKey }: { worksp
     return () => {
       cancelled = true;
     };
-  }, [workspaceId, sessionId, refreshKey, repo]);
+  }, [workspaceId, sessionId, refreshKey]);
 
   // Nothing to say yet, nothing changed, or no review surface here: stay out
   // of the transcript rather than showing an empty card.
@@ -119,7 +115,7 @@ export function CodeChangesCard({ workspaceId, sessionId, refreshKey }: { worksp
           {report.files.length === 1 ? t("{n} file changed", { n: report.files.length }) : t("{n} files changed", { n: report.files.length })}
         </span>
         <span className="work-counts">{signedCounts(additions, deletions)}</span>
-        <button className="button button-small" onClick={() => setSessionTab("changes")} type="button">
+        <button className="button button-small" onClick={() => useStore.setState({ sessionTab: "changes", changesFocus: "turn" })} type="button">
           {t("View diff")}
         </button>
       </header>
@@ -142,7 +138,7 @@ export function CodeChangesCard({ workspaceId, sessionId, refreshKey }: { worksp
         )}
       </ul>
       <p className="work-foot small muted">
-        {report.label}
+        {t("Since the last prompt was sent")}
         {report.truncated ? ` · ${t("truncated by the diff limits")}` : ""}
       </p>
     </section>

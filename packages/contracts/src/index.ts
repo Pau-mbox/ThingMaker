@@ -629,7 +629,7 @@ export type DiffReport = {
   computedAtUnixMs: number;
 };
 
-export type DiffScope = "baseline" | "working_tree" | "staged";
+export type DiffScope = "baseline" | "working_tree" | "staged" | "turn";
 
 export type RepositoryInfo = {
   head: string;

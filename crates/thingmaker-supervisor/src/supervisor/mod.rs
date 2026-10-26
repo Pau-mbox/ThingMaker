@@ -15,7 +15,7 @@ pub use crate::agents::{AgentLaunch, Provider};
 pub use background::{BackgroundTask, BackgroundTaskState};
 pub use events::{EventEnvelope, EventSubscription, SessionEvent};
 pub use session_actor::{
-    EnqueueOutcome, QueueOp, QueueReply, QueueView, QueuedPrompt, QueuedPromptView, SessionActor, SessionActorConfig,
+    BeforePrompt, EnqueueOutcome, QueueOp, QueueReply, QueueView, QueuedPrompt, QueuedPromptView, SessionActor, SessionActorConfig,
     Snapshot, SteerOutcome, SubmissionOutcome, Timeouts,
 };
 pub use state::{

@@ -88,26 +88,36 @@ impl Storage {
         }
     }
 
-    /// Newest baseline for a workspace, optionally restricted to a session.
-    pub fn baseline_latest(&self, workspace_id: &str, session_id: Option<&str>) -> Result<Option<BaselineRecord>, StorageError> {
+    /// Newest baseline of `scope` for a workspace, optionally restricted to a
+    /// session.
+    pub fn baseline_latest(&self, workspace_id: &str, session_id: Option<&str>, scope: &str) -> Result<Option<BaselineRecord>, StorageError> {
         Ok(match session_id {
             Some(session) => self
                 .conn()
                 .query_row(
-                    &format!("SELECT {COLUMNS} FROM review_baselines WHERE workspace_id = ?1 AND session_id = ?2 ORDER BY created_at DESC LIMIT 1"),
-                    params![workspace_id, session],
+                    &format!("SELECT {COLUMNS} FROM review_baselines WHERE workspace_id = ?1 AND session_id = ?2 AND scope = ?3 ORDER BY created_at DESC LIMIT 1"),
+                    params![workspace_id, session, scope],
                     row,
                 )
                 .optional()?,
             None => self
                 .conn()
                 .query_row(
-                    &format!("SELECT {COLUMNS} FROM review_baselines WHERE workspace_id = ?1 ORDER BY created_at DESC LIMIT 1"),
-                    params![workspace_id],
+                    &format!("SELECT {COLUMNS} FROM review_baselines WHERE workspace_id = ?1 AND scope = ?2 ORDER BY created_at DESC LIMIT 1"),
+                    params![workspace_id, scope],
                     row,
                 )
                 .optional()?,
         })
+    }
+
+    /// Drops a session's baselines of `scope` other than `keep`. Per-prompt
+    /// snapshots are only read as the newest, so older ones are dead weight.
+    pub fn baseline_prune(&self, session_id: &str, scope: &str, keep: &str) -> Result<usize, StorageError> {
+        Ok(self.conn().execute(
+            "DELETE FROM review_baselines WHERE session_id = ?1 AND scope = ?2 AND id <> ?3",
+            params![session_id, scope, keep],
+        )?)
     }
 
     pub fn baseline_list(&self, workspace_id: &str, limit: usize) -> Result<Vec<BaselineRecord>, StorageError> {
@@ -133,13 +143,33 @@ mod tests {
         let manifest = capture_baseline(temp.path(), &blobs).unwrap();
         let storage = Storage::open_in_memory().unwrap();
         let workspace = storage.workspace_upsert("/p", "/p", "w-1").unwrap();
-        assert!(storage.baseline_latest(&workspace.id, None).unwrap().is_none());
+        assert!(storage.baseline_latest(&workspace.id, None, "session_baseline").unwrap().is_none());
         let record = storage.baseline_insert(&workspace.id, None, "session_baseline", Some("main"), &manifest).unwrap();
         assert_eq!(record.file_count, 1, "{:?}", manifest.files.keys());
         let (loaded, loaded_manifest) = storage.baseline_get(&record.id).unwrap().unwrap();
         assert_eq!(loaded, record);
         assert_eq!(loaded_manifest, manifest);
-        assert_eq!(storage.baseline_latest(&workspace.id, None).unwrap().unwrap().id, record.id);
+        assert_eq!(storage.baseline_latest(&workspace.id, None, "session_baseline").unwrap().unwrap().id, record.id);
         assert_eq!(storage.baseline_list(&workspace.id, 10).unwrap().len(), 1);
+    }
+
+    #[test]
+    fn prompt_snapshots_stay_out_of_the_session_baseline_and_keep_only_the_newest() {
+        let temp = tempfile::tempdir().unwrap();
+        let blob_dir = tempfile::tempdir().unwrap();
+        std::fs::write(temp.path().join("f.txt"), "x\n").unwrap();
+        let manifest = capture_baseline(temp.path(), &BlobStore::new(blob_dir.path())).unwrap();
+        let storage = Storage::open_in_memory().unwrap();
+        let workspace = storage.workspace_upsert("/p", "/p", "w-1").unwrap();
+        let session = storage
+            .session_upsert(&workspace.id, "s-1", crate::storage::workspaces::SessionOrigin::Desktop, crate::agents::Provider::Claude)
+            .unwrap();
+        let opened = storage.baseline_insert(&workspace.id, Some(&session.id), "session_baseline", None, &manifest).unwrap();
+        let first = storage.baseline_insert(&workspace.id, Some(&session.id), "turn_baseline", None, &manifest).unwrap();
+        let second = storage.baseline_insert(&workspace.id, Some(&session.id), "turn_baseline", None, &manifest).unwrap();
+        assert_eq!(storage.baseline_prune(&session.id, "turn_baseline", &second.id).unwrap(), 1);
+        assert!(storage.baseline_get(&first.id).unwrap().is_none());
+        assert_eq!(storage.baseline_latest(&workspace.id, Some(&session.id), "session_baseline").unwrap().unwrap().id, opened.id);
+        assert_eq!(storage.baseline_latest(&workspace.id, Some(&session.id), "turn_baseline").unwrap().unwrap().id, second.id);
     }
 }

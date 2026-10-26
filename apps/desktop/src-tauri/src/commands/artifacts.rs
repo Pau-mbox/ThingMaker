@@ -52,7 +52,7 @@ pub async fn artifacts_refresh(request: ArtifactsRefreshRequest, state: State<'_
         let mut candidates: Vec<ArtifactCandidate> = Vec::new();
         if let Some(agent_id) = &agent_session_id {
             let desktop_session = storage.with_storage(|s| s.session_by_agent_id(&workspace_id, agent_id)).map_err(storage_error)?.map(|s| s.id);
-            let latest = storage.with_storage(|s| s.baseline_latest(&workspace_id, desktop_session.as_deref())).map_err(storage_error)?;
+            let latest = storage.with_storage(|s| s.baseline_latest(&workspace_id, desktop_session.as_deref(), "session_baseline")).map_err(storage_error)?;
             match latest {
                 Some(latest) => {
                     if let Some((_, manifest)) = storage.with_storage(|s| s.baseline_get(&latest.id)).map_err(storage_error)? {

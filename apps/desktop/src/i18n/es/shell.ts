@@ -255,6 +255,7 @@ export const shell: Record<string, string> = {
   "Push to {remote}": "Push a {remote}",
   "Pushed to {remote}.": "Push a {remote} hecho.",
   "Diff scope": "Alcance del diff",
+  "Last prompt": "Último prompt",
   "Session baseline": "Línea base de la sesión",
   "Working tree": "Árbol de trabajo",
   Staged: "Preparados",
