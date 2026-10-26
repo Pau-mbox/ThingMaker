@@ -79,8 +79,12 @@ export class Relay extends DurableObject<Env> {
     return this.forward(request, url, mac);
   }
 
+  /** The Mac's current line: the newest open one, not one being replaced. */
   private mac(): WebSocket | undefined {
-    return this.ctx.getWebSockets("mac")[0];
+    return this.ctx
+      .getWebSockets("mac")
+      .filter((socket) => socket.readyState === WebSocket.OPEN)
+      .at(-1);
   }
 
   private async acceptMac(request: Request): Promise<Response> {
@@ -205,6 +209,8 @@ export class Relay extends DurableObject<Env> {
   override async webSocketClose(socket: WebSocket, code: number): Promise<void> {
     const tags = this.ctx.getTags(socket);
     if (tags.includes("mac")) {
+      // A line the Mac replaced closing late: the phones are on the new one.
+      if (this.mac() && this.mac() !== socket) return;
       for (const phone of this.ctx.getWebSockets("phone")) phone.close(1012, "the Mac went away");
       for (const id of [...this.pending.keys()]) this.fail(id, 502, "The Mac went away.");
       return;

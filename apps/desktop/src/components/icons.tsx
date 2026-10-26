@@ -95,6 +95,16 @@ export const IconChevron = ({ open, ...p }: IconProps & { open?: boolean }) => (
     <path d="m9 6 6 6-6 6" />
   </Svg>
 );
+export const IconBack = (p: IconProps) => (
+  <Svg {...p}>
+    <path d="m15 6-6 6 6 6" />
+  </Svg>
+);
+export const IconForward = (p: IconProps) => (
+  <Svg {...p}>
+    <path d="m9 6 6 6-6 6" />
+  </Svg>
+);
 export const IconDots = (p: IconProps) => (
   <Svg {...p}>
     <circle cx="5" cy="12" r="1.2" fill="currentColor" />

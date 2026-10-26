@@ -80,4 +80,29 @@ describe("the phone's bridge", () => {
     second.receive({ t: "welcome" });
     expect(calls(second)).toHaveLength(0);
   });
+
+  it("tries again when the computer never welcomes the line", () => {
+    const bridge = new Bridge();
+    const first = FakeSocket.last!;
+    first.onopen?.();
+    const states: string[] = [];
+    bridge.watch((state) => states.push(state));
+    vi.advanceTimersByTime(20_000);
+    expect(states).toContain("closed");
+    vi.advanceTimersByTime(2_000);
+    expect(FakeSocket.last).not.toBe(first);
+  });
+
+  it("pings a quiet line and gives up on one that stays silent", () => {
+    const { bridge, socket } = connected();
+    const states: string[] = [];
+    bridge.watch((state) => states.push(state));
+    vi.advanceTimersByTime(25_000);
+    expect(socket.sent.some((frame) => frame.t === "ping")).toBe(true);
+    socket.receive({ t: "pong" });
+    vi.advanceTimersByTime(45_000);
+    expect(states).not.toContain("closed");
+    vi.advanceTimersByTime(10_000);
+    expect(states).toContain("closed");
+  });
 });

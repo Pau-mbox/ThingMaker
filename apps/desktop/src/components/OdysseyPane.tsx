@@ -15,6 +15,7 @@ import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { ODYSSEY_STATE_NOTE, ORCHESTRATOR_PROVIDERS, PROVIDER_LABELS, type AdoptedPlan, type Orchestrator, type OnPlanChange, type OnReport, type CheckKind, type MilestoneRecord, type OdysseyView, type OnUsageReset, type Provider, type StopCondition, type TeamPreset } from "@thingmaker/contracts";
 import { PLAN_REQUESTED, useStore } from "../store";
 import { checkLabel } from "../odysseyPrompt";
+import { milestoneTurnKey } from "../bigThingTurns";
 import { countdown, exhaustedCeiling, hasRunnableCheck, stallDuration, stallNotice, usageVerdict, waitingUntil } from "../odysseyRunner";
 import { RunHistory, RunMonitor, UsageWindows, SpendModelNote } from "./OdysseyActivity";
 import { DocumentsCard } from "./OdysseyDocuments";
@@ -239,6 +240,35 @@ function MilestoneBadge({ milestone, sessionId }: { milestone: MilestoneRecord; 
   );
 }
 
+/** Milestones open until the user folds or unfolds one: those being worked. */
+function workedIds(milestones: MilestoneRecord[]): Set<string> {
+  return new Set(milestones.filter((milestone) => milestone.state === "active" || milestone.state === "reported" || milestone.state === "failed").map((milestone) => milestone.id));
+}
+
+/** The conversation turn where Big Thing sent the agent to this milestone. */
+function SeeInConversation({ milestone, index, sessionId }: { milestone: MilestoneRecord; index: number; sessionId: string }) {
+  const showInTranscript = useStore((s) => s.showInTranscript);
+  const [missing, setMissing] = useState(false);
+  if (missing) return <p className="small muted">{t("This milestone's turns are not in this session's conversation.")}</p>;
+  return (
+    <p className="small">
+      <button
+        className="link small"
+        onClick={() => {
+          const cards = useStore.getState().sessions[sessionId]?.projection.cards ?? [];
+          const key = milestoneTurnKey(cards, index, milestone.title);
+          if (key) showInTranscript(sessionId, key);
+          else setMissing(true);
+        }}
+        title={t("Big Thing runs each milestone as turns of this session's conversation")}
+        type="button"
+      >
+        {t("See it in the conversation")}
+      </button>
+    </p>
+  );
+}
+
 function MilestoneRow({
   milestone,
   index,
@@ -291,7 +321,7 @@ function MilestoneRow({
   };
 
   return (
-    <li className={`odyssey-milestone state-${milestone.state} ${expanded ? "expanded" : ""}`}>
+    <li className={`odyssey-milestone state-${milestone.state} ${expanded ? "expanded" : ""}`} data-milestone-index={index}>
       <div className="odyssey-node" aria-hidden="true">
         <span className="odyssey-node-mark">{milestone.state === "verified" ? <IconCheckCircle size={16} /> : index + 1}</span>
       </div>
@@ -349,6 +379,7 @@ function MilestoneRow({
           </p>
         )}
         {expanded && !editing && <p className="small muted odyssey-check">{checkLabel(milestone.checkKind, milestone.checkSpec)}</p>}
+        {expanded && !editing && milestone.state !== "planned" && milestone.state !== "skipped" && <SeeInConversation index={index} milestone={milestone} sessionId={sessionId} />}
 
         {editing && (
           <form
@@ -1459,6 +1490,26 @@ export function OdysseyPane({ sessionId }: { sessionId: string }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [briefingKey]);
 
+  // Asked from the conversation: open the roadmap at one milestone.
+  const odysseyFocus = useStore((s) => (s.odysseyFocus?.sessionId === sessionId ? s.odysseyFocus : null));
+  const clearJumpFocus = useStore((s) => s.clearJumpFocus);
+  useEffect(() => {
+    if (!odysseyFocus || !view) return;
+    clearJumpFocus();
+    const milestone = view.milestones[odysseyFocus.milestone];
+    if (!milestone) return;
+    setTab("roadmap");
+    setExpandedIds((ids) => new Set([...(ids ?? workedIds(view.milestones)), milestone.id]));
+    const index = odysseyFocus.milestone;
+    setTimeout(() => {
+      const target = document.querySelector<HTMLElement>(`.odyssey-pane [data-milestone-index="${index}"]`);
+      if (!target) return;
+      target.scrollIntoView({ block: "center" });
+      target.classList.add("jump-flash");
+      setTimeout(() => target.classList.remove("jump-flash"), 1600);
+    }, 60);
+  }, [odysseyFocus, view, clearJumpFocus]);
+
   if (!session) return null;
   if (view === undefined) {
     return (
@@ -1483,7 +1534,7 @@ export function OdysseyPane({ sessionId }: { sessionId: string }) {
   const verified = verifiedCount(milestones);
   const latest = journal[0];
   const openAmendments = amendments.filter((record) => record.state === "pending" || record.state === "told").length;
-  const openMilestones = expandedIds ?? new Set(milestones.filter((milestone) => milestone.state === "active" || milestone.state === "reported" || milestone.state === "failed").map((milestone) => milestone.id));
+  const openMilestones = expandedIds ?? workedIds(milestones);
 
   return (
     <section className="panel odyssey-pane">

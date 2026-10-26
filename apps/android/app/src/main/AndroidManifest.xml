@@ -36,6 +36,7 @@
 
         <activity
             android:name=".InstallActivity"
+            android:configChanges="orientation|screenSize|screenLayout|keyboardHidden|keyboard|uiMode"
             android:exported="false"
             android:launchMode="singleTop"
             android:theme="@style/Theme.ThingMaker" />

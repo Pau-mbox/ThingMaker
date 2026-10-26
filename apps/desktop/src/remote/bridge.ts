@@ -141,6 +141,11 @@ export type ConnectionState = "connecting" | "open" | "denied" | "closed";
 
 /** Calls running at once; the computer refuses more than 16 from one phone. */
 const MAX_IN_FLIGHT = 8;
+/** How long the computer has to welcome a new line before it is tried again. */
+const WELCOME_MS = 15_000;
+/** The computer answers a ping with a pong; a line this quiet is dead. */
+const PING_MS = 20_000;
+const SILENT_MS = 50_000;
 
 export class Bridge {
   private socket: Socket | null = null;
@@ -160,6 +165,9 @@ export class Bridge {
   /** Why the line last failed to open, kept while it retries. */
   private lastReason: string | undefined;
   private retry = 1000;
+  /** When the line last said anything, and the timer that checks it. */
+  private heard = 0;
+  private watchdog: ReturnType<typeof setInterval> | undefined;
 
   constructor() {
     this.open();
@@ -169,12 +177,29 @@ export class Bridge {
     const socket = openSocket("/v1/ws");
     this.socket = socket;
     this.setState("connecting", this.lastReason);
+    this.heard = Date.now();
+    // A line the computer never welcomes, or that goes quiet, is given up
+    // on here: a socket can stay open long after what is behind it went.
+    clearInterval(this.watchdog);
+    this.watchdog = setInterval(() => {
+      const quiet = Date.now() - this.heard;
+      if (quiet > (this.state === "open" ? SILENT_MS : WELCOME_MS)) {
+        socket.close();
+        socket.onclose?.();
+      } else if (this.state === "open" && quiet > PING_MS) socket.send(JSON.stringify({ t: "ping" }));
+    }, 5_000);
     // The app's socket has said hello already, with the token it keeps.
     socket.onopen = () => {
       if (!socket.native) socket.send(JSON.stringify({ t: "hello", token: token(), client: "thingmaker-browser" }));
     };
-    socket.onmessage = (message) => this.receive(String(message.data));
+    socket.onmessage = (message) => {
+      this.heard = Date.now();
+      this.receive(String(message.data));
+    };
     socket.onclose = (reason) => {
+      // Given up on already; the socket's own close comes later.
+      if (this.socket !== socket) return;
+      clearInterval(this.watchdog);
       this.socket = null;
       // A call that went out may or may not have run: it is never sent
       // again by itself. One that never left can be tried again.

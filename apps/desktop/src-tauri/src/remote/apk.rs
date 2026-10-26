@@ -5,6 +5,9 @@
 //! it to Android's installer — which asks the person holding the phone to
 //! confirm, as it does for any app not from a store. The phone reports back
 //! how it went. An offer lasts half an hour.
+//!
+//! On the Mac's own Wi-Fi the phone fetches it nearby instead (see `lan`),
+//! with a key that opens this one offer and nothing else.
 
 use std::path::{Path, PathBuf};
 
@@ -21,7 +24,7 @@ use thingmaker_supervisor::DesktopError;
 use super::{RemoteState, now_ms};
 
 /// How long a phone has to fetch an offered APK.
-const OFFER_MS: i64 = 30 * 60_000;
+pub const OFFER_MS: i64 = 30 * 60_000;
 /// Larger than any app a phone would take.
 const MAX_BYTES: u64 = 4 * 1024 * 1024 * 1024;
 
@@ -41,6 +44,13 @@ pub struct ApkOffer {
     /// What the phone last said: sent, downloading, confirm, installed, failed.
     pub state: String,
     pub message: Option<String>,
+    /// Opens this offer, and only it, on the local network.
+    #[serde(skip)]
+    pub nearby_key: String,
+    /// Where the phone can fetch it on the Mac's network, and the
+    /// certificate it is served with; empty when there is no such road.
+    #[serde(skip)]
+    pub nearby: Option<(String, String)>,
 }
 
 fn sha256_of(path: &Path) -> std::io::Result<String> {
@@ -85,12 +95,18 @@ pub async fn prepare(path: &str, device: Option<String>) -> Result<ApkOffer, Des
         expires_at: now + OFFER_MS,
         state: "sent".into(),
         message: None,
+        nearby_key: format!("{}{}", uuid::Uuid::new_v4().simple(), uuid::Uuid::new_v4().simple()),
+        nearby: None,
     })
 }
 
 /// What a phone is told about an offer.
 pub fn frame(offer: &ApkOffer, from: &str) -> String {
-    json!({ "t": "install", "id": offer.id, "name": offer.name, "size": offer.size, "sha256": offer.sha256, "from": from }).to_string()
+    let mut frame = json!({ "t": "install", "id": offer.id, "name": offer.name, "size": offer.size, "sha256": offer.sha256, "from": from });
+    if let Some((url, cert)) = &offer.nearby {
+        frame["nearby"] = json!({ "url": url, "key": offer.nearby_key, "cert": cert });
+    }
+    frame.to_string()
 }
 
 fn bearer(headers: &HeaderMap) -> &str {
@@ -103,17 +119,43 @@ pub async fn download(State(app): State<AppHandle>, UrlPath(id): UrlPath<String>
     let Some(device) = remote.authenticate(bearer(&headers)) else {
         return (StatusCode::UNAUTHORIZED, "This phone is not paired.").into_response();
     };
-    let Some(offer) = remote.offer(&id) else {
-        return (StatusCode::NOT_FOUND, "That app is no longer offered. Send it again from the Mac.").into_response();
-    };
-    if offer.expires_at < now_ms() || offer.device.as_deref().is_some_and(|target| target != device.id) {
-        return (StatusCode::NOT_FOUND, "That app is no longer offered. Send it again from the Mac.").into_response();
+    match remote.offer(&id) {
+        Some(offer) if offer.device.as_deref().is_none_or(|target| target == device.id) => serve(&app, offer).await,
+        _ => gone(),
     }
+}
+
+/// `GET /v1/apk/{id}` on the local network: the offered file, to whoever
+/// holds the offer's own key.
+pub async fn download_nearby(State(app): State<AppHandle>, UrlPath(id): UrlPath<String>, headers: HeaderMap) -> Response {
+    let remote = app.state::<RemoteState>();
+    match remote.offer(&id) {
+        Some(offer) if opens(&offer, bearer(&headers)) => serve(&app, offer).await,
+        _ => gone(),
+    }
+}
+
+/// Whether a key opens an offer: compared as digests, so the time taken
+/// says nothing about how much of it was right.
+fn opens(offer: &ApkOffer, key: &str) -> bool {
+    !key.is_empty() && Sha256::digest(key.as_bytes()) == Sha256::digest(offer.nearby_key.as_bytes())
+}
+
+fn gone() -> Response {
+    (StatusCode::NOT_FOUND, "That app is no longer offered. Send it again from the Mac.").into_response()
+}
+
+async fn serve(app: &AppHandle, offer: ApkOffer) -> Response {
+    if offer.expires_at < now_ms() {
+        return gone();
+    }
+    let remote = app.state::<RemoteState>();
+    let id = offer.id.clone();
     let file = match tokio::fs::File::open(&offer.path).await {
         Ok(file) => file,
         Err(error) => return (StatusCode::GONE, format!("The file is gone from the Mac: {error}")).into_response(),
     };
-    remote.set_offer_state(&app, &id, "downloading", None);
+    remote.set_offer_state(app, &id, "downloading", None);
     let body = Body::from_stream(tokio_util::io::ReaderStream::with_capacity(file, 256 * 1024));
     (
         [
@@ -142,6 +184,17 @@ mod tests {
         let frame: serde_json::Value = serde_json::from_str(&frame(&offer, "Mac")).unwrap();
         assert_eq!(frame["t"], "install");
         assert_eq!(frame["sha256"], offer.sha256);
+        assert!(frame.get("nearby").is_none());
+
+        let mut nearby = offer.clone();
+        nearby.nearby = Some(("https://192.168.1.20:5000/v1/apk/x".into(), "ab".repeat(32)));
+        let sent: serde_json::Value = serde_json::from_str(&super::frame(&nearby, "Mac")).unwrap();
+        assert_eq!(sent["nearby"]["key"], nearby.nearby_key);
+        assert!(opens(&nearby, &nearby.nearby_key));
+        assert!(!opens(&nearby, ""));
+        assert!(!opens(&nearby, &nearby.nearby_key[1..]));
+        // The key never reaches the Mac's own screens.
+        assert!(serde_json::to_value(&nearby).unwrap().get("nearbyKey").is_none());
 
         let text = dir.path().join("notes.txt");
         std::fs::write(&text, b"hello").unwrap();

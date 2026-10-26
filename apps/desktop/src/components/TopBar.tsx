@@ -5,8 +5,9 @@
  */
 import { IS_REMOTE } from "../remote/mode";
 import { useEffect } from "react";
-import { basenameOf, sessionTitle, useStore } from "../store";
-import { IconBranch, IconCommand, IconExport, IconPlug, IconSidebar } from "./icons";
+import { basenameOf, sessionTitle, useStore, viewExists } from "../store";
+import { navTarget } from "../navHistory";
+import { IconBack, IconBranch, IconCommand, IconExport, IconForward, IconPlug, IconSidebar } from "./icons";
 import { t } from "../i18n";
 
 export function TopBar() {
@@ -22,6 +23,9 @@ export function TopBar() {
   const setSessionTab = useStore((s) => s.setSessionTab);
   const exportTranscript = useStore((s) => s.exportTranscript);
   const records = useStore((s) => s.records);
+  const navigate = useStore((s) => s.navigate);
+  const canGoBack = useStore((s) => navTarget(s.navHistory, s.navIndex, -1, (v) => viewExists(s, v)) !== null);
+  const canGoForward = useStore((s) => navTarget(s.navHistory, s.navIndex, 1, (v) => viewExists(s, v)) !== null);
 
   // The workspace whose git head the bar describes: the focused session's, or
   // the selected workspace.
@@ -62,6 +66,16 @@ export function TopBar() {
         <button aria-label={t("Show sidebar (⌘B)")} className="icon-button" onClick={toggleSidebar} title={t("Show sidebar (⌘B)")} type="button">
           <IconSidebar />
         </button>
+      )}
+      {!IS_REMOTE && (
+        <div className="topbar-nav">
+          <button aria-label={t("Back")} className="icon-button" disabled={!canGoBack} onClick={() => navigate(-1)} title={t("Back (⌘[)")} type="button">
+            <IconBack />
+          </button>
+          <button aria-label={t("Forward")} className="icon-button" disabled={!canGoForward} onClick={() => navigate(1)} title={t("Forward (⌘])")} type="button">
+            <IconForward />
+          </button>
+        </div>
       )}
       <div className="topbar-title" data-tauri-drag-region>
         <span className="topbar-name" data-tauri-drag-region>

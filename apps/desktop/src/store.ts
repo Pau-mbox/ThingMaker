@@ -61,6 +61,7 @@ import { notify, shouldNotify } from "./notifications";
 import { CLAUDE_RETRY_MS, claudeUsageFrom } from "./odysseyClaudeQuota";
 import { applyEvent, emptyProjection, EMPTY_QUEUE, type Card, type Projection } from "./projection";
 import { IS_REMOTE } from "./remote/mode";
+import { navEntry, navTarget, recordVisit, type NavEntry } from "./navHistory";
 
 export const CLOSE_REQUESTED_EVENT = "thingmaker://close-requested";
 
@@ -234,6 +235,14 @@ type State = {
   contextBundles: Record<string, ContextBundle[]>;
   paletteOpen: boolean;
   sessionTab: SessionTab;
+  /** Places visited, oldest first, and where in them the user is now. */
+  navHistory: NavEntry[];
+  navIndex: number;
+  /** A milestone the Big Thing board should bring into view, asked for from
+   *  the transcript, and the transcript card asked for from the board. Each
+   *  is taken by the view that shows it. */
+  odysseyFocus: { sessionId: string; milestone: number } | null;
+  transcriptFocus: { sessionId: string; cardKey: string } | null;
   transcriptSearchOpen: boolean;
   /** Text for the screen-reader live region (settled events only, UX-11). */
   announcement: string;
@@ -264,6 +273,11 @@ type State = {
   applyContextBundle: (sessionId: string, bundle: ContextBundle) => void;
   setPaletteOpen: (open: boolean) => void;
   setSessionTab: (tab: SessionTab) => void;
+  /** Open the Big Thing board, at a milestone (0-based) when one is given. */
+  openBigThingAt: (sessionId: string, milestone: number | null) => void;
+  /** Open the conversation at one of its cards. */
+  showInTranscript: (sessionId: string, cardKey: string) => void;
+  clearJumpFocus: () => void;
   /** A document on its way to a session's Big Thing tab, by absolute path. */
   bigThingDoc: Record<string, string>;
   /** Opens Big Thing with this document: a new goal planned from it, or a change to the running one. */
@@ -286,6 +300,8 @@ type State = {
   hideToTray: () => Promise<void>;
   quitAndStop: () => Promise<void>;
   setView: (view: View) => void;
+  /** Step back or forward through `navHistory` (⌘[ and ⌘]). */
+  navigate: (direction: -1 | 1) => void;
   addWorkspaceByPicker: () => Promise<void>;
   addWorkspaceByPath: (path: string) => Promise<void>;
   selectWorkspace: (workspaceId: string) => Promise<void>;
@@ -807,6 +823,10 @@ export const useStore = create<State>((set, get) => ({
   contextBundles: {},
   paletteOpen: false,
   sessionTab: "transcript",
+  navHistory: [{ view: { kind: "welcome" }, tab: null }],
+  navIndex: 0,
+  odysseyFocus: null,
+  transcriptFocus: null,
   transcriptSearchOpen: false,
   announcement: "",
   uiPrefs: DEFAULT_UI_PREFS,
@@ -925,6 +945,20 @@ export const useStore = create<State>((set, get) => ({
         set({ sessions: { ...get().sessions, [view.sessionId]: { ...session, attention: "none" } } });
       }
     }
+  },
+
+  navigate(direction) {
+    const state = get();
+    const index = navTarget(state.navHistory, state.navIndex, direction, (view) => viewExists(state, view));
+    if (index === null) return;
+    const { view, tab } = state.navHistory[index]!;
+    // The index moves first, so the visit this causes is already the current
+    // place and is not recorded as a new one.
+    set({ navIndex: index, ...(tab ? { sessionTab: tab, transcriptSearchOpen: false } : {}) });
+    if (view.kind === "workspace") void get().selectWorkspace(view.workspaceId);
+    else get().setView(view);
+    if (view.kind === "signin") void get().loadProviders();
+    if (view.kind === "settings") void get().loadSettings();
   },
 
   async addWorkspaceByPicker() {
@@ -1850,6 +1884,18 @@ export const useStore = create<State>((set, get) => ({
     set({ sessionTab: tab });
   },
 
+  openBigThingAt(sessionId, milestone) {
+    set({ sessionTab: "odyssey", odysseyFocus: milestone === null ? null : { sessionId, milestone } });
+  },
+
+  showInTranscript(sessionId, cardKey) {
+    set({ sessionTab: "transcript", transcriptSearchOpen: false, transcriptFocus: { sessionId, cardKey } });
+  },
+
+  clearJumpFocus() {
+    set({ odysseyFocus: null, transcriptFocus: null });
+  },
+
   sendDocToBigThing(sessionId, path) {
     set({ bigThingDoc: { ...get().bigThingDoc, [sessionId]: path }, sessionTab: "odyssey" });
   },
@@ -2666,3 +2712,24 @@ export const useStore = create<State>((set, get) => ({
     set({ error: null });
   },
 }));
+
+/** Whether a remembered place can still be shown. */
+export function viewExists(state: Pick<State, "sessions" | "workspaces">, view: View): boolean {
+  if (view.kind === "session") return !!state.sessions[view.sessionId];
+  if (view.kind === "workspace") return state.workspaces.some((w) => w.id === view.workspaceId);
+  return true;
+}
+
+// Every move is recorded after the fact, once per tick: switching session sets
+// the view and the panel separately, and that is one visit, not two.
+let navPending = false;
+useStore.subscribe((state, prev) => {
+  if (navPending || (state.view === prev.view && state.sessionTab === prev.sessionTab)) return;
+  navPending = true;
+  queueMicrotask(() => {
+    navPending = false;
+    const now = useStore.getState();
+    const next = recordVisit(now.navHistory, now.navIndex, navEntry(now.view, now.sessionTab));
+    if (next) useStore.setState({ navHistory: next.history, navIndex: next.index });
+  });
+});

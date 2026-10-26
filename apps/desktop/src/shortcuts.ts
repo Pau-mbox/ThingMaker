@@ -3,7 +3,8 @@
  * ⌘/Ctrl+O add workspace, ⌘/Ctrl+N new session in the selected workspace,
  * ⌘/Ctrl+1..9 switch sessions, ⌘/Ctrl+L focus the composer, ⌘/Ctrl+, sign-in,
  * ⌘/Ctrl+; settings, ⌘/Ctrl+K command palette, ⌘/Ctrl+I integrations,
- * ⌘/Ctrl+F transcript search, ⌘/Ctrl+B toggle sidebar.
+ * ⌘/Ctrl+F transcript search, ⌘/Ctrl+B toggle sidebar, ⌘/Ctrl+[ and ] back
+ * and forward (also the mouse's back and forward buttons).
  * Enter / Shift+Enter inside the composer are handled by the composer itself.
  */
 import { useEffect } from "react";
@@ -23,7 +24,12 @@ export function useKeyboardShortcuts(): void {
         state.setPaletteOpen(!state.paletteOpen);
         return;
       }
-      if(state.chillMode && ["b","i","f","o","n","l",",",";","1","2","3","4","5","6","7","8","9"].includes(key)) state.setChillMode(false);
+      if(state.chillMode && ["b","i","f","o","n","l",",",";","[","]","1","2","3","4","5","6","7","8","9"].includes(key)) state.setChillMode(false);
+      if ((key === "[" || key === "]") && !event.shiftKey && !event.altKey) {
+        event.preventDefault();
+        state.navigate(key === "[" ? -1 : 1);
+        return;
+      }
       if (key === "b") {
         event.preventDefault();
         state.toggleSidebar();
@@ -85,7 +91,17 @@ export function useKeyboardShortcuts(): void {
         }
       }
     };
+    // Mouse buttons 3 and 4 are back and forward.
+    const onMouseUp = (event: MouseEvent) => {
+      if (event.button !== 3 && event.button !== 4) return;
+      event.preventDefault();
+      useStore.getState().navigate(event.button === 3 ? -1 : 1);
+    };
     window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
+    window.addEventListener("mouseup", onMouseUp);
+    return () => {
+      window.removeEventListener("keydown", onKeyDown);
+      window.removeEventListener("mouseup", onMouseUp);
+    };
   }, []);
 }

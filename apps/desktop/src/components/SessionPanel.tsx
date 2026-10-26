@@ -22,6 +22,8 @@ import { ApkCard, apksNamedIn } from "./ApkCard";
 import { docsNamedIn, docsWrittenBy } from "../markdownDocs";
 import { ImagesPane } from "./ImagesPane";
 import { OdysseyPane } from "./OdysseyPane";
+import { BigThingBand, BigThingTurnCard } from "./BigThingLinks";
+import { bigThingTurnOf, userMessageText } from "../bigThingTurns";
 import { AttachmentThumb, BlockImage, InlineImage, workspaceImageRenderer } from "./InlineImage";
 import { Markdown } from "../markdown";
 import type { Card } from "../projection";
@@ -263,6 +265,12 @@ function CardBody({ card, sessionId }: { card: Card; sessionId: string }) {
             </span>
           </article>
         );
+      }
+      if (card.message.role === "user") {
+        // Big Thing's own prompts are not the user's words.
+        const text = userMessageText(card);
+        const turn = bigThingTurnOf(card.message.messageId, text);
+        if (turn) return <BigThingTurnCard card={card} sessionId={sessionId} text={text} turn={turn} />;
       }
       return (
         <article className={`card card-${card.message.role}`}>
@@ -632,6 +640,38 @@ export function SessionPanel({ sessionId }: { sessionId: string }) {
     };
   }, [hasSession, query, tab]);
 
+  // Asked from the Big Thing board: show one card of the conversation. Clear
+  // a search that would hide it and open enough of the history to hold it,
+  // then stop following the bottom so the jump stays put.
+  const transcriptFocus = useStore((s) => (s.transcriptFocus?.sessionId === sessionId ? s.transcriptFocus : null));
+  const clearJumpFocus = useStore((s) => s.clearJumpFocus);
+  useEffect(() => {
+    if (!transcriptFocus || tab !== "transcript" || !session) return;
+    if (query) {
+      setQuery("");
+      return;
+    }
+    const cards = session.projection.cards;
+    const at = cards.findIndex((card) => card.key === transcriptFocus.cardKey);
+    if (at < 0) {
+      clearJumpFocus();
+      return;
+    }
+    if (cards.length - at > visible) {
+      setVisible(cards.length - at + 4);
+      return;
+    }
+    followRef.current = false;
+    clearJumpFocus();
+    requestAnimationFrame(() => {
+      const target = [...(transcriptRef.current?.querySelectorAll<HTMLElement>("[data-card-key]") ?? [])].find((element) => element.dataset.cardKey === transcriptFocus.cardKey);
+      if (!target) return;
+      target.scrollIntoView({ block: "start" });
+      target.classList.add("jump-flash");
+      setTimeout(() => target.classList.remove("jump-flash"), 1600);
+    });
+  }, [transcriptFocus, tab, session, query, visible, clearJumpFocus]);
+
   /** Sending a prompt goes back to the bottom to follow the reply. */
   const sendAndFollow = () => {
     followRef.current = true;
@@ -873,8 +913,8 @@ export function SessionPanel({ sessionId }: { sessionId: string }) {
   // without opening it.
   const odysseyView = useStore.getState().odyssey[sessionId];
   const odysseyLabel = odysseyView
-    ? `Big Thing ${odysseyView.milestones.filter((m) => m.state === "verified").length}/${odysseyView.milestones.length}`
-    : "Big Thing";
+    ? `${t("Big Thing board")} ${odysseyView.milestones.filter((m) => m.state === "verified").length}/${odysseyView.milestones.length}`
+    : t("Big Thing board");
   // Only the views you watch stay in the bar; the rest live behind one menu
   // and the terminal behind one icon, so the bar reads at a glance.
   // Agents is a main tab again, second: delegated jobs and subagents are
@@ -886,7 +926,7 @@ export function SessionPanel({ sessionId }: { sessionId: string }) {
   const agentsBusy = working + jobsBusy;
   const agentsLabel = `${t("Agents")}${agentsBusy > 0 ? ` · ${agentsBusy}` : ""}${jobsWaiting > 0 ? ` · ${t("{n} waiting", { n: jobsWaiting })}` : ""}`;
   const tabs: { id: typeof tab; label: string }[] = [
-    { id: "transcript", label: t("Transcript") },
+    { id: "transcript", label: t("Conversation") },
     { id: "agents", label: agentsLabel },
     ...(isWorker ? [] : [{ id: "odyssey" as const, label: odysseyLabel }]),
   ];
@@ -1002,6 +1042,7 @@ export function SessionPanel({ sessionId }: { sessionId: string }) {
               )}
             </div>
           )}
+          <BigThingBand sessionId={sessionId} />
           <div aria-busy={active} className="transcript" ref={transcriptRef}>
             <EarlierConversation sessionId={sessionId} />
             {transcriptGroups.map((group, index, groups) => (

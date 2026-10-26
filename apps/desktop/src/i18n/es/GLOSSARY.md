@@ -18,6 +18,8 @@ style as the English. Keep these terms consistent across every catalog.
 | steer / steering | redirigir |
 | queue / queued | cola / en cola |
 | transcript | transcripción |
+| conversation (the session tab) | conversación |
+| board (Big Thing board) | tablero |
 | settings | ajustes |
 | provider | proveedor |
 | sign in / signed in | iniciar sesión / con la sesión iniciada |

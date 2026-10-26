@@ -10,9 +10,9 @@ import { t } from "../i18n";
 /** A session tab by the name its button shows. */
 function tabName(tab: SessionTab): string {
   switch (tab) {
-    case "transcript": return t("Transcript");
+    case "transcript": return t("Conversation");
     case "agents": return t("Agents");
-    case "odyssey": return "Big Thing";
+    case "odyssey": return t("Big Thing board");
     case "terminal": return t("Terminal");
     case "files": return t("Files");
     case "changes": return t("Changes");

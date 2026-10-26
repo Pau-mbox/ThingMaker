@@ -32,9 +32,13 @@ use super::{RemoteState, server};
 
 /// Keeps the relay's connection from idling out.
 const PING: Duration = Duration::from_secs(25);
+/// The relay answers every ping; this long without a word from it, the line
+/// is dead even if the socket has not noticed (a Wi-Fi change, a sleep), and
+/// the phones are already being told the Mac is gone.
+const SILENT: Duration = Duration::from_secs(60);
 /// A body chunk, and how many may be unacknowledged at once.
 const CHUNK: usize = 256 * 1024;
-const WINDOW: usize = 8;
+const WINDOW: usize = 32;
 const LONGEST_WAIT: Duration = Duration::from_secs(60);
 
 type Acks = Arc<Mutex<HashMap<String, Arc<Semaphore>>>>;
@@ -139,11 +143,13 @@ async fn connect(app: &AppHandle, url: &str) -> Result<(), String> {
     let mut streams: HashMap<String, mpsc::UnboundedSender<String>> = HashMap::new();
     let mut ping = tokio::time::interval(PING);
     ping.tick().await;
+    let mut heard = tokio::time::Instant::now();
 
-    loop {
+    let ended = loop {
         tokio::select! {
             message = stream.next() => match message {
                 Some(Ok(Message::Text(text))) => {
+                    heard = tokio::time::Instant::now();
                     let Ok(frame) = serde_json::from_str::<Value>(text.as_str()) else { continue };
                     let id = frame.get("id").and_then(Value::as_str).unwrap_or_default().to_string();
                     match frame.get("t").and_then(Value::as_str) {
@@ -186,16 +192,22 @@ async fn connect(app: &AppHandle, url: &str) -> Result<(), String> {
                         _ => {}
                     }
                 }
-                Some(Ok(Message::Close(_))) | None | Some(Err(_)) => break,
-                Some(Ok(_)) => {}
+                Some(Ok(Message::Close(frame))) => break format!("the relay closed the line ({})", frame.map(|frame| format!("{} {}", frame.code, frame.reason)).unwrap_or_default()),
+                None => break "the relay's line ended".to_string(),
+                Some(Err(error)) => break format!("the relay's line failed: {error}"),
+                Some(Ok(_)) => heard = tokio::time::Instant::now(),
             },
             _ = ping.tick() => {
+                if heard.elapsed() > SILENT {
+                    break format!("nothing from the relay for {}s", heard.elapsed().as_secs());
+                }
                 if out.send(Message::Text(json!({ "t": "ping" }).to_string().into())).is_err() {
-                    break;
+                    break "the line to the relay closed".to_string();
                 }
             }
         }
-    }
+    };
+    tracing::info!(reason = %ended, "phone relay disconnected");
     // Every phone stream ends with the connection; their conversations close.
     streams.clear();
     for (_, window) in acks.lock().unwrap_or_else(|poisoned| poisoned.into_inner()).drain() {

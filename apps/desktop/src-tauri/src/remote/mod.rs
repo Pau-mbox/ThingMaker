@@ -12,6 +12,7 @@
 pub mod apk;
 pub mod devices;
 pub mod dispatch;
+mod lan;
 mod relay;
 mod server;
 pub mod tools;
@@ -226,7 +227,11 @@ impl RemoteState {
         if !reachable {
             return Err(DesktopError::not_ready("No phone is connected right now. Open ThingMaker on the phone (or let its connection come back) and send again."));
         }
-        let offer = apk::prepare(path, device.clone()).await?;
+        let mut offer = apk::prepare(path, device.clone()).await?;
+        let lasting = std::time::Duration::from_millis(apk::OFFER_MS as u64);
+        if let Some(nearby) = lan::open(app.clone(), lasting).await {
+            offer.nearby = Some((format!("{}/v1/apk/{}", nearby.base, offer.id), nearby.cert));
+        }
         let frame: Arc<str> = Arc::from(apk::frame(&offer, &self.host_name));
         {
             let mut offers = self.offers.lock().unwrap_or_else(|poisoned| poisoned.into_inner());

@@ -110,7 +110,10 @@ class BridgeService : Service() {
                         prefs.edit().remove(key).apply()
                     }
                 }
-                "install" -> offered(Offer(frame.optString("id"), frame.optString("name"), frame.optLong("size"), frame.optString("sha256"), frame.optString("from", pairing.macName)))
+                "install" -> {
+                    val nearby = frame.optJSONObject("nearby")?.let { Nearby(it.optString("url"), it.optString("key"), it.optString("cert")) }?.takeIf { it.url.startsWith("https://") && it.key.isNotEmpty() && it.cert.length == 64 }
+                    offered(Offer(frame.optString("id"), frame.optString("name"), frame.optLong("size"), frame.optString("sha256"), frame.optString("from", pairing.macName), nearby))
+                }
                 "denied" -> {
                     stopped = true
                     Notifier.attention(this@BridgeService, getString(R.string.revoked_title), getString(R.string.revoked_body, pairing.macName))
