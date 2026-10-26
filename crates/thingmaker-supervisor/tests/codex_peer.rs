@@ -272,3 +272,20 @@ async fn resuming_replays_the_thread_and_steering_reaches_the_turn() {
     assert!(matches!(outcome, SteerOutcome::Rejected { .. }), "{outcome:?}");
     let _ = actor.stop().await;
 }
+
+#[tokio::test]
+async fn forking_copies_the_thread_without_sending_its_turns_back() {
+    let Some(mut config) = config(&[], None, PermissionStance::AcceptEdits) else { return };
+    config.fork_from = Some(THREAD.into());
+    let actor = SessionActor::open(config).await.expect("forked");
+    assert!(actor.snapshot().await.unwrap().capabilities.unwrap().supports_fork);
+    assert_eq!(actor.snapshot().await.unwrap().agent_session_id.as_deref(), Some("02b0f24c-75b5-77d0-ba43-9319ccd9e5ef"));
+    let replayed = actor.history(0, 10_000).await.unwrap().iter().any(|event| matches!(&event.payload, SessionEvent::Update(SessionUpdate::AgentMessage(_))));
+    assert!(!replayed, "the main thread's turns are context for the copy, not its conversation");
+    // The copy takes prompts like any thread.
+    let mut subscription = actor.subscribe();
+    actor.submit_text("p1", "hello").await.unwrap();
+    until_settled(&mut subscription).await;
+    let _ = actor.stop().await;
+}
+

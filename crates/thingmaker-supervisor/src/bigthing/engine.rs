@@ -95,6 +95,10 @@ pub(crate) struct GoalState {
     pub pending: Option<PendingTurn>,
 }
 
+/// How a note from a side session starts, in the main session's prompt. The
+/// interface recognises it by this and shows it as the side session's.
+pub const SIDE_NOTE_PREFIX: &str = "[From the side transcript]";
+
 pub(crate) struct Inner {
     pub storage: Arc<Mutex<Storage>>,
     pub host: Arc<dyn EngineHost>,
@@ -113,6 +117,12 @@ pub(crate) struct Inner {
     pub reopened: Mutex<HashMap<String, i64>>,
     /// Subagents and jobs already attributed, so a redraw does not rewrite.
     pub attributed: Mutex<HashMap<String, String>>,
+    /// Side session handle → the main session it was forked from. A side
+    /// session acts on its main session's goal.
+    pub side_main: Mutex<HashMap<String, String>>,
+    /// Notes for a main session that arrived while it had no turn to steer:
+    /// handed over with the next prompt it gets, from the user or the run.
+    pub main_notes: Mutex<HashMap<String, Vec<String>>>,
 }
 
 /// The Big Thing service. Cloning shares it.
@@ -147,6 +157,8 @@ impl Engine {
                 runtime: Mutex::new(HashMap::new()),
                 watches: Mutex::new(HashMap::new()),
                 session_goal: Mutex::new(HashMap::new()),
+                side_main: Mutex::new(HashMap::new()),
+                main_notes: Mutex::new(HashMap::new()),
                 usage: Mutex::new(UsageBook::default()),
                 inbox: Mutex::new(HashMap::new()),
                 signals,
@@ -327,6 +339,64 @@ impl Engine {
                 None
             }
         }
+    }
+
+    /// Adopts the session at `handle` for `goal` in the background: a tool
+    /// call can come from a run that is held (paused, blocked, or not ticked
+    /// since a restart), whose turns are otherwise not watched, and what the
+    /// call said is applied when the turn ends.
+    pub(crate) fn adopt_soon(&self, goal: &OdysseyRecord, handle: &str) {
+        if self.goal_for_handle(handle).is_some() {
+            return;
+        }
+        let Some(live) = self.inner.host.live_handle(handle) else { return };
+        let engine = self.clone();
+        let goal = goal.clone();
+        tokio::spawn(async move { engine.adopt(&goal, &live).await });
+    }
+
+    // ------------------------------------------------------------ side sessions
+
+    /// Remembers that `side` was forked from `main`, so its run tools act on
+    /// the main session's goal.
+    pub fn link_side(&self, side: &str, main: &str) {
+        self.inner.side_main.lock().unwrap_or_else(|poisoned| poisoned.into_inner()).insert(side.to_string(), main.to_string());
+    }
+
+    pub fn unlink_side(&self, side: &str) {
+        self.inner.side_main.lock().unwrap_or_else(|poisoned| poisoned.into_inner()).remove(side);
+    }
+
+    /// The main session a side session belongs to.
+    pub fn side_main(&self, side: &str) -> Option<String> {
+        self.inner.side_main.lock().unwrap_or_else(|poisoned| poisoned.into_inner()).get(side).cloned()
+    }
+
+    /// The side sessions of a main session.
+    pub fn sides_of(&self, main: &str) -> Vec<String> {
+        self.inner.side_main.lock().unwrap_or_else(|poisoned| poisoned.into_inner()).iter().filter(|(_, of)| of.as_str() == main).map(|(side, _)| side.clone()).collect()
+    }
+
+    /// Tells a main session what its side session changed: steered into the
+    /// turn it is running, or else held for the next prompt it gets.
+    pub(crate) fn tell_main(&self, main: &str, text: &str) {
+        let note = format!("{SIDE_NOTE_PREFIX} {}", text.trim().replace('\n', " "));
+        let Some(live) = self.inner.host.live_handle(main) else { return };
+        let engine = self.clone();
+        let main = main.to_string();
+        tokio::spawn(async move {
+            let snapshot = live.actor.snapshot().await.ok();
+            let steerable = snapshot.as_ref().is_some_and(|snapshot| snapshot.foreground.is_active() && snapshot.capabilities.as_ref().is_some_and(|capabilities| capabilities.supports_steering));
+            if steerable && matches!(live.actor.steer_text(&note).await, Ok(crate::supervisor::SteerOutcome::Accepted { .. })) {
+                return;
+            }
+            engine.inner.main_notes.lock().unwrap_or_else(|poisoned| poisoned.into_inner()).entry(main).or_default().push(note);
+        });
+    }
+
+    /// The notes held for a main session, taken: the caller sends them.
+    pub fn take_main_notes(&self, main: &str) -> Vec<String> {
+        self.inner.main_notes.lock().unwrap_or_else(|poisoned| poisoned.into_inner()).remove(main).unwrap_or_default()
     }
 
     /// Makes sure the session is watched, and remembered as this goal's.
@@ -792,6 +862,8 @@ impl Engine {
                 })
             }
         };
+        let side_notes = self.take_main_notes(&live.handle);
+        let base = if side_notes.is_empty() { base } else { format!("{base}\n\n{}", side_notes.join("\n")) };
         let text = if carried.lines.is_empty() {
             base
         } else {
@@ -981,13 +1053,28 @@ impl Engine {
             state.pending = None;
             if phase == TurnPhase::Succeeded && asked && loaded.milestones.is_empty() {
                 self.read_plan(&goal, protocol.plan);
+            } else if let Some(amendment) = protocol.amendment.clone().filter(|_| !loaded.milestones.is_empty()) {
+                // A drafted plan the agent was asked to change before the start.
+                self.apply_amendment(&goal, amendment);
+                self.changed(goal_id);
+            }
+            return;
+        }
+        let live = goal.session_id.as_deref().and_then(|row| self.inner.host.live(row)).filter(|live| live.handle == handle);
+        if matches!(goal.state, OdysseyState::Paused | OdysseyState::Blocked) {
+            // Nothing is charged and nothing continues while the run is held,
+            // but what the agent changed through the run's tools still lands:
+            // the user asked for it in the conversation, and the tool told the
+            // agent it would be applied when the turn ended.
+            if phase == TurnPhase::Succeeded {
+                self.apply_records(goal_id, loaded, live.as_ref(), &turn, &protocol).await;
             }
             return;
         }
         if !matches!(goal.state, OdysseyState::Running | OdysseyState::WaitingUsage) {
             return;
         }
-        let Some(live) = goal.session_id.as_deref().and_then(|row| self.inner.host.live(row)).filter(|live| live.handle == handle) else { return };
+        let Some(live) = live else { return };
         let pending = state.pending.take().filter(|pending| pending.handle == handle);
 
         // Did a model answer at all? A settle is not proof of a turn.
@@ -1065,19 +1152,28 @@ impl Engine {
             });
         }
 
+        self.apply_records(goal_id, loaded, Some(&live), &turn, &protocol).await;
+    }
+
+    /// What a turn said through the run's tools (or its text lines): plan
+    /// changes, reports, questions and task moves. Reports read the turn's
+    /// evidence from the session, so they need it live.
+    async fn apply_records(&self, goal_id: &str, loaded: Loaded, live: Option<&LiveSession>, turn: &TurnRecord, protocol: &TurnProtocol) {
         // Plan changes first, so a milestone the change added is in the list
         // before anything claims to have finished one.
         if let Some(amendment) = protocol.amendment.clone() {
-            self.apply_amendment(&goal, amendment);
+            self.apply_amendment(&loaded.goal, amendment);
         }
         let loaded = self.load(goal_id).unwrap_or(loaded);
-        for report in protocol.reports.clone() {
-            // Each report reads the record the one before it left.
-            let Ok(current) = self.load(goal_id) else { break };
-            self.read_report(&current, &live, &turn, Some(report)).await;
+        if let Some(live) = live {
+            for report in protocol.reports.clone() {
+                // Each report reads the record the one before it left.
+                let Ok(current) = self.load(goal_id) else { break };
+                self.read_report(&current, live, turn, Some(report)).await;
+            }
         }
         self.read_asks(&loaded, &protocol.asks);
-        self.read_tasks(&loaded, &live, &protocol.tasks);
+        self.read_tasks(&loaded, live, &protocol.tasks);
         self.changed(goal_id);
     }
 
@@ -1161,7 +1257,7 @@ impl Engine {
         }
     }
 
-    fn read_asks(&self, loaded: &Loaded, asks: &[protocol::Ask]) {
+    pub(crate) fn read_asks(&self, loaded: &Loaded, asks: &[protocol::Ask]) {
         let goal = &loaded.goal;
         let open: Vec<String> = self.db(|storage| storage.question_list(&goal.id, 100)).unwrap_or_default().into_iter().filter(|question| question.state == QuestionState::Open).map(|question| question.question).collect();
         let mut asked = 0;
@@ -1180,8 +1276,8 @@ impl Engine {
         }
     }
 
-    fn read_tasks(&self, loaded: &Loaded, live: &LiveSession, lines: &[protocol::TaskLine]) {
-        let agents = self.watch(&live.handle).map(|watch| watch.state().agents.clone()).unwrap_or_default();
+    fn read_tasks(&self, loaded: &Loaded, live: Option<&LiveSession>, lines: &[protocol::TaskLine]) {
+        let agents = live.and_then(|live| self.watch(&live.handle)).map(|watch| watch.state().agents.clone()).unwrap_or_default();
         for line in lines {
             let Some(step) = loaded.milestones.get(line.milestone - 1).and_then(|milestone| milestone.steps.get(line.task - 1)) else { continue };
             // The user's approvals move only when the user decides.

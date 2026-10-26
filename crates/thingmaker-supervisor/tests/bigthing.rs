@@ -18,7 +18,7 @@ use thingmaker_supervisor::{
     delegation::{Caller, Combo, Delegation, TeamExtension, WorkerLauncher, WorkerSpec, jobs::BoxFuture},
     storage::{
         Storage,
-        odyssey::{CheckKind, CheckSource, JournalKind, MilestoneState, NewOdyssey, OdysseyState},
+        odyssey::{CheckKind, CheckSource, JournalKind, MilestoneState, NewOdyssey, OdysseyState, PlanChangeState},
         workspaces::SessionOrigin,
     },
     bigthing::{Engine, EngineEvent, EngineHost, LiveSession, OpenSpec},
@@ -423,3 +423,76 @@ async fn a_review_loop_sends_the_work_back_and_the_run_waits_for_your_approval()
     assert_eq!(view.milestones[0].steps[2].result.as_deref(), Some("ship it"));
     assert_eq!(view.milestones[0].state, MilestoneState::Verified);
 }
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn a_held_run_still_takes_the_plan_change_the_agent_made_when_its_turn_ends() {
+    let Some(fixture) = fixture_with(&[]) else { return };
+    let (goal_id, live) = fixture.goal(2).await;
+    fixture.storage.lock().unwrap().odyssey_set_state(&goal_id, OdysseyState::Paused).unwrap();
+    // The user asks for the change in the conversation of a paused run, and
+    // the agent makes it through the tool.
+    let caller = Caller::Orchestrator { session: live.handle.clone(), provider: Provider::Claude, root: live.root.clone() };
+    let amend = fixture.engine.call(&caller, "bigthing_amend", &json!({"ops": [{"op": "drop", "target": 2}], "reason": "not needed"})).unwrap().await;
+    assert_eq!(amend["isError"], false, "{amend}");
+    // The held run's session was not watched; the call has it watched.
+    tokio::time::sleep(Duration::from_millis(400)).await;
+    assert!(live.actor.submit_text("turn-1", "Drop the second milestone").await.is_ok());
+    let deadline = std::time::Instant::now() + Duration::from_secs(20);
+    loop {
+        let changes = fixture.storage.lock().unwrap().plan_change_list(&goal_id, 10).unwrap();
+        if let Some(change) = changes.first() {
+            // A change to what a milestone is waits for the user, as it would
+            // in a running goal; it is no longer dropped on the floor.
+            assert_eq!(change.state, PlanChangeState::Proposed);
+            assert!(change.summary.contains("Drop milestone 2"), "{}", change.summary);
+            break;
+        }
+        assert!(std::time::Instant::now() < deadline, "the change made in a paused run's turn was never recorded");
+        tokio::time::sleep(Duration::from_millis(200)).await;
+    }
+    let view = fixture.storage.lock().unwrap().odyssey_view(&goal_id).unwrap().unwrap();
+    assert_eq!(view.goal.state, OdysseyState::Paused, "a held run stays held");
+    assert_eq!(view.goal.continuations_used, 0, "nothing is charged while it is held");
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn a_side_session_changes_the_main_sessions_goal_and_the_main_session_is_told() {
+    let Some(fixture) = fixture_with(&[]) else { return };
+    let (goal_id, live) = fixture.goal(2).await;
+    fixture.storage.lock().unwrap().odyssey_set_state(&goal_id, OdysseyState::Running).unwrap();
+    fixture.engine.link_side("side-1", &live.handle);
+    let side = Caller::Orchestrator { session: "side-1".into(), provider: Provider::Claude, root: live.root.clone() };
+
+    // Milestones are the main session's to report.
+    let report = fixture.engine.call(&side, "bigthing_report", &json!({"milestone": 1, "status": "complete"})).unwrap().await;
+    assert_eq!(report["isError"], true);
+    assert!(report["content"][0]["text"].as_str().unwrap().contains("side conversation"), "{report}");
+
+    // A plan change lands at once — no turn of the run's to wait for.
+    let amend = fixture.engine.call(&side, "bigthing_amend", &json!({"ops": [{"op": "add", "title": "Write a third file", "after": "end"}]})).unwrap().await;
+    assert_eq!(amend["isError"], false, "{amend}");
+    assert!(amend["structuredContent"]["note"].as_str().unwrap().contains("main session is told"), "{amend}");
+    let changes = fixture.storage.lock().unwrap().plan_change_list(&goal_id, 10).unwrap();
+    assert_eq!(changes.len(), 1);
+    assert_eq!(changes[0].state, PlanChangeState::Proposed, "adding a milestone waits for the user under the default");
+
+    // The main session had no turn running to steer it into, so it waits for
+    // the next prompt the main session gets.
+    let deadline = std::time::Instant::now() + Duration::from_secs(5);
+    let notes = loop {
+        let notes = fixture.engine.take_main_notes(&live.handle);
+        if !notes.is_empty() || std::time::Instant::now() > deadline {
+            break notes;
+        }
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    };
+    assert_eq!(notes.len(), 1, "{notes:?}");
+    assert!(notes[0].starts_with("[From the side transcript] The Big Thing plan was proposed for a change"), "{}", notes[0]);
+    assert!(!notes[0].contains('\n'), "a note is one line: {}", notes[0]);
+
+    // Unlinked, the same caller is just a session with no goal.
+    fixture.engine.unlink_side("side-1");
+    let after = fixture.engine.call(&side, "bigthing_amend", &json!({"ops": [{"op": "drop", "target": 1}]})).unwrap().await;
+    assert_eq!(after["isError"], true);
+}
+

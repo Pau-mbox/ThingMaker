@@ -199,6 +199,7 @@ pub fn run() {
             commands::session::session_open,
             commands::session::session_subscribe,
             commands::session::session_snapshot,
+            commands::session::session_background_output,
             commands::session::session_submit,
             commands::session::session_steer,
             commands::session::session_enqueue,

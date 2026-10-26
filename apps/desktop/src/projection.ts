@@ -6,6 +6,7 @@
  * never guesses. Everything here is pure and unit-tested.
  */
 import type {
+  BackgroundTask,
   ContentBlock,
   DetachedCallState,
   EventEnvelope,
@@ -81,6 +82,8 @@ export type Projection = {
   messages: Map<string, Message>;
   toolCalls: Map<string, ToolPatch>;
   detached: Map<string, DetachedCallState>;
+  /** Commands left running in the background, by task id. */
+  background: Map<string, BackgroundTask>;
   submissions: Map<string, { state: SubmissionState; message?: string }>;
   steers: Map<string, string>;
   usage: { used: number | null; size: number | null } | null;
@@ -125,6 +128,7 @@ export function emptyProjection(): Projection {
     messages: new Map(),
     toolCalls: new Map(),
     detached: new Map(),
+    background: new Map(),
     submissions: new Map(),
     steers: new Map(),
     usage: null,
@@ -346,6 +350,11 @@ export function applyEvent(projection: Projection, envelope: EventEnvelope): Pro
     case "queue": {
       const { type: _type, ...queue } = payload;
       projection.queue = queue;
+      break;
+    }
+    case "background_task": {
+      const { type: _type, ...task } = payload;
+      projection.background.set(task.taskId, task);
       break;
     }
     case "detached_call":

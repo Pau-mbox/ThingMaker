@@ -17,7 +17,7 @@ use thingmaker_supervisor::{
         claude::launch::{self as claude_launch, ClaudeLaunchOptions},
         events::{QuotaStatus, RuntimeEvent, SubagentStatus},
     },
-    supervisor::{AgentLaunch, Provider, SessionActor, SessionActorConfig, SessionEvent, SteerOutcome},
+    supervisor::{AgentLaunch, BackgroundTaskState, Provider, SessionActor, SessionActorConfig, SessionEvent, SteerOutcome},
 };
 
 const AGENT_SESSION: &str = "d847b2a3-c7b5-4459-8b0f-02fdd03031a4";
@@ -707,3 +707,105 @@ async fn big_thing_never_sees_an_idle_session_while_the_persons_queue_is_going()
     assert!(watch.idle(), "with the queue empty and the turn over, the session is the runner's again");
     let _ = actor.stop().await;
 }
+
+/// The messages an attachment's history holds, as text.
+async fn history_texts(actor: &SessionActor) -> Vec<String> {
+    actor
+        .history(0, 10_000)
+        .await
+        .unwrap()
+        .iter()
+        .filter_map(|event| match &event.payload {
+            SessionEvent::Update(SessionUpdate::AgentMessage(message)) | SessionEvent::Update(SessionUpdate::UserMessage(message)) => {
+                message.content.iter().find_map(|block| if let ContentBlock::Text { text } = block { Some(text.clone()) } else { None })
+            }
+            _ => None,
+        })
+        .collect()
+}
+
+#[tokio::test]
+async fn a_fork_is_a_new_session_with_the_old_ones_context_and_none_of_its_replay() {
+    let root = tempfile::tempdir().unwrap();
+    let Some(mut config) = config(&[], None, PermissionStance::AcceptEdits, root.path()) else { return };
+    config.fork_from = Some(AGENT_SESSION.into());
+    let actor = SessionActor::open(config).await.expect("forked");
+    let snapshot = actor.snapshot().await.unwrap();
+    // The agent names the copy; it is not the session it was copied from.
+    assert_eq!(snapshot.agent_session_id.as_deref(), Some("e958c3b4-d8c6-4560-9c13-13ee14142b5b"));
+    // The copy's own conversation starts empty on screen: unlike a load,
+    // nothing of the main conversation is replayed into it.
+    assert!(history_texts(&actor).await.is_empty());
+    let _ = actor.stop().await;
+}
+
+#[tokio::test]
+async fn an_agent_that_cannot_fork_is_refused_before_a_session_exists() {
+    let root = tempfile::tempdir().unwrap();
+    let Some(mut config) = config(&["--no-fork"], None, PermissionStance::AcceptEdits, root.path()) else { return };
+    config.fork_from = Some(AGENT_SESSION.into());
+    let error = SessionActor::open(config).await.expect_err("no fork capability");
+    assert_eq!(error.code, thingmaker_supervisor::ErrorCode::Unsupported, "{error:?}");
+}
+
+#[tokio::test]
+async fn a_command_left_in_the_background_is_followed_until_its_output_says_it_ended() {
+    let root = tempfile::tempdir().unwrap();
+    // Where Claude Code puts a task's output: its own folder under the
+    // temporary directory, in the session's `tasks` folder.
+    let tasks = std::env::temp_dir().join(format!("claude-peer-{}", std::process::id())).join("proj/session/tasks");
+    std::fs::create_dir_all(&tasks).unwrap();
+    let output = tasks.join("bmock1.output");
+    std::fs::write(&output, "building…\n").unwrap();
+    let flag = format!("--background={}", output.display());
+    let Some(config) = config(&[flag.as_str()], None, PermissionStance::AcceptEdits, root.path()) else { return };
+    let actor = SessionActor::open(config).await.expect("attached");
+    let mut subscription = actor.subscribe();
+    actor.submit_text("p1", "build it in the background").await.unwrap();
+
+    let started = collect(&mut subscription, Duration::from_secs(10), |event| matches!(event, SessionEvent::BackgroundTask(task) if task.output_path.is_some())).await;
+    let SessionEvent::BackgroundTask(task) = started.last().unwrap() else { unreachable!() };
+    assert_eq!(task.task_id, "bmock1");
+    assert_eq!(task.tool_call_id, "toolu_bg1");
+    assert_eq!(task.command.as_deref(), Some("pnpm app"));
+    assert_eq!(task.description.as_deref(), Some("Build and install the app"));
+    assert_eq!(task.state, BackgroundTaskState::Running);
+    // The turn has ended; the command has not.
+    let listed = actor.background_tasks().await.unwrap();
+    assert_eq!(listed.len(), 1);
+    assert_eq!(listed[0].state, BackgroundTaskState::Running);
+
+    std::fs::write(&output, "building…\ndone\n\n[exited with code 0]\n").unwrap();
+    let ended = collect(&mut subscription, Duration::from_secs(10), |event| matches!(event, SessionEvent::BackgroundTask(task) if task.state != BackgroundTaskState::Running)).await;
+    let SessionEvent::BackgroundTask(task) = ended.last().unwrap() else { unreachable!() };
+    assert_eq!(task.state, BackgroundTaskState::Completed);
+    assert_eq!(task.exit_code, Some(0));
+    assert_eq!(task.ending.as_deref(), Some("[exited with code 0]"));
+    assert!(task.ended_at_unix_ms.is_some());
+    assert_eq!(actor.snapshot().await.unwrap().background_tasks[0].state, BackgroundTaskState::Completed);
+
+    let _ = actor.stop().await;
+    std::fs::remove_dir_all(tasks.parent().unwrap().parent().unwrap().parent().unwrap()).ok();
+}
+
+#[tokio::test]
+async fn a_background_command_still_running_when_the_session_ends_ends_with_it() {
+    let root = tempfile::tempdir().unwrap();
+    let tasks = std::env::temp_dir().join(format!("claude-peer-stop-{}", std::process::id())).join("proj/session/tasks");
+    std::fs::create_dir_all(&tasks).unwrap();
+    let output = tasks.join("bmock1.output");
+    std::fs::write(&output, "serving on :3000\n").unwrap();
+    let flag = format!("--background={}", output.display());
+    let Some(config) = config(&[flag.as_str()], None, PermissionStance::AcceptEdits, root.path()) else { return };
+    let actor = SessionActor::open(config).await.expect("attached");
+    let mut subscription = actor.subscribe();
+    actor.submit_text("p1", "serve it").await.unwrap();
+    collect(&mut subscription, Duration::from_secs(10), |event| matches!(event, SessionEvent::BackgroundTask(task) if task.output_path.is_some())).await;
+    let _ = actor.stop().await;
+    let ended = collect(&mut subscription, Duration::from_secs(10), |event| matches!(event, SessionEvent::BackgroundTask(task) if task.state != BackgroundTaskState::Running)).await;
+    let SessionEvent::BackgroundTask(task) = ended.last().unwrap() else { unreachable!() };
+    assert_eq!(task.state, BackgroundTaskState::Stopped);
+    assert_eq!(task.ending.as_deref(), Some("[the session ended first]"));
+    std::fs::remove_dir_all(tasks.parent().unwrap().parent().unwrap().parent().unwrap()).ok();
+}
+

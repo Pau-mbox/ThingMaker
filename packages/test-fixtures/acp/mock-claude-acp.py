@@ -57,6 +57,7 @@ ECHO = "--echo" in sys.argv
 NO_STEER = "--no-steer" in sys.argv
 ECHO_STEER = "--echo-steer" in sys.argv
 LEGACY = "--legacy-ids" in sys.argv
+NO_FORK = "--no-fork" in sys.argv
 FABLE = "claude-fable-5-1" if LEGACY else "fable"
 prompts = {"count": 0}
 cwds = {}
@@ -69,9 +70,14 @@ def option(name, default):
 
 
 SESSION = option("--session", "d847b2a3-c7b5-4459-8b0f-02fdd03031a4")
+# The id `session/fork` hands out for a copy of SESSION.
+FORK = "e958c3b4-d8c6-4560-9c13-13ee14142b5b"
 # A model this account cannot select, the way an exhausted Fable behaves.
 REFUSE_MODEL = option("--refuse-model", None)
 SLOW = float(option("--slow", "0"))
+# A turn that leaves a Bash command running in the background, whose output
+# goes to this file — as Claude Code reports it to a client that is not AIR.
+BACKGROUND = option("--background", None)
 mode = "default"
 model = "opus"
 effort = "default"
@@ -138,7 +144,7 @@ def initialize():
             "promptCapabilities": {"image": True, "embeddedContext": True},
             "mcpCapabilities": {"http": True, "sse": True},
             "loadSession": True,
-            "sessionCapabilities": {"close": {}, "delete": {}, "fork": {}, "list": {}, "resume": {}, "subagents": {}},
+            "sessionCapabilities": {"close": {}, "delete": {}, "list": {}, "resume": {}, "subagents": {}, **({} if NO_FORK else {"fork": {}})},
         },
         "agentInfo": {"name": "@agentclientprotocol/claude-agent-acp", "title": "Claude Agent", "version": "0.84.0" if LEGACY else "0.89.1"},
         "authMethods": [],
@@ -256,6 +262,17 @@ for line in sys.stdin:
         sys.stderr.flush()
         cwds[SESSION] = params.get("cwd")
         send({"jsonrpc": "2.0", "id": request, "result": {"sessionId": SESSION, "configOptions": config_options()}})
+    elif method == "session/fork":
+        # A copy of the session under a new id of the agent's own. Like a
+        # resume it does not replay the conversation it copied.
+        source = params.get("sessionId")
+        if source != SESSION:
+            send({"jsonrpc": "2.0", "id": request, "error": {"code": -32602, "message": f"no session {source}"}})
+        else:
+            sys.stderr.write("fork: " + json.dumps(params) + "\n")
+            sys.stderr.flush()
+            cwds[FORK] = params.get("cwd")
+            send({"jsonrpc": "2.0", "id": request, "result": {"sessionId": FORK, "configOptions": config_options()}})
     elif method == "session/load":
         loaded = params.get("sessionId")
         if loaded != SESSION:
@@ -305,6 +322,16 @@ for line in sys.stdin:
             })
         elif FOLLOW:
             follow_turn(params.get("sessionId"), prompt_text(params))
+            send({"jsonrpc": "2.0", "id": request, "result": {"stopReason": "end_turn"}})
+        elif BACKGROUND:
+            session_id = params.get("sessionId")
+            call = "toolu_bg1"
+            update(session_id, {"sessionUpdate": "tool_call", "toolCallId": call, "title": "Terminal", "kind": "execute", "status": "pending", "rawInput": {}, "_meta": {"claudeCode": {"toolName": "Bash"}}})
+            update(session_id, {"sessionUpdate": "tool_call_update", "toolCallId": call, "title": "pnpm app", "rawInput": {"command": "pnpm app", "description": "Build and install the app", "run_in_background": True}})
+            update(session_id, {"sessionUpdate": "tool_call_update", "toolCallId": call, "_meta": {"claudeCode": {"toolResponse": {"stdout": "", "stderr": "", "interrupted": False, "backgroundTaskId": "bmock1"}, "toolName": "Bash"}}})
+            text = f"Command running in background with ID: bmock1. Output is being written to: {BACKGROUND}. You will be notified when it completes."
+            update(session_id, {"sessionUpdate": "tool_call_update", "toolCallId": call, "status": "completed", "rawOutput": text, "content": [{"type": "content", "content": {"type": "text", "text": "```console\n" + text + "\n```"}}]})
+            say(session_id, "Started it in the background.")
             send({"jsonrpc": "2.0", "id": request, "result": {"stopReason": "end_turn"}})
         else:
             prompts["count"] += 1

@@ -93,3 +93,41 @@ export function BigThingBand({ sessionId }: { sessionId: string }) {
     </div>
   );
 }
+
+/** Notes the side session passed to this one, and the user's words after them. */
+export function SideNotesCard({ notes, own }: { notes: string[]; own: string }) {
+  const openSide = useStore((s) => s.setSessionTab);
+  return (
+    <>
+      <details className="card card-bigthing-turn card-side-note">
+        <summary title={t("Passed on by the side transcript, not written by you.")}>
+          <span className="bigthing-turn-mark" aria-hidden="true">
+            ↳
+          </span>
+          <span className="bigthing-turn-text">{notes.length === 1 ? t("Side Transcript → this session: {note}", { note: notes[0]! }) : t("Side Transcript → this session: {n} notes", { n: notes.length })}</span>
+          <button
+            className="link small"
+            onClick={(event) => {
+              event.preventDefault();
+              openSide("side");
+            }}
+            type="button"
+          >
+            {t("Open the side transcript")}
+          </button>
+        </summary>
+        <ul className="bigthing-turn-prompt">
+          {notes.map((note, index) => (
+            <li key={index}>{note}</li>
+          ))}
+        </ul>
+      </details>
+      {own && (
+        <article className="card card-user">
+          <header className="small muted">{t("You")}</header>
+          <pre className="text">{own}</pre>
+        </article>
+      )}
+    </>
+  );
+}

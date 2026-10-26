@@ -15,7 +15,7 @@ import { ProviderLogo } from "./ProviderLogo";
 import { api } from "../ipc";
 import { useStore, type SignInRun } from "../store";
 import { t } from "../i18n";
-import { windowName } from "./UsageLine";
+import { UsageMeter } from "./UsageMeter";
 import { IconDots, IconRefresh } from "./icons";
 
 /** What a provider signs in with, for someone who has not yet. */
@@ -65,18 +65,9 @@ function Meters({ provider }: { provider: Provider }) {
   const windows = [usage.primary, usage.secondary].filter((window): window is NonNullable<typeof window> => !!window);
   return (
     <>
-      {windows.map((window) => {
-        const left = Math.max(0, 100 - Math.round(window.usedPercent));
-        const name = windowName(window.windowSeconds);
-        return (
-          <span className="provider-meter" key={name} title={t("{percent}% left in the {window} window, as the provider last reported it", { percent: left, window: name })}>
-            <span className="provider-meter-bar">
-              <span className={left < 25 ? "low" : ""} style={{ width: `${left}%` }} />
-            </span>
-            <b>{left}%</b> {name}
-          </span>
-        );
-      })}
+      {windows.map((window) => (
+        <UsageMeter key={window.windowSeconds} usage={window} />
+      ))}
       {usage.limitReached && <span className="chip-warn-text">{t("limit reached")}</span>}
     </>
   );

@@ -9,6 +9,7 @@ import { Channel, invoke } from "@tauri-apps/api/core";
 import {
   COMMANDS,
   type ActivitySnapshot,
+  type BackgroundOutput,
   type EnqueueOutcome,
   type KeepAwakeStatus,
   type ProviderUpdateResult,
@@ -148,13 +149,15 @@ async function call<T>(command: string, args?: Record<string, unknown>): Promise
 
 export type OpenRequest = {
   workspaceId: string;
-  mode: { mode: "new" } | { mode: "resume"; session_id: string };
+  mode: { mode: "new" } | { mode: "resume"; session_id: string } | { mode: "fork"; session_id: string };
   /** Which provider to launch. On a resume the session's own record wins. */
   provider?: Provider;
   model?: string;
   reasoningEffort?: string;
   /** The team the session starts with; absent keeps its own, or the default. */
   combo?: Combo;
+  /** The main session's handle, for a side session of it. */
+  sideOf?: string;
 };
 
 export const api = {
@@ -172,6 +175,7 @@ export const api = {
     return call<void>(COMMANDS.sessionSubscribe, { handle, onEvent: channel });
   },
   sessionSnapshot: (handle: SessionHandle) => call<Snapshot>(COMMANDS.sessionSnapshot, { handle }),
+  sessionBackgroundOutput: (handle: SessionHandle, taskId: string) => call<BackgroundOutput>(COMMANDS.sessionBackgroundOutput, { request: { handle, taskId } }),
   sessionSubmit: (handle: SessionHandle, requestId: string, text: string, attachmentIds: string[] = [], mentions: Mention[] = []) =>
     call<{ requestId: string; outcome: SubmissionOutcome }>(COMMANDS.sessionSubmit, {
       request: { handle, requestId, text, attachmentIds, mentions },

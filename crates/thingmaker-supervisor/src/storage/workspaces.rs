@@ -58,6 +58,8 @@ pub enum SessionOrigin {
     Desktop,
     Cli,
     Unknown,
+    /// A side session: a copy of another session, shown inside it.
+    Side,
 }
 
 impl SessionOrigin {
@@ -66,6 +68,7 @@ impl SessionOrigin {
             Self::Desktop => "desktop",
             Self::Cli => "cli",
             Self::Unknown => "unknown",
+            Self::Side => "side",
         }
     }
 
@@ -73,6 +76,7 @@ impl SessionOrigin {
         match value {
             "desktop" => Self::Desktop,
             "cli" => Self::Cli,
+            "side" => Self::Side,
             _ => Self::Unknown,
         }
     }

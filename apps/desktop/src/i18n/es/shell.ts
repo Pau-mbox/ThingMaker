@@ -99,7 +99,6 @@ export const shell: Record<string, string> = {
   "Remove workspace": "Quitar espacio de trabajo",
   Cancel: "Cancelar",
   "{provider}, account-wide. Details in a session's Context tab.": "{provider}, para toda la cuenta. Detalles en la pestaña Contexto de una sesión.",
-  "{window} {percent}% left": "{window}: queda un {percent}%",
   "limit reached": "límite alcanzado",
   "Providers (⌘,): 1 update available": "Proveedores (⌘,): 1 actualización disponible",
   "Providers (⌘,): {count} updates available": "Proveedores (⌘,): {count} actualizaciones disponibles",

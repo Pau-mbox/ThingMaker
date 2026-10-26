@@ -80,7 +80,7 @@ impl EngineHost for HostEngine {
                 Some(session_id) => super::session::OpenRequestMode::Resume { session_id },
                 None => super::session::OpenRequestMode::New,
             };
-            let request = super::session::OpenRequest { workspace_id: spec.workspace_id, mode, provider: Some(spec.provider), model: spec.model, reasoning_effort: spec.effort, combo: spec.combo };
+            let request = super::session::OpenRequest { workspace_id: spec.workspace_id, mode, provider: Some(spec.provider), model: spec.model, reasoning_effort: spec.effort, combo: spec.combo, side_of: None };
             let opened = super::session::session_open(request, app.state::<AppState>()).await?;
             host.live_by(&opened.handle.id).ok_or_else(|| DesktopError::not_ready("the session opened but is not attached"))
         })

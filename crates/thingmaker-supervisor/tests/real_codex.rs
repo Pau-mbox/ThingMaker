@@ -90,3 +90,67 @@ async fn a_thread_opens_and_one_real_turn_streams_settles_and_counts() {
         None => panic!("no rollout for thread {thread}"),
     }
 }
+
+/// The text of one turn's answer, once it settles.
+async fn answer(actor: &SessionActor, request: &str, prompt: &str) -> String {
+    let mut subscription = actor.subscribe();
+    actor.submit_text(request, prompt).await.expect("submitted");
+    let mut text = String::new();
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(180);
+    loop {
+        let remaining = deadline.saturating_duration_since(tokio::time::Instant::now());
+        let Ok(Some(event)) = tokio::time::timeout(remaining, subscription.recv()).await else {
+            panic!("no settle within 180 s; text so far {text:?}");
+        };
+        match &event.payload {
+            SessionEvent::Update(SessionUpdate::AgentMessage(message)) => {
+                // A full message replaces the pieces streamed before it.
+                if message.replace {
+                    text.clear();
+                }
+                for block in &message.content {
+                    if let ContentBlock::Text { text: chunk } = block {
+                        text.push_str(chunk);
+                    }
+                }
+            }
+            SessionEvent::Turn(TurnEffect::Settled { phase, error, .. }) => {
+                assert_eq!(*phase, TurnPhase::Succeeded, "turn failed: {error:?}");
+                return text;
+            }
+            _ => {}
+        }
+    }
+}
+
+/// `thread/fork` through the bridge: the copy knows the main thread.
+#[tokio::test]
+async fn a_forked_thread_remembers_the_main_one() {
+    if std::env::var("THINGMAKER_REAL_CODEX").as_deref() != Ok("1") {
+        eprintln!("set THINGMAKER_REAL_CODEX=1 to spend real turns; skipping");
+        return;
+    }
+    let program = codex();
+    let scratch = tempfile::tempdir().unwrap();
+    let launch = || {
+        let mut options = CodexLaunchOptions::new(scratch.path(), program.clone());
+        options.permission_mode = PermissionStance::ReadOnly;
+        options.model = Some(std::env::var("THINGMAKER_REAL_CODEX_MODEL").unwrap_or_else(|_| "gpt-6-luna".into()));
+        options.effort = Some("low".into());
+        SessionActorConfig::new(LaunchTarget::executable(program.clone()), AgentLaunch::Codex(options))
+    };
+    let main = SessionActor::open(launch()).await.expect("main attached");
+    answer(&main, "m1", "Remember this code word: HERON-17. Reply with exactly OK. Do not run any commands.").await;
+    let source = main.snapshot().await.unwrap().agent_session_id.expect("a thread id");
+    let mut config = launch();
+    config.fork_from = Some(source.clone());
+    let side = SessionActor::open(config).await.expect("forked");
+    let side_id = side.snapshot().await.unwrap().agent_session_id.expect("the fork has an id");
+    assert_ne!(side_id, source);
+    let recalled = answer(&side, "s1", "What was the code word I asked you to remember? Reply with the code word only. Do not run any commands.").await;
+    eprintln!("fork {side_id} recalled {recalled:?}");
+    assert!(recalled.contains("HERON-17"), "the fork did not have the main thread: {recalled:?}");
+    let _ = side.stop().await;
+    let _ = main.stop().await;
+}
+

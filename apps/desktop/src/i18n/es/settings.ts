@@ -288,7 +288,6 @@ export const settings: Record<string, string> = {
   "signed in": "sesión iniciada",
   "not signed in": "sin sesión iniciada",
   "As the provider last reported it": "Según lo último que informó el proveedor",
-  "{window} {percent}% left": "{window}: queda un {percent}%",
   "limit reached": "límite alcanzado",
   "Switch account": "Cambiar de cuenta",
   "Sign in with subscription": "Iniciar sesión con la suscripción",

@@ -172,3 +172,124 @@ async fn a_shell_commands_result_carries_what_a_check_needs() {
     }
     let _ = actor.stop().await;
 }
+
+/// The text of one turn's answer, once it settles.
+async fn answer(actor: &SessionActor, request: &str, prompt: &str) -> String {
+    let mut subscription = actor.subscribe();
+    actor.submit_text(request, prompt).await.expect("submitted");
+    let mut text = String::new();
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(180);
+    loop {
+        let remaining = deadline.saturating_duration_since(tokio::time::Instant::now());
+        let Ok(Some(event)) = tokio::time::timeout(remaining, subscription.recv()).await else {
+            panic!("no settle within 180 s; text so far {text:?}");
+        };
+        match &event.payload {
+            SessionEvent::Update(SessionUpdate::AgentMessage(message)) => {
+                // A full message replaces the pieces streamed before it.
+                if message.replace {
+                    text.clear();
+                }
+                for block in &message.content {
+                    if let ContentBlock::Text { text: chunk } = block {
+                        text.push_str(chunk);
+                    }
+                }
+            }
+            SessionEvent::Turn(TurnEffect::Settled { phase, error, .. }) => {
+                assert_eq!(*phase, TurnPhase::Succeeded, "turn failed: {error:?}");
+                return text;
+            }
+            _ => {}
+        }
+    }
+}
+
+/// The Side Transcript's premise: a fork made by another adapter process
+/// knows the main conversation, and the main session knows nothing of it.
+#[tokio::test]
+async fn a_fork_remembers_the_main_conversation_and_the_main_session_is_untouched() {
+    if std::env::var("THINGMAKER_REAL_CLAUDE").as_deref() != Ok("1") {
+        eprintln!("set THINGMAKER_REAL_CLAUDE=1 to spend real turns; skipping");
+        return;
+    }
+    let home = std::path::PathBuf::from(std::env::var("HOME").expect("HOME"));
+    let (node, script) = locate_adapter(&home, None, std::env::var("THINGMAKER_CLAUDE_ACP").ok()).expect("claude-agent-acp is installed");
+    let scratch = tempfile::tempdir().unwrap();
+    let launch = || {
+        let mut options = ClaudeLaunchOptions::new(scratch.path(), node.clone(), vec![script.to_string_lossy().into_owned()]);
+        options.permission_mode = PermissionStance::ReadOnly;
+        options.model = std::env::var("THINGMAKER_REAL_CLAUDE_MODEL").ok().or_else(|| Some("sonnet".into()));
+        options.effort = Some("low".into());
+        SessionActorConfig::new(LaunchTarget::executable(node.clone()), AgentLaunch::Claude(options))
+    };
+    let main = SessionActor::open(launch()).await.expect("main attached");
+    let said = answer(&main, "m1", "Remember this code word: PELICAN-42. Reply with exactly OK. Do not use any tools.").await;
+    assert!(said.to_ascii_uppercase().contains("OK"), "{said:?}");
+    let source = main.snapshot().await.unwrap().agent_session_id.expect("the main session has an id");
+
+    let mut config = launch();
+    config.fork_from = Some(source.clone());
+    let side = SessionActor::open(config).await.expect("forked");
+    let side_id = side.snapshot().await.unwrap().agent_session_id.expect("the fork has an id");
+    assert_ne!(side_id, source, "the fork is a session of its own");
+    let recalled = answer(&side, "s1", "What was the code word I asked you to remember? Reply with the code word only. Do not use any tools.").await;
+    eprintln!("fork {side_id} recalled {recalled:?}");
+    assert!(recalled.contains("PELICAN-42"), "the fork did not have the main conversation: {recalled:?}");
+
+    // The main conversation did not grow from the side's turn.
+    let main_texts: Vec<String> = main.history(0, 10_000).await.unwrap().iter().filter_map(|event| match &event.payload {
+        SessionEvent::Update(SessionUpdate::UserMessage(message)) => message.content.iter().find_map(|block| if let ContentBlock::Text { text } = block { Some(text.clone()) } else { None }),
+        _ => None,
+    }).collect();
+    assert!(main_texts.iter().all(|text| !text.contains("What was the code word")), "{main_texts:?}");
+    let _ = side.stop().await;
+    let _ = main.stop().await;
+}
+
+/// A command Claude Code leaves in the background is followed to its end
+/// through its output file, with nothing asked of the adapter beyond ACP.
+#[tokio::test]
+async fn a_real_background_command_is_seen_running_and_then_ending() {
+    if std::env::var("THINGMAKER_REAL_CLAUDE").as_deref() != Ok("1") {
+        eprintln!("set THINGMAKER_REAL_CLAUDE=1 to spend a real turn; skipping");
+        return;
+    }
+    let home = std::path::PathBuf::from(std::env::var("HOME").expect("HOME"));
+    let (node, script) = locate_adapter(&home, None, std::env::var("THINGMAKER_CLAUDE_ACP").ok()).expect("claude-agent-acp is installed");
+    let scratch = tempfile::tempdir().unwrap();
+    let mut options = ClaudeLaunchOptions::new(scratch.path(), node.clone(), vec![script.to_string_lossy().into_owned()]);
+    options.permission_mode = PermissionStance::AcceptEdits;
+    options.model = std::env::var("THINGMAKER_REAL_CLAUDE_MODEL").ok().or_else(|| Some("sonnet".into()));
+    options.effort = Some("low".into());
+    let actor = SessionActor::open(SessionActorConfig::new(LaunchTarget::executable(node), AgentLaunch::Claude(options))).await.expect("attached");
+    let mut subscription = actor.subscribe();
+    actor
+        .submit_text("b1", "Use the Bash tool with run_in_background set to true to run exactly: sleep 4 && echo BG-DONE . Do not wait for it and do not check on it. Then reply with exactly OK.")
+        .await
+        .expect("submitted");
+    let (mut running, mut ended) = (None, None);
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(120);
+    while ended.is_none() {
+        let remaining = deadline.saturating_duration_since(tokio::time::Instant::now());
+        let Ok(Some(event)) = tokio::time::timeout(remaining, subscription.recv()).await else {
+            panic!("the background command was not seen ending; running {running:?}");
+        };
+        if let SessionEvent::BackgroundTask(task) = &event.payload {
+            eprintln!("background {:?} {:?} {:?} {:?}", task.task_id, task.state, task.command, task.ending);
+            if task.state == thingmaker_supervisor::supervisor::BackgroundTaskState::Running {
+                running = Some(task.clone());
+            } else {
+                ended = Some(task.clone());
+            }
+        }
+    }
+    let running = running.expect("it was seen running first");
+    assert!(running.command.as_deref().unwrap_or_default().contains("BG-DONE"), "{running:?}");
+    assert!(running.output_path.is_some(), "{running:?}");
+    let ended = ended.unwrap();
+    assert_eq!(ended.state, thingmaker_supervisor::supervisor::BackgroundTaskState::Completed, "{ended:?}");
+    assert_eq!(ended.exit_code, Some(0));
+    let _ = actor.stop().await;
+}
+

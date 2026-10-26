@@ -215,12 +215,37 @@ export type SessionEvent =
   /** The prompts waiting for the running turn, whole, after any change. */
   | ({ type: "queue" } & QueueView)
   | { type: "detached_call"; callId: string; state: DetachedCallState }
+  /** A command the agent left running in the background, whole, when it
+   *  starts and when it ends. */
+  | ({ type: "background_task" } & BackgroundTask)
   /** What the workspace's trust state answered
    *  (docs/plans/odyssey-second-orchestrator.md §2.2). */
   | { type: "permission_request"; requestId: string; title: string | null; decision: "cancelled" | "allowed" }
   | ({ type: "exited" } & ExitInfo)
   | { type: "overflow"; stream: "stdout" | "stderr"; bytes: number; limit: number; fatal: boolean }
   | { type: "snapshot_needed"; reason: string; skipped?: number };
+
+export type BackgroundTaskState = "running" | "completed" | "failed" | "stopped";
+
+/** A command the agent left running in the background (Claude Code's Bash
+ *  with `run_in_background`), followed through its output file. */
+export type BackgroundTask = {
+  taskId: string;
+  /** The tool call that started it. */
+  toolCallId: string;
+  command?: string;
+  description?: string;
+  outputPath?: string;
+  state: BackgroundTaskState;
+  exitCode?: number;
+  /** How it ended, in the words of its output's last line. */
+  ending?: string;
+  startedAtUnixMs: number;
+  endedAtUnixMs?: number;
+};
+
+/** The end of a background command's output, and the whole file's length. */
+export type BackgroundOutput = { text: string; bytes: number };
 
 export type EventEnvelope = {
   apiVersion: typeof DESKTOP_API_VERSION;
@@ -245,6 +270,8 @@ export type Snapshot = {
   autonomousTurns: number[];
   detachedCalls: Record<string, DetachedCallState>;
   toolCalls: Record<string, ToolPatch>;
+  /** Commands the agent left running in the background, oldest first. */
+  backgroundTasks?: BackgroundTask[];
   configOptions: unknown;
   availableCommands: { name: string; description?: string }[];
   pendingSteers: string[];
@@ -387,7 +414,7 @@ export type SessionRecord = {
    *  (Claude Code's ai-title, Codex's thread name) or its first prompt. ""
    *  means it was looked for and there is none. A rename wins over it. */
   autoTitle?: string;
-  origin: "desktop" | "cli" | "unknown";
+  origin: "desktop" | "cli" | "unknown" | "side";
   archiveState: "active" | "archived" | "unavailable";
   pinned: boolean;
   lastSeen?: number;
@@ -1140,7 +1167,7 @@ export type TerminalEvent = { type: "output"; dataBase64: string } | { type: "ex
 
 export type TerminalOpened = { info: TerminalInfo; workspaceId: string; environmentNote: string };
 
-export type OpenSessionEntry = { handle: SessionHandle; workspaceId: string | null; root: string; agentSessionId: string };
+export type OpenSessionEntry = { handle: SessionHandle; workspaceId: string | null; root: string; agentSessionId: string; /** The main session's handle, for a side session. */ sideOf?: string };
 
 export type OutboxRecord = {
   requestId: string;
@@ -1494,6 +1521,7 @@ export const COMMANDS = {
   sessionOpen: "session_open",
   sessionSubscribe: "session_subscribe",
   sessionSnapshot: "session_snapshot",
+  sessionBackgroundOutput: "session_background_output",
   sessionSubmit: "session_submit",
   sessionSteer: "session_steer",
   sessionEnqueue: "session_enqueue",

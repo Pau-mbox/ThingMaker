@@ -20,6 +20,7 @@ style as the English. Keep these terms consistent across every catalog.
 | transcript | transcripción |
 | conversation (the session tab) | conversación |
 | board (Big Thing board) | tablero |
+| Side Transcript (side session) | transcripción paralela |
 | settings | ajustes |
 | provider | proveedor |
 | sign in / signed in | iniciar sesión / con la sesión iniciada |

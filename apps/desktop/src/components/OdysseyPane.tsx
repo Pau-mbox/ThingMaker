@@ -474,11 +474,14 @@ function MoveMenu({ sessionId }: { sessionId: string }) {
   const moveTo = useStore((s) => s.odysseyMoveTo);
   const sessions = useStore((s) => s.sessions);
   const goals = useStore((s) => s.odyssey);
+  const sides = useStore((s) => s.sides);
   const here = sessions[sessionId];
   if (!here) return null;
   // A session already driving a live goal cannot take this one: the record
   // allows exactly one live goal per session, and the move would be refused.
-  const others = Object.entries(sessions).filter(([key, session]) => key !== sessionId && session.workspaceId === here.workspaceId && !goals[key]);
+  // A side session lives inside another one and is not a place to move to.
+  const sideIds = new Set(Object.values(sides));
+  const others = Object.entries(sessions).filter(([key, session]) => key !== sessionId && session.workspaceId === here.workspaceId && !goals[key] && !sideIds.has(key));
   return (
     <>
       <button aria-expanded={open} className="link small" onClick={() => setOpen(!open)} type="button">

@@ -1314,6 +1314,57 @@ code {
   text-overflow: ellipsis;
 }
 
+/* The Side Transcript: a session inside a session. */
+.side-pane {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.side-bar {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 6px 22px;
+  border-bottom: 1px dashed var(--border-strong);
+}
+
+.side-bar .muted {
+  flex: 1;
+  min-width: 0;
+}
+
+.session-panel-embedded {
+  flex: 1;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+
+.side-empty {
+  align-items: flex-start;
+  justify-content: center;
+  gap: 8px;
+  max-width: 560px;
+  margin: 0 auto;
+  padding: 24px;
+}
+
+.side-empty h3 {
+  margin: 0;
+}
+
+.side-empty p {
+  margin: 0;
+}
+
+.card-side-note ul {
+  margin: 8px 0 2px;
+  padding-left: 18px;
+}
+
 /* Where a jump from the other view landed. */
 .jump-flash {
   animation: jump-flash 1.6s ease-out;
@@ -1711,7 +1762,7 @@ code {
   border-color: rgba(255, 255, 255, 0.28);
 }
 
-/* Two lines at rest, four at most, then scroll. The line box is pinned so the
+/* One line at rest, four at most, then scroll. The line box is pinned so the
    min and max are exact multiples of a line rather than guesses. */
 .composer-card .textarea {
   --composer-line: 20px;
@@ -1724,8 +1775,15 @@ code {
   line-height: var(--composer-line);
   resize: none;
   overflow-y: auto;
-  min-height: calc(2 * var(--composer-line) + var(--composer-padding));
+  min-height: calc(1 * var(--composer-line) + var(--composer-padding));
   max-height: calc(4 * var(--composer-line) + var(--composer-padding));
+}
+
+/* At one line the hint stays on it, cut with an ellipsis when it is long. */
+.composer-card .textarea::placeholder {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .composer-card .textarea:focus-visible {
@@ -6243,6 +6301,120 @@ html[data-platform="android"] { --traffic-lights: 8px; --titlebar: 52px; height:
 }
 
 /* A provider program has a newer release (Providers button). */
+/* Background tasks: green while any runs, grey once all have ended. */
+.tab-icon .badge-dot {
+  top: 1px;
+  right: 1px;
+  box-shadow: 0 0 0 2px var(--panel);
+}
+
+.badge-dot-running {
+  background: var(--ok);
+}
+
+.badge-dot-ended {
+  background: var(--muted);
+}
+
+.bg-tasks {
+  width: 440px;
+  max-width: calc(100vw - 16px);
+  max-height: min(60vh, 520px);
+  overflow: auto;
+  padding: 8px;
+  gap: 6px;
+}
+
+.bg-tasks-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 2px 4px 4px;
+}
+
+.bg-tasks-empty {
+  margin: 4px;
+}
+
+.bg-tasks-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.bg-task-head {
+  width: 100%;
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 6px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+}
+
+.bg-task-head:hover {
+  background: var(--panel-3);
+}
+
+.bg-task-mark {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  margin-top: 5px;
+  border-radius: 50%;
+  background: var(--muted);
+}
+
+.bg-task-running .bg-task-mark {
+  background: var(--ok);
+  box-shadow: 0 0 0 3px rgba(143, 211, 161, 0.18);
+}
+
+.bg-task-failed .bg-task-mark {
+  background: var(--error);
+}
+
+.bg-task-what {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.bg-task-command {
+  font-size: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.bg-task-output {
+  margin: 0 6px 6px 22px;
+}
+
+.bg-task-output pre {
+  margin: 4px 0;
+  max-height: 220px;
+  overflow: auto;
+  font-size: 11.5px;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.bg-task-path {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .icon-button:has(.badge-dot) {
   position: relative;
 }
@@ -6534,6 +6706,36 @@ html[data-platform="android"] { --traffic-lights: 8px; --titlebar: 52px; height:
 
 .provider-meter-bar span.low {
   background: var(--warn);
+}
+
+/* The same meters in the sidebar footer, one row per provider, the bars
+   stretching so the columns line up. */
+.sidebar-meters {
+  display: grid;
+  grid-template-columns: minmax(0, max-content) minmax(min-content, 1fr) minmax(min-content, 1fr);
+  align-items: center;
+  gap: 6px 10px;
+}
+
+.sidebar-meter-row {
+  display: contents;
+}
+
+.sidebar-meter-name {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.sidebar-meters .provider-meter {
+  min-width: 0;
+  white-space: nowrap;
+}
+
+.sidebar-meters .provider-meter-bar {
+  flex: 1;
+  width: auto;
+  min-width: 10px;
 }
 
 .provider-actions {

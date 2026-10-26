@@ -51,7 +51,10 @@ use crate::{
     transport::{ExitInfo, Incoming, RequestId, TransportError, jsonrpc, limits},
 };
 
-use super::connection::Connection;
+use super::{
+    background::{self, BackgroundTask, BackgroundTaskState},
+    connection::Connection,
+};
 
 /// Envelopes retained per actor for history replay. Beyond this the oldest
 /// are dropped and `Snapshot::history_dropped` reports the gap.
@@ -96,6 +99,9 @@ pub struct SessionActorConfig {
     /// own servers (the ThingMaker one, for an orchestrator), never the user's
     /// configuration files.
     pub mcp_servers: Vec<Value>,
+    /// Opens the session as a copy of this one (ACP `session/fork`), with its
+    /// whole conversation as context, instead of a fresh `session/new`.
+    pub fork_from: Option<String>,
 }
 
 impl SessionActorConfig {
@@ -112,6 +118,7 @@ impl SessionActorConfig {
             attachment_generation: 1,
             event_capacity: 4096,
             mcp_servers: Vec::new(),
+            fork_from: None,
         }
     }
 }
@@ -247,6 +254,8 @@ pub struct Snapshot {
     pub autonomous_turns: Vec<i64>,
     pub detached_calls: BTreeMap<String, DetachedCallState>,
     pub tool_calls: BTreeMap<String, ToolPatch>,
+    /// Commands the agent left running in the background, oldest first.
+    pub background_tasks: Vec<BackgroundTask>,
     pub config_options: Value,
     pub available_commands: Vec<AvailableCommand>,
     pub pending_steers: Vec<String>,
@@ -289,6 +298,9 @@ enum Command {
     Snapshot {
         reply: oneshot::Sender<Snapshot>,
     },
+    BackgroundTasks {
+        reply: oneshot::Sender<Vec<BackgroundTask>>,
+    },
     History {
         after: u64,
         limit: usize,
@@ -321,6 +333,14 @@ enum Internal {
     Stopped {
         exit: ExitInfo,
         reply: Reply<ExitInfo>,
+    },
+    /// A background command's output file says how it ended.
+    BackgroundEnded {
+        task_id: String,
+        state: BackgroundTaskState,
+        exit_code: Option<i64>,
+        ending: String,
+        ended_at_unix_ms: i64,
     },
 }
 
@@ -378,6 +398,7 @@ impl SessionActor {
             agent_session_id: None,
             tool_calls: BTreeMap::new(),
             detached: BTreeMap::new(),
+            background: BTreeMap::new(),
             config_options: Value::Array(Vec::new()),
             available_commands: Vec::new(),
             pending_steers: BTreeSet::new(),
@@ -519,6 +540,17 @@ impl SessionActor {
             .map_err(|_| DesktopError::not_ready("session actor dropped the history reply"))
     }
 
+    /// The commands this session's agent left running in the background,
+    /// running or ended, oldest first.
+    pub async fn background_tasks(&self) -> Result<Vec<BackgroundTask>, DesktopError> {
+        let (reply_tx, reply_rx) = oneshot::channel();
+        self.commands
+            .send(Command::BackgroundTasks { reply: reply_tx })
+            .await
+            .map_err(|_| DesktopError::not_ready("session actor has stopped"))?;
+        reply_rx.await.map_err(|_| DesktopError::not_ready("session actor has stopped"))
+    }
+
     pub async fn snapshot(&self) -> Result<Snapshot, DesktopError> {
         let (reply_tx, reply_rx) = oneshot::channel();
         self.commands
@@ -553,6 +585,8 @@ struct ActorState {
     agent_session_id: Option<String>,
     tool_calls: BTreeMap<String, ToolPatch>,
     detached: BTreeMap<String, DetachedCallState>,
+    /// Background commands by task id.
+    background: BTreeMap<String, BackgroundTask>,
     config_options: Value,
     available_commands: Vec<AvailableCommand>,
     pending_steers: BTreeSet<String>,
@@ -868,6 +902,121 @@ impl ActorState {
         }
     }
 
+    /// Background commands, oldest first.
+    fn background_list(&self) -> Vec<BackgroundTask> {
+        let mut tasks: Vec<BackgroundTask> = self.background.values().cloned().collect();
+        tasks.sort_by_key(|task| task.started_at_unix_ms);
+        tasks
+    }
+
+    /// Records a command a tool result says it left running, and follows
+    /// its output file once the result names it.
+    fn note_background(&mut self, tool_call_id: &str, patch: &ToolPatch) {
+        let Some((task_id, path)) = background::spawned(patch) else { return };
+        let input = |key: &str| patch.raw_input.as_ref().and_then(|input| input.get(key)).and_then(Value::as_str).map(str::to_string);
+        let replaying = self.attachment == AttachmentState::Replaying;
+        let watch = match self.background.get_mut(&task_id) {
+            Some(task) => {
+                let before = task.clone();
+                task.command = task.command.take().or_else(|| input("command"));
+                task.description = task.description.take().or_else(|| input("description"));
+                let found = task.output_path.is_none() && path.is_some();
+                if found {
+                    task.output_path = path.clone();
+                }
+                if *task != before {
+                    let task = task.clone();
+                    self.emit(SessionEvent::BackgroundTask(task));
+                }
+                found
+            }
+            None => {
+                // A replayed task started when its file was made, not now.
+                let started = path.as_deref().filter(|_| replaying).and_then(|path| std::fs::metadata(path).ok()).and_then(|meta| meta.created().or_else(|_| meta.modified()).ok()).map(unix_ms).unwrap_or_else(|| now_unix_ms() as i64);
+                let task = BackgroundTask {
+                    task_id: task_id.clone(),
+                    tool_call_id: tool_call_id.to_string(),
+                    command: input("command"),
+                    description: input("description"),
+                    output_path: path.clone(),
+                    state: BackgroundTaskState::Running,
+                    exit_code: None,
+                    ending: None,
+                    started_at_unix_ms: started,
+                    ended_at_unix_ms: None,
+                };
+                self.background.insert(task_id.clone(), task.clone());
+                self.emit(SessionEvent::BackgroundTask(task));
+                path.is_some()
+            }
+        };
+        if watch && let Some(path) = path {
+            self.watch_background(task_id, path);
+        }
+    }
+
+    /// Checks a background command's output file once a second — its size,
+    /// and its last line when the size changed — until that line says how
+    /// it ended, or the actor is gone.
+    fn watch_background(&self, task_id: String, path: String) {
+        let path = std::path::PathBuf::from(path);
+        if !background::is_task_output(&path) {
+            return;
+        }
+        let internal = self.internal.clone();
+        tokio::spawn(async move {
+            let mut seen: Option<u64> = None;
+            let mut missing = 0u32;
+            while !internal.is_closed() {
+                let file = path.clone();
+                let read = tokio::task::spawn_blocking(move || -> std::io::Result<(u64, Option<String>, i64)> {
+                    let meta = std::fs::metadata(&file)?;
+                    let modified = meta.modified().map(unix_ms).unwrap_or_else(|_| now_unix_ms() as i64);
+                    if Some(meta.len()) == seen {
+                        return Ok((meta.len(), None, modified));
+                    }
+                    let (length, tail) = background::read_tail(&file, 512)?;
+                    Ok((length, Some(tail), modified))
+                })
+                .await;
+                match read {
+                    Ok(Ok((length, tail, modified))) => {
+                        missing = 0;
+                        seen = Some(length);
+                        if let Some((state, exit_code, ending)) = tail.as_deref().and_then(background::ending) {
+                            let _ = internal.send(Internal::BackgroundEnded { task_id, state, exit_code, ending, ended_at_unix_ms: modified }).await;
+                            return;
+                        }
+                    }
+                    _ => {
+                        missing += 1;
+                        if missing >= 10 {
+                            let ending = "[its output file is gone]".to_string();
+                            let _ = internal.send(Internal::BackgroundEnded { task_id, state: BackgroundTaskState::Stopped, exit_code: None, ending, ended_at_unix_ms: now_unix_ms() as i64 }).await;
+                            return;
+                        }
+                    }
+                }
+                time::sleep(Duration::from_secs(1)).await;
+            }
+        });
+    }
+
+    /// Commands still running when the session ends end with it.
+    fn end_background(&mut self, ending: &str) {
+        let now = now_unix_ms() as i64;
+        let running: Vec<String> = self.background.values().filter(|task| task.state == BackgroundTaskState::Running).map(|task| task.task_id.clone()).collect();
+        for id in running {
+            if let Some(task) = self.background.get_mut(&id) {
+                task.state = BackgroundTaskState::Stopped;
+                task.ending = Some(ending.to_string());
+                task.ended_at_unix_ms = Some(now);
+                let task = task.clone();
+                self.emit(SessionEvent::BackgroundTask(task));
+            }
+        }
+    }
+
     fn handle_update(&mut self, update: SessionUpdate) {
         self.last_progress = Instant::now();
         match &update {
@@ -900,6 +1049,9 @@ impl ActorState {
                     };
                     if let Some(event) = event {
                         self.emit(SessionEvent::RuntimeEvent(event));
+                    }
+                    if self.launch.provider() == Provider::Claude {
+                        self.note_background(&id, &merged);
                     }
                     self.tool_calls.insert(id.clone(), merged);
                     if background {
@@ -1117,6 +1269,7 @@ impl ActorState {
             self.emit_queue();
         }
         self.set_attachment(AttachmentState::Detached);
+        self.end_background("[the session ended first]");
         if !self.exited_emitted {
             self.exited_emitted = true;
             self.emit(SessionEvent::Exited(info));
@@ -1484,6 +1637,9 @@ impl ActorState {
             Command::Snapshot { reply } => {
                 let _ = reply.send(self.snapshot());
             }
+            Command::BackgroundTasks { reply } => {
+                let _ = reply.send(self.background_list());
+            }
             Command::History { after, limit, reply } => {
                 let events: Vec<Arc<EventEnvelope>> = self
                     .history
@@ -1550,6 +1706,7 @@ impl ActorState {
             autonomous_turns: self.reducer.active_autonomous(),
             detached_calls: self.detached.clone(),
             tool_calls: self.tool_calls.clone(),
+            background_tasks: self.background_list(),
             config_options: self.config_options.clone(),
             available_commands: self.available_commands.clone(),
             pending_steers: self.pending_steers.iter().cloned().collect(),
@@ -1572,6 +1729,7 @@ impl ActorState {
         let exit = self.transport.shutdown(self.config.timeouts.shutdown).await;
         self.exit = Some(exit.clone());
         self.set_process(ProcessState::Exited);
+        self.end_background("[the session ended first]");
         if !self.exited_emitted {
             self.exited_emitted = true;
             self.emit(SessionEvent::Exited(exit));
@@ -1589,6 +1747,12 @@ impl ActorState {
                     Ok(value) => CapabilitySnapshot::from_initialize(&value),
                     Err(error) => Err(errors::map_transport_error(error)),
                 };
+                // A fork the agent cannot make is refused here, before the
+                // session exists, so the caller can fall back to something else.
+                let result = result.and_then(|snapshot| match &self.config.fork_from {
+                    Some(_) if !snapshot.supports_fork => Err(DesktopError::unsupported(format!("{} cannot copy a session with its context", self.launch.provider().label()))),
+                    _ => Ok(snapshot),
+                });
                 match result {
                     Ok(snapshot) => {
                         self.capabilities = Some(snapshot.clone());
@@ -1617,6 +1781,12 @@ impl ActorState {
                                 None,
                                 Internal::AttachResult,
                             );
+                        } else if let Some(source) = self.config.fork_from.clone() {
+                            // The copy is made from the agent's transcript on
+                            // disk, which can take a while for a long session.
+                            params["sessionId"] = Value::String(source);
+                            self.set_attachment(AttachmentState::New);
+                            self.spawn_request("session/fork", params, self.config.timeouts.turn, None, Internal::AttachResult);
                         } else {
                             self.set_attachment(AttachmentState::New);
                             self.spawn_request("session/new", params, control, None, Internal::AttachResult);
@@ -1859,6 +2029,18 @@ impl ActorState {
                 };
                 let _ = reply.send(outcome);
             }
+            Internal::BackgroundEnded { task_id, state, exit_code, ending, ended_at_unix_ms } => {
+                if let Some(task) = self.background.get_mut(&task_id)
+                    && task.state == BackgroundTaskState::Running
+                {
+                    task.state = state;
+                    task.exit_code = exit_code;
+                    task.ending = Some(ending);
+                    task.ended_at_unix_ms = Some(ended_at_unix_ms);
+                    let task = task.clone();
+                    self.emit(SessionEvent::BackgroundTask(task));
+                }
+            }
             Internal::Stopped { exit, reply } => {
                 if self.exit.is_none() {
                     self.handle_exit(exit.clone());
@@ -2008,6 +2190,11 @@ fn allow_option(params: Option<&Value>) -> Option<String> {
             .map(str::to_string)
     };
     by_kind("allow_once").or_else(|| by_kind("allow_always"))
+}
+
+/// A file time as the milliseconds the interface counts in.
+fn unix_ms(time: std::time::SystemTime) -> i64 {
+    time.duration_since(std::time::UNIX_EPOCH).map(|elapsed| elapsed.as_millis() as i64).unwrap_or(0)
 }
 
 fn now_unix_ms() -> u64 {

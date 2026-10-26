@@ -202,15 +202,29 @@ impl TeamExtension for Engine {
 }
 
 impl Engine {
-    /// The goal running on the caller's orchestrator session, if any.
+    /// The goal running on the caller's orchestrator session, if any. A side
+    /// session answers for its main session's goal.
     fn goal_for_caller(&self, caller: &Caller) -> Option<OdysseyRecord> {
-        let handle = caller.orchestrator();
+        let own = caller.orchestrator();
+        let side_of = self.side_main(own);
+        let handle = side_of.as_deref().unwrap_or(own);
         let known = self.inner.session_goal.lock().unwrap_or_else(|poisoned| poisoned.into_inner()).get(handle).cloned();
         if let Some(goal_id) = known {
             return self.db(|storage| storage.odyssey_get(&goal_id)).ok().flatten();
         }
         let goals = self.db(|storage| storage.odyssey_active()).ok()?;
-        goals.into_iter().find(|goal| goal.session_id.as_deref().and_then(|row| self.inner.host.live(row)).is_some_and(|live| live.handle == handle))
+        let goal = goals.into_iter().find(|goal| goal.session_id.as_deref().and_then(|row| self.inner.host.live(row)).is_some_and(|live| live.handle == handle))?;
+        // A held run's session is not watched; it has to be for what this
+        // call says to land when the turn ends.
+        if side_of.is_none() {
+            self.adopt_soon(&goal, handle);
+        }
+        Some(goal)
+    }
+
+    /// The main session, when the caller is a side session of it.
+    fn side_caller(&self, caller: &Caller) -> Option<String> {
+        matches!(caller, Caller::Orchestrator { .. }).then(|| self.side_main(caller.orchestrator())).flatten()
     }
 
     fn workspace_for(&self, caller: &Caller) -> Result<String, String> {
@@ -259,6 +273,9 @@ impl Engine {
                     .collect();
                 Ok(json!({ "goal": goal.title, "state": goal.state.as_str(), "milestones": milestones }))
             }
+            "bigthing_report" | "bigthing_propose_plan" if self.side_caller(caller).is_some() => Err(
+                "This is a side conversation. Milestones are reported, and plans proposed, by the main session that runs the goal. You can change the plan with bigthing_amend, move tasks with bigthing_task, or ask the user with bigthing_ask.".into(),
+            ),
             "bigthing_report" => {
                 let goal = self.running_goal(caller)?;
                 let loaded = self.load(&goal.id).map_err(|error| error.message)?;
@@ -327,6 +344,9 @@ impl Engine {
                     let who = line.agent.clone().unwrap_or_else(|| "the orchestrator".into());
                     let finished = self.task_finished(&goal, &loaded.milestones, milestone - 1, task - 1, Some(&line.note), &line.note, &who);
                     self.changed(&goal.id);
+                    if let Some(main) = self.side_caller(caller) {
+                        self.tell_main(&main, &format!("Task {milestone}.{task} \"{}\" was marked done from the side transcript{}.", step.title, if line.note.is_empty() { String::new() } else { format!(": {}", line.note) }));
+                    }
                     return Ok(match finished {
                         Finished::SentBack => json!({ "recorded": true, "task": format!("{milestone}.{task}"), "status": "sent_back", "note": "Its verdict asked for changes, so the work went back: the tasks of that loop are open again, with what was asked. Do them again before this one." }),
                         Finished::AskedYou => json!({ "recorded": true, "task": format!("{milestone}.{task}"), "status": "waiting_for_user", "note": "Its loop has used its rounds, so Big Thing asked the user what to do. Carry on with tasks that do not wait on it." }),
@@ -336,6 +356,11 @@ impl Engine {
                 }
                 // Applied now as well as at the settle: the board is live.
                 let _ = self.db(|storage| storage.step_set_state(&step.id, status.step_state(), Some(&line.note).filter(|note| !note.is_empty()).map(String::as_str)));
+                if let Some(main) = self.side_caller(caller) {
+                    self.tell_main(&main, &format!("Task {milestone}.{task} \"{}\" was marked {}{}.", step.title, string(arguments, "status").unwrap_or_default().replace('_', " "), if line.note.is_empty() { String::new() } else { format!(": {}", line.note) }));
+                    self.changed(&goal.id);
+                    return Ok(json!({ "recorded": true, "task": format!("{milestone}.{task}"), "status": string(arguments, "status"), "note": "Applied now. The main session is told." }));
+                }
                 self.with_inbox(&goal.id, |inbox| inbox.tasks.push(line));
                 self.changed(&goal.id);
                 Ok(json!({ "recorded": true, "task": format!("{milestone}.{task}"), "status": string(arguments, "status") }))
@@ -345,6 +370,12 @@ impl Engine {
                 let question = string(arguments, "question").ok_or("bigthing_ask needs a question")?;
                 let options = arguments.get("options").and_then(Value::as_array).map(|options| options.iter().filter_map(Value::as_str).map(str::to_string).collect()).unwrap_or_default();
                 let ask = Ask { kind: ask_kind(string(arguments, "kind").as_deref()), fallback: string(arguments, "default").unwrap_or_default(), options, question };
+                if self.side_caller(caller).is_some() {
+                    let loaded = self.load(&goal.id).map_err(|error| error.message)?;
+                    self.read_asks(&loaded, std::slice::from_ref(&ask));
+                    self.changed(&goal.id);
+                    return Ok(json!({ "recorded": true, "note": "The user sees it in the Big Thing inbox now." }));
+                }
                 self.with_inbox(&goal.id, |inbox| inbox.asks.push(ask));
                 Ok(json!({ "recorded": true, "note": "The user sees it when this turn ends. Carry on with your default; the answer arrives on a later continuation." }))
             }
@@ -385,6 +416,19 @@ impl Engine {
                     OnPlanChange::Review => true,
                     OnPlanChange::TasksAuto => ops.iter().any(protocol::AmendOp::is_milestone_scope),
                 };
+                if let Some(main) = self.side_caller(caller) {
+                    // A side conversation has no turn of the run's to wait
+                    // for: the change is applied (or put to the user) now, and
+                    // the session doing the work is told.
+                    self.apply_amendment(&goal, Amendment { ops, notes: Vec::new() });
+                    self.tell_main(&main, &format!("The Big Thing plan was {} from the side transcript: {}", if held { "proposed for a change (waiting for the user's decision)" } else { "changed" }, diff.replace('\n', "; ")));
+                    self.changed(&goal.id);
+                    return Ok(json!({
+                        "recorded": true,
+                        "diff": diff,
+                        "note": if held { "Changes to what a milestone is wait for the user in the Big Thing inbox; the rest is applied now. The main session is told." } else { "Applied now. The main session is told." }
+                    }));
+                }
                 self.with_inbox(&goal.id, |inbox| inbox.amendment = Some(Amendment { ops, notes: Vec::new() }));
                 Ok(json!({
                     "recorded": true,

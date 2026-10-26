@@ -6,7 +6,7 @@ import { PROVIDERS, PROVIDER_LABELS } from "@thingmaker/contracts";
 import { useStore, sessionTitle, basenameOf as basename } from "../store";
 import { api } from "../ipc";
 import { ProviderBadge } from "./ProviderMark";
-import { windowName } from "./UsageLine";
+import { UsageMeter } from "./UsageMeter";
 import { t } from "../i18n";
 import {
   IconChevron,
@@ -369,7 +369,8 @@ export function Sidebar() {
     // has is a tombstone and is left out.
     const liveAgentIds = new Set(live.map((session) => session.snapshot.agentSessionId).filter((id): id is string => !!id));
     const storedRows: Row[] = workspaceRecords
-      .filter((record) => !liveAgentIds.has(record.agentSessionId) && record.archiveState !== "unavailable")
+      // A side session is shown inside its main session, not in the list.
+      .filter((record) => !liveAgentIds.has(record.agentSessionId) && record.archiveState !== "unavailable" && record.origin !== "side")
       .map((record) => ({
         workspaceId: workspace.id,
         project,
@@ -629,17 +630,20 @@ export function Sidebar() {
       )}
 
       <div className="sidebar-footer">
-        {PROVIDERS.map((provider) => {
-          const snapshot = usage[provider];
-          if (!snapshot?.primary) return null;
-          const windows = [snapshot.primary, snapshot.secondary].filter((w): w is NonNullable<typeof w> => !!w);
-          return (
-            <div className="status-line small muted" key={provider} title={t("{provider}, account-wide. Details in a session's Context tab.", { provider: `${PROVIDER_LABELS[provider]}${snapshot.planType ? ` (${snapshot.planType})` : ""}` })}>
-              {PROVIDER_LABELS[provider]} · {windows.map((w) => t("{window} {percent}% left", { window: windowName(w.windowSeconds), percent: Math.max(0, 100 - Math.round(w.usedPercent)) })).join(" · ")}
-              {snapshot.limitReached ? ` · ${t("limit reached")}` : ""}
-            </div>
-          );
-        })}
+        {PROVIDERS.some((provider) => usage[provider]?.primary) && <div className="sidebar-meters small muted">
+          {PROVIDERS.map((provider) => {
+            const snapshot = usage[provider];
+            if (!snapshot?.primary) return null;
+            const title = t("{provider}, account-wide. Details in a session's Context tab.", { provider: `${PROVIDER_LABELS[provider]}${snapshot.planType ? ` (${snapshot.planType})` : ""}` });
+            return (
+              <div className="sidebar-meter-row" key={provider} title={snapshot.limitReached ? `${title} · ${t("limit reached")}` : title}>
+                <span className={`sidebar-meter-name ${snapshot.limitReached ? "chip-warn-text" : ""}`}>{PROVIDER_LABELS[provider]}</span>
+                <UsageMeter usage={snapshot.primary} />
+                {snapshot.secondary ? <UsageMeter usage={snapshot.secondary} /> : <span />}
+              </div>
+            );
+          })}
+        </div>}
         {IS_REMOTE && <PhoneAppSettings />}
         <div className="row remote-hidden">
           <button

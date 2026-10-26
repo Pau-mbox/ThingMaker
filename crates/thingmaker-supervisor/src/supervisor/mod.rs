@@ -5,12 +5,14 @@
 //! subscription. Every command resolves exactly once with a result or a typed
 //! error (F11).
 
+pub mod background;
 pub mod connection;
 pub mod events;
 pub mod session_actor;
 pub mod state;
 
 pub use crate::agents::{AgentLaunch, Provider};
+pub use background::{BackgroundTask, BackgroundTaskState};
 pub use events::{EventEnvelope, EventSubscription, SessionEvent};
 pub use session_actor::{
     EnqueueOutcome, QueueOp, QueueReply, QueueView, QueuedPrompt, QueuedPromptView, SessionActor, SessionActorConfig,

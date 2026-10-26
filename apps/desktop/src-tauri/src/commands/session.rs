@@ -41,6 +41,9 @@ use crate::state::AppState;
 pub enum OpenRequestMode {
     New,
     Resume { session_id: String },
+    /// A copy of the agent's session `session_id`, with its whole
+    /// conversation as context: a side session of it.
+    Fork { session_id: String },
 }
 
 #[derive(Debug, Deserialize)]
@@ -60,6 +63,10 @@ pub struct OpenRequest {
     /// the user's default.
     #[serde(default)]
     pub combo: Option<Combo>,
+    /// The attachment handle of the main session this one is a side session
+    /// of. Its run tools then act on the main session's goal.
+    #[serde(default)]
+    pub side_of: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -177,7 +184,7 @@ pub(crate) fn launch_environment(state: &AppState) -> EnvironmentProfile {
 pub async fn session_open(request: OpenRequest, state: State<'_, AppState>) -> CommandResult<OpenResponse> {
     let record = trusted_workspace(&state, &request.workspace_id)?;
     let session_id = match &request.mode {
-        OpenRequestMode::New => SessionId::reserve(),
+        OpenRequestMode::New | OpenRequestMode::Fork { .. } => SessionId::reserve(),
         OpenRequestMode::Resume { session_id } => SessionId::new(session_id.clone())?,
     };
     // By the handle, and by the agent's own id: a worker opened by a
@@ -190,7 +197,7 @@ pub async fn session_open(request: OpenRequest, state: State<'_, AppState>) -> C
         ));
     }
     let recorded = match &request.mode {
-        OpenRequestMode::Resume { session_id } => state
+        OpenRequestMode::Resume { session_id } | OpenRequestMode::Fork { session_id } => state
             .with_storage(|storage| storage.session_by_agent_id(&record.id, session_id))
             .map_err(storage_error)?
             .map(|session| session.provider),
@@ -210,6 +217,11 @@ pub async fn session_open(request: OpenRequest, state: State<'_, AppState>) -> C
             "The transcript for this {} session could not be found. Its record is retained and will reappear when the transcript is available again.",
             provider.label()
         )));
+    }
+    if let OpenRequestMode::Fork { session_id } = &request.mode
+        && !transcript_exists(&state, provider, Path::new(&record.canonical_root), session_id)
+    {
+        return Err(DesktopError::not_ready("This session has no conversation to copy yet. Send it a message first."));
     }
     // The user's orchestrator settings, read once so the launch can fall back
     // to the built-in preference without the storage call happening twice.
@@ -235,7 +247,7 @@ pub async fn session_open(request: OpenRequest, state: State<'_, AppState>) -> C
     };
     let resume = match &request.mode {
         OpenRequestMode::Resume { session_id } => Some(session_id.clone()),
-        OpenRequestMode::New => None,
+        OpenRequestMode::New | OpenRequestMode::Fork { .. } => None,
     };
     let opened_model = model.clone();
     let (target, mut launch) = build_launch(&state, &record, provider, model, effort, resume, session_id.clone())?;
@@ -244,11 +256,15 @@ pub async fn session_open(request: OpenRequest, state: State<'_, AppState>) -> C
     let mut config = SessionActorConfig::new(target, launch.clone());
     config.environment = launch_environment(&state).with_program_dir(&program);
     config.attachment_generation = generation;
+    if let OpenRequestMode::Fork { session_id } = &request.mode {
+        config.fork_from = Some(session_id.clone());
+    }
 
     // Every session the user opens leads a team, even an empty one: workers
     // can be added while it runs.
+    // A fork starts with its main session's team: it has the same tools.
     let row_before = match &request.mode {
-        OpenRequestMode::Resume { session_id } => state.with_storage(|s| s.session_by_agent_id(&record.id, session_id)).ok().flatten().map(|row| row.id),
+        OpenRequestMode::Resume { session_id } | OpenRequestMode::Fork { session_id } => state.with_storage(|s| s.session_by_agent_id(&record.id, session_id)).ok().flatten().map(|row| row.id),
         OpenRequestMode::New => None,
     };
     let combo = super::delegation::starting_combo(&state, request.combo.clone(), row_before.as_deref());
@@ -268,9 +284,21 @@ pub async fn session_open(request: OpenRequest, state: State<'_, AppState>) -> C
     // session and only says so in the `session/new` reply, so the id the
     // desktop reserved is not the id the transcript is under.
     let recorded_id = snapshot.agent_session_id.clone().unwrap_or_else(|| session_id.as_str().to_string());
+    let origin = if request.side_of.is_some() { SessionOrigin::Side } else { SessionOrigin::Desktop };
     let desktop_session = state
-        .with_storage(|storage| storage.session_upsert(&record.id, &recorded_id, SessionOrigin::Desktop, provider))
+        .with_storage(|storage| storage.session_upsert(&record.id, &recorded_id, origin, provider))
         .map_err(storage_error)?;
+    // A side session hangs off its main session's row, which is how the
+    // interface finds it again, and acts on that session's goal.
+    if let Some(main) = &request.side_of {
+        let main_agent = state.agent_session_id(main);
+        if let Ok(Some(main_row)) = state.with_storage(|storage| storage.session_by_agent_id(&record.id, &main_agent)) {
+            let _ = state.with_storage(|storage| storage.session_set_parent(&desktop_session.id, Some(&main_row.id)));
+        }
+        if let Some(engine) = state.engine.get() {
+            engine.link_side(&handle.id, main);
+        }
+    }
     let _ = state.with_storage(|storage| storage.session_touch(&desktop_session.id));
     let _ = state.with_storage(|storage| storage.setting_set(super::delegation::COMBO_KEY, &super::delegation::session_scope(&desktop_session.id), &combo));
     super::delegation::watch_orchestrator(&state, &actor);
@@ -404,7 +432,8 @@ pub async fn session_submit(request: SubmitRequest, state: State<'_, AppState>) 
         .map_err(storage_error)?
         .ok_or_else(|| DesktopError::not_ready("session record missing"))?;
 
-    let blocks = prompt_blocks(&state, &actor, &root, &request.text, &request.attachment_ids, &request.mentions).await?;
+    let mut blocks = prompt_blocks(&state, &actor, &root, &request.text, &request.attachment_ids, &request.mentions).await?;
+    side_notes_first(&state, &request.handle.id, &mut blocks);
     let payload = serde_json::to_vec(&blocks).unwrap_or_default();
     let hash = content_hash(&payload);
     let payload_dir = state.data_dir.join("outbox");
@@ -440,6 +469,19 @@ pub async fn session_submit(request: SubmitRequest, state: State<'_, AppState>) 
         request_id: request.request_id,
         outcome,
     })
+}
+
+/// What a side session changed while this session had no turn to be told in,
+/// put in front of the prompt that gives it one.
+fn side_notes_first(state: &AppState, handle: &str, blocks: &mut Vec<serde_json::Value>) {
+    let Some(engine) = state.engine.get() else { return };
+    let notes = engine.take_main_notes(handle);
+    if notes.is_empty() {
+        return;
+    }
+    let mut first: Vec<serde_json::Value> = notes.into_iter().map(|note| json!({ "type": "text", "text": note })).collect();
+    first.append(blocks);
+    *blocks = first;
 }
 
 /// The ACP blocks of a prompt, in order: mentions (references or copied
@@ -519,7 +561,8 @@ pub async fn session_enqueue(request: EnqueueRequest, state: State<'_, AppState>
         .find(|(id, _)| *id == request.handle.id)
         .map(|(_, root)| root)
         .ok_or_else(|| DesktopError::not_ready("session root unknown"))?;
-    let blocks = prompt_blocks(&state, &actor, &root, &request.text, &request.attachment_ids, &request.mentions).await?;
+    let mut blocks = prompt_blocks(&state, &actor, &root, &request.text, &request.attachment_ids, &request.mentions).await?;
+    side_notes_first(&state, &request.handle.id, &mut blocks);
     actor
         .enqueue(QueuedPrompt { id: request.request_id, text: request.text, blocks, restore: request.restore })
         .await
@@ -593,8 +636,19 @@ pub async fn session_stop(
     state: State<'_, AppState>,
 ) -> CommandResult<thingmaker_supervisor::transport::ExitInfo> {
     let actor = actor_for(&state, &handle)?;
-    // Its workers go with it.
+    // Its workers go with it, and its side sessions.
     super::delegation::release(&state, &handle.id).await;
+    if let Some(engine) = state.engine.get() {
+        engine.unlink_side(&handle.id);
+        for side in engine.sides_of(&handle.id) {
+            engine.unlink_side(&side);
+            if let Some(side_actor) = state.actor(&side) {
+                super::delegation::release(&state, &side).await;
+                let _ = side_actor.stop().await;
+                state.remove_actor(&side);
+            }
+        }
+    }
     let exit = actor.stop().await;
     state.remove_actor(&handle.id);
     exit
@@ -713,6 +767,9 @@ pub struct OpenSessionEntry {
     /// The id the agent knows the session by, so a resume of a session that
     /// is already running (a worker, say) attaches to it instead.
     pub agent_session_id: String,
+    /// The main session's handle, for a side session.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub side_of: Option<String>,
 }
 
 /// Live attachments with their workspace, for renderer rehydration (REC-04).
@@ -728,9 +785,45 @@ pub fn session_list_open(state: State<'_, AppState>) -> Vec<OpenSessionEntry> {
                 .ok()
                 .flatten()
                 .map(|w| w.id);
-            Some(OpenSessionEntry { handle: actor.handle().clone(), workspace_id, root: root.to_string_lossy().into_owned(), agent_session_id: state.agent_session_id(&id) })
+            let side_of = state.engine.get().and_then(|engine| engine.side_main(&id));
+            Some(OpenSessionEntry { handle: actor.handle().clone(), workspace_id, root: root.to_string_lossy().into_owned(), agent_session_id: state.agent_session_id(&id), side_of })
         })
         .collect()
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BackgroundOutputRequest {
+    pub handle: SessionHandle,
+    pub task_id: String,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BackgroundOutput {
+    /// The end of the output, from a line start.
+    pub text: String,
+    /// The whole file's length, so the interface can say what it left out.
+    pub bytes: u64,
+}
+
+/// The output so far of a command the agent left running in the background.
+/// Only the file the task's own tool result named is read, and only when it
+/// is one of Claude Code's task output files.
+#[tauri::command]
+pub async fn session_background_output(request: BackgroundOutputRequest, state: State<'_, AppState>) -> CommandResult<BackgroundOutput> {
+    let actor = actor_for(&state, &request.handle)?;
+    let tasks = actor.background_tasks().await?;
+    let task = tasks.iter().find(|task| task.task_id == request.task_id).ok_or_else(|| DesktopError::not_ready("no such background task in this session"))?;
+    let path = PathBuf::from(task.output_path.as_deref().ok_or_else(|| DesktopError::not_ready("this task has not named its output file yet"))?);
+    if !thingmaker_supervisor::supervisor::background::is_task_output(&path) {
+        return Err(DesktopError::io("that is not a background task's output file"));
+    }
+    let (bytes, text) = tauri::async_runtime::spawn_blocking(move || thingmaker_supervisor::supervisor::background::read_tail(&path, 64 * 1024))
+        .await
+        .map_err(|error| DesktopError::io(error.to_string()))?
+        .map_err(|error| DesktopError::not_ready(format!("the output file could not be read: {error}")))?;
+    Ok(BackgroundOutput { text, bytes })
 }
 
 #[derive(Debug, Deserialize)]

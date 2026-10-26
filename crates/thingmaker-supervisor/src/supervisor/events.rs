@@ -86,6 +86,9 @@ pub enum SessionEvent {
         call_id: String,
         state: DetachedCallState,
     },
+    /// A command the agent left running in the background, whole, when it
+    /// starts and when it ends (`background::BackgroundTask`).
+    BackgroundTask(super::background::BackgroundTask),
     /// The agent asked for a permission decision, and this is what the
     /// attachment's permission stance answered (F14, SEC-07). Every decision
     /// is on the stream, so none is silently consented.

@@ -171,6 +171,7 @@ impl CodexBridge {
                     "agentInfo": { "name": "codex-app-server", "title": "Codex", "version": agent_version },
                     "agentCapabilities": {
                         "loadSession": true,
+                        "sessionCapabilities": { "fork": {} },
                         "promptCapabilities": { "image": true, "embeddedContext": true },
                         "mcpCapabilities": { "http": true }
                     },
@@ -178,7 +179,9 @@ impl CodexBridge {
                     "_meta": { "steering": { "supported": true } }
                 }))
             }
-            "session/new" | "session/load" => self.open_thread(method == "session/load", &params, timeout).await,
+            "session/new" => self.open_thread(Open::New, &params, timeout).await,
+            "session/load" => self.open_thread(Open::Resume, &params, timeout).await,
+            "session/fork" => self.open_thread(Open::Fork, &params, timeout).await,
             "session/set_config_option" => {
                 let id = params.get("configId").and_then(Value::as_str).unwrap_or_default();
                 let value = params.get("value").and_then(Value::as_str).map(str::to_string);
@@ -256,7 +259,8 @@ impl CodexBridge {
         }
     }
 
-    async fn open_thread(&self, resume: bool, params: &Value, timeout: Duration) -> Result<Value, TransportError> {
+    async fn open_thread(&self, open: Open, params: &Value, timeout: Duration) -> Result<Value, TransportError> {
+        let resume = open == Open::Resume;
         let inner = &self.inner;
         let (model, stance) = {
             let state = inner.state();
@@ -288,12 +292,22 @@ impl CodexBridge {
         if let Some(instructions) = inner.launch.developer_instructions.as_ref().filter(|text| !text.trim().is_empty()) {
             thread["developerInstructions"] = Value::String(instructions.clone());
         }
-        let result = if resume {
-            let thread_id = params.get("sessionId").and_then(Value::as_str).unwrap_or_default();
-            thread["threadId"] = Value::String(thread_id.to_string());
-            inner.codex.request("thread/resume", thread, timeout).await?
-        } else {
-            inner.codex.request("thread/start", thread, timeout).await?
+        let result = match open {
+            Open::Resume => {
+                let thread_id = params.get("sessionId").and_then(Value::as_str).unwrap_or_default();
+                thread["threadId"] = Value::String(thread_id.to_string());
+                inner.codex.request("thread/resume", thread, timeout).await?
+            }
+            Open::Fork => {
+                // A copy of the thread with its whole history as context. The
+                // history is not sent back: the copy's own conversation starts
+                // empty on screen.
+                let thread_id = params.get("sessionId").and_then(Value::as_str).unwrap_or_default();
+                thread["threadId"] = Value::String(thread_id.to_string());
+                thread["excludeTurns"] = Value::Bool(true);
+                inner.codex.request("thread/fork", thread, timeout).await?
+            }
+            Open::New => inner.codex.request("thread/start", thread, timeout).await?,
         };
         let thread_id = result
             .get("thread")
@@ -876,6 +890,14 @@ async fn on_request(inner: &Inner, id: RequestId, method: &str, params: Value) {
             })),
         })
         .await;
+}
+
+/// How the bridge opens a Codex thread for an ACP session request.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Open {
+    New,
+    Resume,
+    Fork,
 }
 
 #[cfg(test)]

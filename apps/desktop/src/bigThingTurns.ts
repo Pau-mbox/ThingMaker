@@ -55,3 +55,22 @@ export function milestoneTurnKey(cards: readonly Card[], index: number, title: s
   }
   return byPosition;
 }
+
+/** How a note from the side session starts (`SIDE_NOTE_PREFIX` in the engine). */
+export const SIDE_NOTE_PREFIX = "[From the side transcript]";
+
+/**
+ * The side session's notes at the front of a message, and what the user wrote
+ * after them. Each note is one line; the engine sends them ahead of the next
+ * prompt when the main session had no turn to steer them into.
+ */
+export function splitSideNotes(text: string): { notes: string[]; rest: string } {
+  const lines = text.split("\n");
+  const notes: string[] = [];
+  let at = 0;
+  while (at < lines.length && lines[at]!.startsWith(SIDE_NOTE_PREFIX)) {
+    notes.push(lines[at]!.slice(SIDE_NOTE_PREFIX.length).trim());
+    at += 1;
+  }
+  return { notes, rest: notes.length > 0 ? lines.slice(at).join("\n").trim() : text };
+}
