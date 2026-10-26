@@ -19,7 +19,6 @@ style as the English. Keep these terms consistent across every catalog.
 | queue / queued | cola / en cola |
 | transcript | transcripción |
 | conversation (the session tab) | conversación |
-| board (Big Thing board) | tablero |
 | Side Transcript (side session) | transcripción paralela |
 | settings | ajustes |
 | provider | proveedor |

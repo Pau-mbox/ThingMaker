@@ -715,7 +715,7 @@ export function SessionPanel({ sessionId, embedded = false }: { sessionId: strin
     };
   }, [hasSession, query, tab]);
 
-  // Asked from the Big Thing board: show one card of the conversation. Clear
+  // Asked from the Big Thing tab: show one card of the conversation. Clear
   // a search that would hide it and open enough of the history to hold it,
   // then stop following the bottom so the jump stays put.
   const transcriptFocus = useStore((s) => (s.transcriptFocus?.sessionId === sessionId ? s.transcriptFocus : null));
@@ -995,8 +995,8 @@ export function SessionPanel({ sessionId, embedded = false }: { sessionId: strin
   // without opening it.
   const odysseyView = useStore.getState().odyssey[sessionId];
   const odysseyLabel = odysseyView
-    ? `${t("Big Thing board")} ${odysseyView.milestones.filter((m) => m.state === "verified").length}/${odysseyView.milestones.length}`
-    : t("Big Thing board");
+    ? `Big Thing ${odysseyView.milestones.filter((m) => m.state === "verified").length}/${odysseyView.milestones.length}`
+    : "Big Thing";
   const sideLabel = sideBusy ? `${t("Side Transcript")} · …` : t("Side Transcript");
   // Only the views you watch stay in the bar; the rest live behind one menu
   // and the terminal behind one icon, so the bar reads at a glance.

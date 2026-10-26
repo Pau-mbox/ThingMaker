@@ -1,5 +1,5 @@
 /**
- * What ties the conversation to the Big Thing board.
+ * What ties the conversation to the Big Thing tab.
  *
  * Big Thing drives a goal through this session's own turns: the board is the
  * record of the run, the conversation is where it happens. These say so — a
@@ -88,7 +88,7 @@ export function BigThingBand({ sessionId }: { sessionId: string }) {
         </button>
       )}
       <button className="link small" onClick={() => openBigThingAt(sessionId, null)} type="button">
-        {t("Open board")}
+        {t("Open Big Thing")}
       </button>
     </div>
   );

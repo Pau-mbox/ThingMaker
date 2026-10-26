@@ -94,7 +94,7 @@ describe("the conversation says what Big Thing sent", () => {
     render(<BigThingBand sessionId="s1" />);
     expect(screen.getByText("Big Thing is driving this conversation")).toBeTruthy();
     expect(screen.getByText(/1\/2 verified/)).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: "Open board" }));
+    fireEvent.click(screen.getByRole("button", { name: "Open Big Thing" }));
     expect(useStore.getState().sessionTab).toBe("odyssey");
   });
 

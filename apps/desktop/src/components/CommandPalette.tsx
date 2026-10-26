@@ -12,7 +12,7 @@ function tabName(tab: SessionTab): string {
   switch (tab) {
     case "transcript": return t("Conversation");
     case "agents": return t("Agents");
-    case "odyssey": return t("Big Thing board");
+    case "odyssey": return "Big Thing";
     case "side": return t("Side Transcript");
     case "terminal": return t("Terminal");
     case "files": return t("Files");

@@ -3,7 +3,7 @@
  *
  * Big Thing runs a goal by submitting prompts to the session as ordinary
  * turns, so the transcript is where the orchestration actually happens. Shown
- * as "You", those prompts made the conversation and the Big Thing board look
+ * as "You", those prompts made the conversation and the Big Thing tab look
  * like two unrelated things; recognised, they can say who sent them and link
  * the two.
  *

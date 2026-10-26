@@ -249,7 +249,7 @@ type State = {
   /** Places visited, oldest first, and where in them the user is now. */
   navHistory: NavEntry[];
   navIndex: number;
-  /** A milestone the Big Thing board should bring into view, asked for from
+  /** A milestone the Big Thing tab should bring into view, asked for from
    *  the transcript, and the transcript card asked for from the board. Each
    *  is taken by the view that shows it. */
   odysseyFocus: { sessionId: string; milestone: number } | null;
@@ -287,7 +287,7 @@ type State = {
   applyContextBundle: (sessionId: string, bundle: ContextBundle) => void;
   setPaletteOpen: (open: boolean) => void;
   setSessionTab: (tab: SessionTab) => void;
-  /** Open the Big Thing board, at a milestone (0-based) when one is given. */
+  /** Open the Big Thing tab, at a milestone (0-based) when one is given. */
   openBigThingAt: (sessionId: string, milestone: number | null) => void;
   /** Open the conversation at one of its cards. */
   showInTranscript: (sessionId: string, cardKey: string) => void;

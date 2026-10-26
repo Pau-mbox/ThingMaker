@@ -48,18 +48,11 @@ BUILT="$ROOT/target/release/bundle/macos/ThingMaker.app"
 running() { pgrep -f "$DEST/Contents/MacOS/" >/dev/null 2>&1; }
 # A running ThingMaker keeps the binary it started with, so the bundle on disk can
 # be replaced under it: the new build is what opens next time. --restart
-# quits it first and reopens it after.
+# installs first and only then quits and reopens it (see the end), because this
+# script is often run by an agent inside ThingMaker: quitting ThingMaker ends
+# that agent's process group, this script with it.
 WAS_RUNNING=0
 running && WAS_RUNNING=1
-if [ "$WAS_RUNNING" -eq 1 ] && [ "$RESTART" -eq 1 ]; then
-  echo "Quitting the running ThingMaker…"
-  osascript -e "tell application id \"$APP_ID\" to quit" >/dev/null 2>&1 || true
-  for _ in $(seq 1 40); do running || break; sleep 0.5; done
-  if running; then
-    echo "ThingMaker did not quit; the new build is at $BUILT. Quit it and run this again." >&2
-    exit 2
-  fi
-fi
 
 # Before ThingMaker it was called Code (identifier dev.claudex.desktop). That
 # bundle goes to the Bin — not deleted — so Spotlight and the Dock offer only
@@ -105,7 +98,16 @@ done
 printf '%s %s\n' "$(git rev-parse --short HEAD)" "$(date '+%Y-%m-%d %H:%M')" > "$ROOT/target/installed-build.txt"
 echo "Installed $DEST ($(cat "$ROOT/target/installed-build.txt"))."
 
-if [ "$RESTART" -eq 1 ]; then
+if [ "$RESTART" -eq 1 ] && [ "$WAS_RUNNING" -eq 1 ]; then
+  # Quit and reopen from a session of its own, which outlives this script
+  # when the quit ends the agent that started it.
+  echo "Restarting ThingMaker…"
+  RESTARTER='osascript -e "tell application id \"$1\" to quit" >/dev/null 2>&1 || true
+for _ in $(seq 1 60); do pgrep -f "$2/Contents/MacOS/" >/dev/null 2>&1 || break; sleep 0.5; done
+if pgrep -f "$2/Contents/MacOS/" >/dev/null 2>&1; then exit 2; fi
+open "$2"'
+  perl -MPOSIX -e 'POSIX::setsid(); exec @ARGV' /bin/bash -c "$RESTARTER" thingmaker-restart "$APP_ID" "$DEST" </dev/null >/dev/null 2>&1 &
+elif [ "$RESTART" -eq 1 ]; then
   open "$DEST"
 elif [ "$WAS_RUNNING" -eq 1 ] && running; then
   echo "ThingMaker is still running the previous build; quit and reopen it (or run 'pnpm app --restart') to use this one."
