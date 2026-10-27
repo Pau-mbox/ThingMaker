@@ -321,11 +321,15 @@ export const Backdrop = memo(function Backdrop({ h, dy, wall, logo }: { h: numbe
       })}
       {/* The floor: pale oak. */}
       <rect fill="url(#office-planks)" height={h - 40} width={ROOM.w} y="40" />
-      {/* The lead's rug, in the accent colours. */}
+      {/* The lead's rug: a woven slate field with a cream border and a row of diamonds. */}
       <rect fill="#d9d2c5" height="34" width="76" x="42" y="54" />
-      <rect fill={PALETTE.pink} height="10" width="72" x="44" y="56" />
-      <rect fill={PALETTE.orange} height="10" width="72" x="44" y="66" />
-      <rect fill={PALETTE.yellow} height="10" width="72" x="44" y="76" />
+      <rect fill="#33505e" height="30" width="72" x="44" y="56" />
+      <rect fill="none" height="24" stroke="#e8dcc0" strokeWidth="1" width="66" x="47.5" y="59.5" />
+      {Array.from({ length: 7 }, (_, i) => {
+        const cx = 54 + i * 8.7;
+        return <path d={`M${cx} 67 l3.5 4 l-3.5 4 l-3.5 -4 Z`} fill={i % 2 ? "#e8dcc0" : "#c9503f"} key={`rug${i}`} />;
+      })}
+      {Array.from({ length: 36 }, (_, i) => <rect fill="#3d5d6c" height="1" key={`weave${i}`} width="2" x={45 + (i % 12) * 6} y={57 + Math.floor(i / 12) * 11} />)}
       {/* The columns. */}
       {drawSprite(COLUMN_PINK(h - 78), 0, 10, "col1")}
       {drawSprite(COLUMN_YELLOW(h - 78), 152, 10, "col2")}
