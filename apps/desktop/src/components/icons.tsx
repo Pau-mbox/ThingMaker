@@ -255,3 +255,9 @@ export const IconEyeCheck = (p: IconProps) => (
     <path d="m15.5 18 2 2 4-4" />
   </Svg>
 );
+export const IconOffice = (p: IconProps) => (
+  <Svg {...p}>
+    <rect height="12" rx="1.5" width="16" x="4" y="4" />
+    <path d="M8 20h8M12 16v4M8 9h3M8 12h6" />
+  </Svg>
+);

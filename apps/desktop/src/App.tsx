@@ -6,6 +6,7 @@ import { TopBar } from "./components/TopBar";
 import { Sidebar } from "./components/Sidebar";
 import { WorkspaceView } from "./components/WorkspaceView";
 import { SessionPanel } from "./components/SessionPanel";
+import { OfficePane } from "./components/OfficePane";
 import { SignInPanel } from "./components/SignInPanel";
 import { SettingsPanel } from "./components/SettingsPanel";
 import { AttentionBanner, CloseRequestDialog, LockedResumeDialog } from "./components/Attention";
@@ -165,7 +166,12 @@ export function App() {
             <ErrorBoundary key={view.kind === "session" ? view.sessionId : view.kind} label={t("{view} view", { view: view.kind })}>
               {view.kind === "welcome" && <Welcome />}
               {view.kind === "workspace" && <WorkspaceView key={view.workspaceId} workspaceId={view.workspaceId} />}
-              {view.kind === "session" && <SessionPanel key={view.sessionId} sessionId={view.sessionId} />}
+              {view.kind === "session" && (
+                <div className="session-split">
+                  <SessionPanel key={view.sessionId} sessionId={view.sessionId} />
+                  {!IS_REMOTE && <OfficePane key={`office-${view.sessionId}`} sessionId={view.sessionId} />}
+                </div>
+              )}
               {view.kind === "signin" && <SignInPanel />}
               {view.kind === "settings" && <SettingsPanel />}
               {view.kind === "teams" && <TeamsView />}

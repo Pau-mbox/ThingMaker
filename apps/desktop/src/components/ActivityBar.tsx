@@ -18,12 +18,8 @@ import { staleActivity } from "../odysseyRunner";
 import { stepDoing, stepOf } from "../toolSteps";
 import { UsageLine } from "./UsageLine";
 import { IconChevron } from "./icons";
-import { TinyBot, type BotRole, type BotState } from "./TinyBot";
-import { closestRole } from "../teamRoles";
-import type { JobView, Provider } from "@thingmaker/contracts";
-
-/** One robot in the row. */
-type CrewMember = { key: string; provider: Provider; role: BotRole | null; name: string; state: BotState; status: string; title: string };
+import { TinyBot } from "./TinyBot";
+import { buildCrew, elapsed } from "./crew";
 
 /** The lead stands a size bigger than its helpers. */
 const LEAD_SIZE = 38;
@@ -31,11 +27,6 @@ const HELPER_SIZE = 30;
 
 /** How many robots the row shows before it says "+n". */
 const CREW_LIMIT = 8;
-
-function elapsed(ms: number): string {
-  const s = Math.floor(ms / 1000);
-  return s < 60 ? `${s}s` : `${Math.floor(s / 60)}m ${s % 60}s`;
-}
 
 export function ActivityBar({ sessionId, onOpenAgents }: { sessionId: string; onOpenAgents: () => void }) {
   const session = useStore((s) => s.sessions[sessionId]);
@@ -122,56 +113,7 @@ export function ActivityBar({ sessionId, onOpenAgents }: { sessionId: string; on
 
   // The lead, each helper on the team by its latest job, and the lead's own
   // subagents, which run on the lead's provider.
-  const crew: CrewMember[] = [
-    {
-      key: "lead",
-      provider: session.snapshot.provider,
-      role: "lead",
-      name: t("Lead"),
-      state: foreground ? "working" : "idle",
-      status: foreground ? phase.toLowerCase() : t("waiting on the team"),
-      title: foreground ? phase : t("The lead waits while its helpers work"),
-    },
-  ];
-  // A helper's job that says most about it now: one running, else one
-  // waiting, else the one that finished last.
-  const rank = (job: JobView) => (job.status === "starting" || job.status === "running" ? 2 : job.status === "waiting" ? 1 : 0);
-  const latest = new Map<string, JobView>();
-  for (const job of jobs ?? []) {
-    const known = latest.get(job.worker);
-    if (!known || rank(job) > rank(known) || (rank(job) === rank(known) && job.startedAtUnixMs >= known.startedAtUnixMs)) latest.set(job.worker, job);
-  }
-  const names = [...(team?.workers.map((worker) => worker.name) ?? []), ...[...latest.keys()].filter((name) => !team?.workers.some((worker) => worker.name === name))];
-  for (const name of names) {
-    const job = latest.get(name);
-    const slot = team?.workers.find((worker) => worker.name === name);
-    const provider = job?.provider ?? slot?.provider ?? session.snapshot.provider;
-    const open = job && (job.status === "starting" || job.status === "running");
-    const state: BotState = open ? "working" : job && (job.status === "succeeded" || job.status === "failed" || job.status === "cancelled") ? "done" : "idle";
-    const status = !job
-      ? t("ready")
-      : open
-        ? elapsed(now - job.startedAtUnixMs)
-        : job.status === "waiting"
-          ? t("waiting out a limit")
-          : job.status === "succeeded"
-            ? t("done")
-            : job.status === "failed"
-              ? t("failed")
-              : t("stopped");
-    crew.push({ key: `job:${name}`, provider, role: slot ? closestRole(slot) : null, name, state, status, title: job ? job.task.split("\n")[0]?.slice(0, 140) ?? name : t("On the team, with nothing to do yet") });
-  }
-  for (const agent of agents) {
-    crew.push({
-      key: `agent:${agent.id}`,
-      provider: session.snapshot.provider,
-      role: null,
-      name: agent.name,
-      state: "working",
-      status: typeof agent.generationStartedAtUnixMs === "number" ? elapsed(now - agent.generationStartedAtUnixMs) : t("working"),
-      title: agent.task,
-    });
-  }
+  const crew = buildCrew({ provider: session.snapshot.provider, foreground, phase, jobs, team, agents, now });
   const shown = crew.slice(0, CREW_LIMIT);
 
   const lastRuntime = [...projection.cards].reverse().find((c) => c.kind === "runtime");
