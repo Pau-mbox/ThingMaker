@@ -502,4 +502,6 @@ export const session: Record<string, string> = {
   "stopped": "detenido",
   "On the team, with nothing to do yet": "En el equipo, sin nada que hacer todavía",
   "Who is working": "Quién está trabajando",
+  "Resize the office": "Cambiar el ancho de la oficina",
+  "Drag to resize; double-click for the usual width": "Arrastra para cambiar el ancho; doble clic para el ancho habitual",
 };

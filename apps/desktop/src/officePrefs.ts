@@ -108,3 +108,48 @@ export async function fitImage(file: File, slot: OfficeSlot): Promise<string> {
     bitmap.close();
   }
 }
+
+/* ---------- Its width ---------- */
+
+/** How wide the office may be, in pixels: never narrower than its room can be drawn, never wider than 45% of the window. */
+export const OFFICE_WIDTH = { min: 240, max: 560, initial: 320, share: 0.45 };
+
+const WIDTH_KEY = "thingmaker.office.width";
+
+function readWidth(): number {
+  try {
+    const value = Number(localStorage.getItem(WIDTH_KEY));
+    return Number.isFinite(value) && value > 0 ? value : OFFICE_WIDTH.initial;
+  } catch {
+    return OFFICE_WIDTH.initial;
+  }
+}
+
+let width = readWidth();
+
+/** A width the office can take in a window this wide. */
+export function clampOfficeWidth(wanted: number, viewport: number): number {
+  const ceiling = Math.max(OFFICE_WIDTH.min, Math.min(OFFICE_WIDTH.max, viewport * OFFICE_WIDTH.share));
+  return Math.round(Math.min(Math.max(wanted, OFFICE_WIDTH.min), ceiling));
+}
+
+export function setOfficeWidth(next: number): void {
+  width = Math.round(next);
+  try {
+    localStorage.setItem(WIDTH_KEY, String(width));
+  } catch {
+    // Storage can be unavailable; the width still holds until reload.
+  }
+  listeners.forEach((listener) => listener());
+}
+
+export function useOfficeWidth(): number {
+  return useSyncExternalStore(
+    (listener) => {
+      listeners.add(listener);
+      return () => listeners.delete(listener);
+    },
+    () => width,
+    () => OFFICE_WIDTH.initial,
+  );
+}

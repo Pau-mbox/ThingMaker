@@ -1,17 +1,18 @@
 /**
  * The office beside the conversation (UX-08): the team from the activity
- * strip, working in a small pixel-art office instead of a row. It lives in
- * the space the conversation's width cap leaves on wide windows, and folds
- * into a slim rail for anyone who would rather not see it.
+ * strip, working in a small pixel-art office instead of a row. It sits beside
+ * the conversation on any window wide enough for both, can be dragged wider
+ * or narrower by its left edge (the width is remembered), and folds into a
+ * slim rail for anyone who would rather not see it.
  *
  * It shows the lead and the helpers on the session's team, one desk each, so
  * the room is as big as the team. A roster under the room lists each one with
  * its model, task and state, because the room has no space for all that.
  */
-import { useEffect, useState, type ChangeEvent } from "react";
+import { useEffect, useRef, useState, type ChangeEvent, type KeyboardEvent, type PointerEvent } from "react";
 import { PROVIDER_LABELS } from "@thingmaker/contracts";
 import { t } from "../i18n";
-import { fitImage, setOfficeImage, setOfficeOpen, useOfficeImage, useOfficeOpen, type OfficeSlot } from "../officePrefs";
+import { OFFICE_WIDTH, clampOfficeWidth, fitImage, setOfficeImage, setOfficeOpen, setOfficeWidth, useOfficeImage, useOfficeOpen, useOfficeWidth, type OfficeSlot } from "../officePrefs";
 import { useStore } from "../store";
 import { buildCrew } from "./crew";
 import { IconChevron, IconImage, IconOffice } from "./icons";
@@ -49,8 +50,71 @@ function ImageSlot({ slot, label }: { slot: OfficeSlot; label: string }) {
   );
 }
 
+/** The window's width, following it as it changes. */
+function useViewportWidth(): number {
+  const [viewport, setViewport] = useState(() => window.innerWidth);
+  useEffect(() => {
+    const follow = () => setViewport(window.innerWidth);
+    window.addEventListener("resize", follow);
+    return () => window.removeEventListener("resize", follow);
+  }, []);
+  return viewport;
+}
+
+/** The office's left edge: drag it, or use the arrow keys, to make the office wider or narrower. */
+function ResizeEdge({ width, viewport, onLive }: { width: number; viewport: number; onLive: (width: number | null) => void }) {
+  const drag = useRef<{ x: number; width: number; live: number } | null>(null);
+  const start = (event: PointerEvent<HTMLDivElement>) => {
+    event.currentTarget.setPointerCapture(event.pointerId);
+    drag.current = { x: event.clientX, width, live: width };
+  };
+  const move = (event: PointerEvent<HTMLDivElement>) => {
+    if (!drag.current) return;
+    // The edge is on the left, so dragging left widens it.
+    drag.current.live = clampOfficeWidth(drag.current.width + drag.current.x - event.clientX, viewport);
+    onLive(drag.current.live);
+  };
+  const end = () => {
+    if (!drag.current) return;
+    setOfficeWidth(drag.current.live);
+    drag.current = null;
+    onLive(null);
+  };
+  const keys = (event: KeyboardEvent<HTMLDivElement>) => {
+    const step = event.shiftKey ? 64 : 16;
+    if (event.key === "ArrowLeft") setOfficeWidth(clampOfficeWidth(width + step, viewport));
+    else if (event.key === "ArrowRight") setOfficeWidth(clampOfficeWidth(width - step, viewport));
+    else if (event.key === "Home") setOfficeWidth(OFFICE_WIDTH.initial);
+    else return;
+    event.preventDefault();
+  };
+  return (
+    <div
+      aria-label={t("Resize the office")}
+      aria-orientation="vertical"
+      aria-valuemax={clampOfficeWidth(OFFICE_WIDTH.max, viewport)}
+      aria-valuemin={OFFICE_WIDTH.min}
+      aria-valuenow={width}
+      className="office-resize"
+      onDoubleClick={() => setOfficeWidth(OFFICE_WIDTH.initial)}
+      onKeyDown={keys}
+      onLostPointerCapture={end}
+      onPointerDown={start}
+      onPointerMove={move}
+      onPointerUp={end}
+      role="separator"
+      tabIndex={0}
+      title={t("Drag to resize; double-click for the usual width")}
+    />
+  );
+}
+
 export function OfficePane({ sessionId }: { sessionId: string }) {
   const open = useOfficeOpen();
+  const viewport = useViewportWidth();
+  const stored = useOfficeWidth();
+  const [live, setLive] = useState<number | null>(null);
+  const width = live ?? clampOfficeWidth(stored, viewport);
   const wall = useOfficeImage("wall");
   const logo = useOfficeImage("logo");
   const [customizing, setCustomizing] = useState(false);
@@ -97,7 +161,8 @@ export function OfficePane({ sessionId }: { sessionId: string }) {
   }
 
   return (
-    <aside aria-label={t("Office")} className="office-pane">
+    <aside aria-label={t("Office")} className={`office-pane ${live !== null ? "office-pane-resizing" : ""}`} style={{ width }}>
+      <ResizeEdge onLive={setLive} viewport={viewport} width={width} />
       <div className="office-head">
         <h3>{t("Office")}</h3>
         <span className="office-count">{working > 0 ? t("{working} of {total} at work", { working, total: crew.length }) : t("Quiet: nobody is at a desk")}</span>

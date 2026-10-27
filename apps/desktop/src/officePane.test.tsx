@@ -62,4 +62,19 @@ describe("OfficePane", () => {
     expect(screen.getByText("Picture frame")).toBeTruthy();
     expect(screen.getByText("Your images stay on this device.")).toBeTruthy();
   });
+
+  it("resizes from its left edge, by keyboard too, and keeps to its limits", () => {
+    useStore.setState({ sessions: { lead: session("lead") }, jobs: {} });
+    render(<OfficePane sessionId="lead" />);
+    const edge = screen.getByRole("separator", { name: "Resize the office" });
+    const pane = screen.getByRole("complementary", { name: "Office" });
+    fireEvent.keyDown(edge, { key: "Home" });
+    expect(pane.style.width).toBe("320px");
+    fireEvent.keyDown(edge, { key: "ArrowLeft" });
+    expect(pane.style.width).toBe("336px");
+    fireEvent.keyDown(edge, { key: "ArrowRight", shiftKey: true });
+    expect(pane.style.width).toBe("272px");
+    for (let index = 0; index < 10; index += 1) fireEvent.keyDown(edge, { key: "ArrowRight", shiftKey: true });
+    expect(pane.style.width).toBe("240px");
+  });
 });
