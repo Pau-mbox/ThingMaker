@@ -311,7 +311,78 @@
   overflow: hidden;
 }
 
+/* Off the desk: a walking bob, a dance, a nap, a pet; and the icon over its head. */
+.office-body {
+  transform-origin: 50% 100%;
+}
+
+.office-walking {
+  animation: office-walk 0.38s ease-in-out infinite;
+}
+
+.office-doing-dance {
+  animation: office-dance 0.6s ease-in-out infinite;
+}
+
+.office-doing-siesta {
+  transform: rotate(-14deg) translateY(6%);
+}
+
+.office-doing-pet {
+  transform: rotate(-5deg);
+}
+
+@keyframes office-walk {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-5%);
+  }
+}
+
+@keyframes office-dance {
+  0%,
+  100% {
+    transform: translateX(-6%) rotate(-5deg);
+  }
+  50% {
+    transform: translateX(6%) rotate(5deg) translateY(-4%);
+  }
+}
+
+.office-act {
+  position: absolute;
+  transform: translate(-50%, -100%);
+  animation: office-float 1.6s ease-in-out infinite;
+  pointer-events: none;
+}
+
+.office-act-text {
+  font-size: 11px;
+  font-weight: 700;
+  color: #fbfaf4;
+  text-shadow: 0 1px 0 rgba(0, 0, 0, 0.5);
+  white-space: nowrap;
+}
+
+@keyframes office-float {
+  0%,
+  100% {
+    margin-top: 0;
+  }
+  50% {
+    margin-top: -4px;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
+  .office-walking,
+  .office-doing-dance,
+  .office-act {
+    animation: none;
+  }
   .office-bot {
     transition: none;
   }

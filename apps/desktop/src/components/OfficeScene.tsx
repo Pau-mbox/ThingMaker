@@ -21,6 +21,7 @@ import { memo, useEffect, useRef, useState, type CSSProperties } from "react";
 import { t } from "../i18n";
 import { TinyBot } from "./TinyBot";
 import type { CrewMember } from "./crew";
+import { useIdleActs, type Act, type Move } from "./officeActs";
 import { HalloweenDecor, OFFICE_THEME } from "./officeDecor";
 import { Backdrop, CHAIR, CHAIR_COLORS, DESK_FRONT, DESK_H, DESK_ITEMS, DESK_W, MONITOR, ROOM, drawSprite } from "./officeArt";
 import "./office.css";
@@ -86,11 +87,41 @@ function useWidth() {
   return { ref, width };
 }
 
+function prefersReducedMotion(): boolean {
+  return typeof window !== "undefined" && !!window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+}
+
+/** What a robot has in mind while it does something: a heart, a nap, a cup, a tune. */
+function ActIcon({ act }: { act: Act }) {
+  switch (act) {
+    case "pet":
+      return (
+        <svg aria-hidden="true" height="12" shapeRendering="crispEdges" viewBox="0 0 7 6" width="14">
+          <path d="M1 0h2v1h1V0h2v1h1v2H6v1H5v1H4v1H3V5H2V4H1V3H0V1h1z" fill="#ff5c8a" />
+        </svg>
+      );
+    case "siesta":
+      return <span className="office-act-text">z Z</span>;
+    case "dance":
+      return <span className="office-act-text">♪ ♫</span>;
+    default:
+      return (
+        <svg aria-hidden="true" height="14" shapeRendering="crispEdges" viewBox="0 0 8 8" width="14">
+          <path d="M3 0h1v2H3zM5 1h1v1H5z" fill="#c9ced9" />
+          <path d="M1 3h5v4H1z" fill="#f3f0e6" />
+          <path d="M6 4h1v2H6z" fill="#f3f0e6" />
+          <path d="M1 3h5v1H1z" fill="#7a4a24" />
+        </svg>
+      );
+  }
+}
+
 /** `wall` and `logo` are a person's own images for the big screen and the framed picture, when they chose any. */
 export const OfficeScene = memo(function OfficeScene({ crew, wall = null, logo = null }: { crew: CrewMember[]; wall?: string | null; logo?: string | null }) {
   const places = placeCrew(crew);
   const layout = layoutFor(crew.filter((member) => member.kind !== "lead").length);
   const { ref, width } = useWidth();
+  const moves = useIdleActs(crew, places.map((place) => ({ x: place.x, y: place.y })), layout.dy, layout.xs, { enabled: !prefersReducedMotion() });
   const working = crew.filter((member) => member.state === "working").length;
   // Desks that have a robot to call theirs, lit while it works.
   const desks = places.map((place, index) => ({ ...place.desk, key: crew[index]?.key ?? String(index), on: crew[index]?.state === "working", role: (crew[index]?.role ?? "none") as keyof typeof DESK_ITEMS }));
@@ -112,10 +143,14 @@ export const OfficeScene = memo(function OfficeScene({ crew, wall = null, logo =
       {crew.map((member, index) => {
         const place = places[index] as Place;
         const lead = member.kind === "lead";
-        const style: CSSProperties = { left: pct(place.x, ROOM.w), top: pct(place.y, layout.h), zIndex: Math.round(place.y) };
+        const move = moves[member.key];
+        const at = move ?? place;
+        const style: CSSProperties = { left: pct(at.x, ROOM.w), top: pct(at.y, layout.h), zIndex: Math.round(at.y), ...(move?.walking ? { transition: `left ${move.leg}s linear, top ${move.leg}s linear` } : {}) };
         return (
-          <div className={`office-bot office-bot-${member.state} office-seated`} key={member.key} style={style}>
-            <TinyBot provider={member.provider} role={member.role} size={Math.round(width * (lead ? LEAD_SCALE : BOT_SCALE))} state={member.state} />
+          <div className={`office-bot office-bot-${member.state} ${move ? "office-standing" : "office-seated"}`} key={member.key} style={style}>
+            <div className={`office-body ${move?.walking ? "office-walking" : ""} ${move?.act ? `office-doing-${move.act}` : ""}`}>
+              <TinyBot provider={member.provider} role={member.role} size={Math.round(width * (lead ? LEAD_SCALE : BOT_SCALE))} state={member.state} />
+            </div>
           </div>
         );
       })}
@@ -131,11 +166,17 @@ export const OfficeScene = memo(function OfficeScene({ crew, wall = null, logo =
           const lead = member.kind === "lead";
           const height = (lead ? LEAD_SCALE : BOT_SCALE) * ROOM.w;
           const bubble = member.state === "working" && !lead ? member.title || member.status : "";
+          const move = moves[member.key];
           return (
             <div className={`office-note office-note-${member.state}`} key={member.key} title={[member.name, member.model, member.task || member.title].filter(Boolean).join(" · ")}>
               {bubble && (
                 <span className="office-bubble" style={{ left: `clamp(24%, ${pct(place.x, ROOM.w)}, 76%)`, top: pct(place.y - height - 3, layout.h) }}>
                   <span className="office-bubble-text">{bubble}</span>
+                </span>
+              )}
+              {move?.act && !move.walking && (
+                <span className="office-act" style={{ left: pct(move.x, ROOM.w), top: pct(move.y - height - 1, layout.h) }}>
+                  <ActIcon act={move.act} />
                 </span>
               )}
               {/* A plate on the front of its desk. */}
