@@ -188,7 +188,8 @@
   position: absolute;
   z-index: 1;
   transform: translate(-50%, -100%);
-  max-width: 33%;
+  /* Desks are 32.5% apart: a bubble must stay narrower, so neighbours never touch. */
+  max-width: 29%;
   padding: 2px 6px;
   border-radius: 6px;
   background: #fbfaf4;
