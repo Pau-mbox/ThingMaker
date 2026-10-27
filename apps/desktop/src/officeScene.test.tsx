@@ -45,4 +45,14 @@ describe("OfficeScene", () => {
     expect(screen.getByRole("img", { name: "The crew's office: 2 of 3 at work" })).toBeTruthy();
     expect(screen.getByText("a task")).toBeTruthy();
   });
+
+  it("draws no logo of its own, and draws a person's images on the wall screen and in the frame", () => {
+    const crew = [member("lead", "working", "lead")];
+    const plain = render(<OfficeScene crew={crew} />);
+    expect(plain.container.querySelectorAll("image")).toHaveLength(0);
+    plain.unmount();
+    const custom = render(<OfficeScene crew={crew} logo="data:image/png;base64,AAAA" wall="data:image/png;base64,BBBB" />);
+    const hrefs = [...custom.container.querySelectorAll("image")].map((node) => node.getAttribute("href"));
+    expect(hrefs).toEqual(["data:image/png;base64,BBBB", "data:image/png;base64,AAAA"]);
+  });
 });

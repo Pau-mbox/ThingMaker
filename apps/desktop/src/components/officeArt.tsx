@@ -1,9 +1,10 @@
 /**
- * The art of the office, in Madbox's own look: the studio's pale oak floor,
- * its pink, yellow and orange columns, white desks with a black monitor and a personal item,
- * and the lounge of corduroy bean bags on a jute rug, with the big screen
- * showing the logo. Drawn from pixel maps and small painters on one 160 by
- * 290 grid (see OfficeScene), so every pixel stays crisp at any size.
+ * The art of the office: a studio with a pale oak floor, pink, yellow and
+ * orange columns, white desks with a black monitor and a personal item, and a
+ * lounge of corduroy bean bags on a jute rug. The big wall screen and the
+ * framed picture beside it are the two spots a person can fill with their own
+ * images (see officePrefs). Drawn from pixel maps and small painters on one
+ * 160 pixel wide grid (see OfficeScene), so every pixel stays crisp at any size.
  */
 import { memo, type ReactNode } from "react";
 import type { BotRole } from "./TinyBot";
@@ -13,8 +14,8 @@ export type Sprite = { rows: string[]; colors: Record<string, string> };
 /** The room is always 160 pixels wide; its height follows the number of desks (see OfficeScene). */
 export const ROOM = { w: 160 };
 
-/** The brand's colours, from the logo: one place to retune. */
-export const BRAND = { pink: "#e8338f", magenta: "#d62f86", orange: "#f58a2d", yellow: "#ffd400", white: "#ffffff" };
+/** The studio's accent colours: one place to retune. */
+export const PALETTE = { pink: "#e8338f", magenta: "#d62f86", orange: "#f58a2d", yellow: "#ffd400", white: "#ffffff" };
 
 /** Merge each row's runs of one colour into one rect, so a detailed room stays light. */
 export function drawSprite(sprite: Sprite, x: number, y: number, key: string, classes: Record<string, string> = {}): ReactNode {
@@ -132,7 +133,7 @@ export const DESK_FRONT: Sprite = paint(DESK_W, DESK_H, { h: "#ffffff", T: "#f2f
 /* ---------- The lounge ---------- */
 
 /** The grey sofa with yellow cushions, 40 by 16. */
-export const SOFA: Sprite = paint(40, 16, { G: "#b9bdc6", g: "#9aa0ab", Y: BRAND.yellow, y: "#e0b400", L: "#2b2f3a", h: "#d3d6dd" }, (put) => {
+export const SOFA: Sprite = paint(40, 16, { G: "#b9bdc6", g: "#9aa0ab", Y: PALETTE.yellow, y: "#e0b400", L: "#2b2f3a", h: "#d3d6dd" }, (put) => {
   put("G", 2, 0, 36, 7);
   put("h", 3, 0, 34);
   put("G", 0, 7, 40, 6);
@@ -167,7 +168,7 @@ export const COFFEE_TABLE: Sprite = paint(26, 14, { W: "#e0aa66", w: "#c88f4c", 
 });
 
 /** The glass-fronted fridge of cans, 12 by 22. */
-export const FRIDGE: Sprite = paint(12, 22, { K: "#1c1e26", g: "#3a3d4a", r: "#e5484d", y: BRAND.yellow, b: "#4285f4", G: "#34a853", o: BRAND.orange, w: "#cfd3de" }, (put) => {
+export const FRIDGE: Sprite = paint(12, 22, { K: "#1c1e26", g: "#3a3d4a", r: "#e5484d", y: PALETTE.yellow, b: "#4285f4", G: "#34a853", o: PALETTE.orange, w: "#cfd3de" }, (put) => {
   put("K", 0, 0, 12, 22);
   put("g", 1, 1, 10, 18);
   ["roybG", "bGroy", "yobGr", "Groyb"].forEach((row, i) => [...row].forEach((c, x) => put(c, 2 + x * 2, 2 + i * 4, 1, 3)));
@@ -185,7 +186,7 @@ export const COFFEE_MACHINE: Sprite = paint(10, 14, { K: "#1c1e26", g: "#3a3d4a"
 });
 
 /** Two stacked cubes, one orange and one pink, 16 by 14. */
-export const CUBES: Sprite = paint(16, 14, { O: BRAND.orange, o: "#ffa65c", P: BRAND.pink, p: "#f27ab6", d: "#00000033" }, (put) => {
+export const CUBES: Sprite = paint(16, 14, { O: PALETTE.orange, o: "#ffa65c", P: PALETTE.pink, p: "#f27ab6", d: "#00000033" }, (put) => {
   put("O", 0, 6, 8, 8);
   put("o", 0, 6, 8);
   put("P", 8, 6, 8, 8);
@@ -217,52 +218,28 @@ export const PLANT: Sprite = {
 
 /* ---------- The walls ---------- */
 
-/** The big screen, 54 by 28, with the logo on it: the wordmark in white on the brand gradient. */
+/** The big wall screen, 54 by 28: a lit gradient until a person puts their own image on it. */
 export const TV: Sprite = paint(54, 28, { K: "#16181f", S: "url(#office-tv)", k: "#3a3d4a" }, (put) => {
   put("K", 0, 0, 54, 26);
   put("S", 2, 2, 50, 22);
   put("k", 20, 26, 14, 2);
 });
 
-/** Bold five-by-eight letters, two pixels thick, for the wordmark. */
-const GLYPHS: Record<string, string[]> = {
-  M: ["XX..XX", "XXXXXX", "XXXXXX", "XX..XX", "XX..XX", "XX..XX", "XX..XX", "XX..XX"],
-  A: [".XXXX.", "XX..XX", "XX..XX", "XXXXXX", "XXXXXX", "XX..XX", "XX..XX", "XX..XX"],
-  D: ["XXXXX.", "XX..XX", "XX..XX", "XX..XX", "XX..XX", "XX..XX", "XX..XX", "XXXXX."],
-  B: ["XXXXX.", "XX..XX", "XX..XX", "XXXXX.", "XXXXX.", "XX..XX", "XX..XX", "XXXXX."],
-  O: [".XXXX.", "XX..XX", "XX..XX", "XX..XX", "XX..XX", "XX..XX", "XX..XX", ".XXXX."],
-  // The logo's X is four petals round a cross-shaped gap.
-  X: ["XX...XX", "XXX.XXX", ".XX.XX.", ".......", ".XX.XX.", "XXX.XXX", "XX...XX", "......."],
-};
-
-export function wordmark(word: string): Sprite {
-  const rows: string[] = Array.from({ length: 8 }, () => "");
-  [...word].forEach((letter, index) => {
-    const glyph = GLYPHS[letter] ?? (GLYPHS.O as string[]);
-    glyph.forEach((line, y) => {
-      rows[y] += (index ? "." : "") + line;
-    });
-  });
-  return { rows, colors: { X: "#ffffff" } };
-}
-
-export const LOGO = wordmark("MADBOX");
-
-/** The four-petal mark, as a framed poster, 14 by 14. */
-export const POSTER_MARK: Sprite = paint(14, 14, { F: "#f6f4ee", Y: BRAND.yellow, O: BRAND.orange, P: BRAND.pink, M: BRAND.magenta, w: "#ffffff" }, (put) => {
+/** A framed picture, 14 by 14: a small landscape until a person puts their own image in it. */
+export const FRAME: Sprite = paint(14, 14, { F: "#f6f4ee", W: "#ffffff", s: "#9fd3f2", y: PALETTE.yellow, g: "#4fae62", G: "#2f8f4f" }, (put) => {
   put("F", 0, 0, 14, 14);
-  put("w", 1, 1, 12, 12);
-  [
-    ["P", 2, 2],
-    ["Y", 8, 2],
-    ["M", 2, 8],
-    ["O", 8, 8],
-  ].forEach(([c, x, y]) => {
-    put(c as string, (x as number) + 1, y as number, 3, 1);
-    put(c as string, x as number, (y as number) + 1, 4, 3);
-    put(c as string, (x as number) + 1, (y as number) + 4, 3, 1);
-  });
+  put("W", 1, 1, 12, 12);
+  put("s", 2, 2, 10, 6);
+  put("y", 8, 3, 2, 2);
+  put("g", 2, 8, 10, 4);
+  put("G", 2, 9, 6, 3);
 });
+
+/** Where each custom image goes, in the room's 160 pixel wide grid: the inside of the wall screen and of the frame. */
+export const SLOTS = {
+  wall: { x: 55, y: 13, w: 50, h: 22 },
+  logo: { x: 37, y: 18, w: 12, h: 12 },
+} as const;
 
 /** A window with its roller blind half down, 22 by 18. */
 export const WINDOW: Sprite = paint(22, 18, { F: "#f3f1ea", B: "#f7f6f1", b: "#e1ded4", s: "#8fc4ee", g: "#4f9d6a" }, (put) => {
@@ -284,12 +261,12 @@ export function column(height: number, base: string, light: string, dark: string
 }
 
 export const COLUMN_PINK = (height: number) => column(height, "#e6479a", "#f27ab6", "#c22f7e");
-export const COLUMN_YELLOW = (height: number) => column(height, BRAND.yellow, "#ffe45c", "#d9b300");
-export const COLUMN_ORANGE = (height: number) => column(height, BRAND.orange, "#ffa65c", "#cf6f1a");
+export const COLUMN_YELLOW = (height: number) => column(height, PALETTE.yellow, "#ffe45c", "#d9b300");
+export const COLUMN_ORANGE = (height: number) => column(height, PALETTE.orange, "#ffa65c", "#cf6f1a");
 
 /** Everything that does not change with the crew. */
 /** `h` is the room's height; `dy` how far the lounge has moved from where a three-row office puts it. */
-export const Backdrop = memo(function Backdrop({ h, dy }: { h: number; dy: number }) {
+export const Backdrop = memo(function Backdrop({ h, dy, wall, logo }: { h: number; dy: number; wall?: string | null; logo?: string | null }) {
   const speckles = Array.from({ length: 70 }, (_, i) => ({ x: (i * 37) % ROOM.w, y: (i * 11) % 9 }));
   return (
     <>
@@ -326,8 +303,9 @@ export const Backdrop = memo(function Backdrop({ h, dy }: { h: number; dy: numbe
       {drawSprite(WINDOW, 14, 14, "w1")}
       {drawSprite(WINDOW, 124, 14, "w2")}
       {drawSprite(TV, 53, 11, "tv")}
-      {drawSprite(LOGO, 58, 20, "logo")}
-      {drawSprite(POSTER_MARK, 36, 17, "pm")}
+      {drawSprite(FRAME, 36, 17, "frame")}
+      {wall && <image height={SLOTS.wall.h} href={wall} preserveAspectRatio="xMidYMid slice" width={SLOTS.wall.w} x={SLOTS.wall.x} y={SLOTS.wall.y} />}
+      {logo && <image height={SLOTS.logo.h} href={logo} preserveAspectRatio="xMidYMid slice" width={SLOTS.logo.w} x={SLOTS.logo.x} y={SLOTS.logo.y} />}
       <rect fill="#2f6f45" height="1" width="2" x="104" y="20" />
       {/* Ivy hanging from the ceiling. */}
       {Array.from({ length: 22 }, (_, i) => {
@@ -343,11 +321,11 @@ export const Backdrop = memo(function Backdrop({ h, dy }: { h: number; dy: numbe
       })}
       {/* The floor: pale oak. */}
       <rect fill="url(#office-planks)" height={h - 40} width={ROOM.w} y="40" />
-      {/* The lead's rug, in the brand's bands. */}
+      {/* The lead's rug, in the accent colours. */}
       <rect fill="#d9d2c5" height="34" width="76" x="42" y="54" />
-      <rect fill={BRAND.pink} height="10" width="72" x="44" y="56" />
-      <rect fill={BRAND.orange} height="10" width="72" x="44" y="66" />
-      <rect fill={BRAND.yellow} height="10" width="72" x="44" y="76" />
+      <rect fill={PALETTE.pink} height="10" width="72" x="44" y="56" />
+      <rect fill={PALETTE.orange} height="10" width="72" x="44" y="66" />
+      <rect fill={PALETTE.yellow} height="10" width="72" x="44" y="76" />
       {/* The columns. */}
       {drawSprite(COLUMN_PINK(h - 78), 0, 10, "col1")}
       {drawSprite(COLUMN_YELLOW(h - 78), 152, 10, "col2")}

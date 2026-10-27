@@ -1,5 +1,5 @@
 /** The office shows the lead and the team's helpers, and nothing else. */
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { JobView, Snapshot } from "@thingmaker/contracts";
 
@@ -51,5 +51,15 @@ describe("OfficePane", () => {
     expect(screen.getByText("Everyone in the office (2)")).toBeTruthy();
     expect(screen.getAllByText("Reviewer").length).toBeGreaterThan(0);
     expect(screen.queryByText("atlas-haiku")).toBeNull();
+  });
+
+  it("opens a panel to choose the wall screen and picture frame images", () => {
+    useStore.setState({ sessions: { lead: session("lead") }, jobs: {} });
+    render(<OfficePane sessionId="lead" />);
+    expect(screen.queryByText("Wall screen")).toBeNull();
+    fireEvent.click(screen.getByLabelText("Customize the office"));
+    expect(screen.getByText("Wall screen")).toBeTruthy();
+    expect(screen.getByText("Picture frame")).toBeTruthy();
+    expect(screen.getByText("Your images stay on this device.")).toBeTruthy();
   });
 });

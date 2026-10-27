@@ -6,7 +6,7 @@
  * season can change (or end) by changing one constant.
  */
 import { memo } from "react";
-import { BRAND, ROOM, drawSprite, type Sprite } from "./officeArt";
+import { PALETTE, ROOM, drawSprite, type Sprite } from "./officeArt";
 
 export const OFFICE_THEME: "halloween" | "none" = "halloween";
 
@@ -19,7 +19,7 @@ const SKULL_BLACK = skull("#25252d", "#f3f0e6");
 
 const PUMPKIN: Sprite = {
   rows: ["...gg...", ".OOOgOO.", "OOOOOOOO", "OKOOOKOO", "OOOOOOOO", "OKKKKKKO", ".OOOOOO."],
-  colors: { O: BRAND.orange, g: "#3f8f4f", K: "#3a1e08" },
+  colors: { O: PALETTE.orange, g: "#3f8f4f", K: "#3a1e08" },
 };
 
 const GHOST: Sprite = {

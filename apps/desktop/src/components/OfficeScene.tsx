@@ -1,5 +1,5 @@
 /**
- * The office: the crew at work, drawn as a pixel-art Madbox studio.
+ * The office: the crew at work, drawn as a pixel-art studio.
  *
  * The lead sits at the head desk; every helper on the team has a desk of its
  * own, and the room is as big as the team: three desks to a row, a row more
@@ -86,7 +86,8 @@ function useWidth() {
   return { ref, width };
 }
 
-export const OfficeScene = memo(function OfficeScene({ crew }: { crew: CrewMember[] }) {
+/** `wall` and `logo` are a person's own images for the big screen and the framed picture, when they chose any. */
+export const OfficeScene = memo(function OfficeScene({ crew, wall = null, logo = null }: { crew: CrewMember[]; wall?: string | null; logo?: string | null }) {
   const places = placeCrew(crew);
   const layout = layoutFor(crew.filter((member) => member.kind !== "lead").length);
   const { ref, width } = useWidth();
@@ -98,7 +99,7 @@ export const OfficeScene = memo(function OfficeScene({ crew }: { crew: CrewMembe
   return (
     <div aria-label={t("The crew's office: {working} of {total} at work", { working, total: crew.length })} className="office-scene" ref={ref} role="img" style={{ aspectRatio: `${ROOM.w} / ${layout.h}` }}>
       <svg {...layer} className="office-layer office-back">
-        <Backdrop dy={layout.dy} h={layout.h} />
+        <Backdrop dy={layout.dy} h={layout.h} logo={logo} wall={wall} />
         {OFFICE_THEME === "halloween" && <HalloweenDecor columns={layout.columns} dy={layout.dy} rows={layout.rows} />}
         {desks.map((desk) => (
           <g className={desk.on ? "office-desk-on" : undefined} key={desk.key}>
