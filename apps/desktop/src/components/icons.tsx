@@ -228,6 +228,14 @@ export const IconExternal = (p: IconProps) => (
     <path d="M14 4h6v6M20 4l-9 9M18 14v4a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4" />
   </Svg>
 );
+/** A published page: a window with a spark, for artifact links. */
+export const IconSpark = (p: IconProps) => (
+  <Svg {...p}>
+    <rect height="16" rx="2" width="18" x="3" y="4" />
+    <path d="M3 8h18" />
+    <path d="M12 11.5l1 2.5 2.5 1-2.5 1-1 2.5-1-2.5-2.5-1 2.5-1 1-2.5Z" />
+  </Svg>
+);
 export const IconBolt = (p: IconProps) => (
   <Svg {...p}>
     <path d="M13 3 5 13.5h6L10 21l8-10.5h-6L13 3Z" />

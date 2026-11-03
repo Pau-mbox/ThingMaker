@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
+import { fireEvent, render, screen } from "@testing-library/react";
 import { Markdown, parseBlocks } from "./markdown";
 
 describe("markdown blocks", () => {
@@ -16,8 +17,32 @@ describe("markdown blocks", () => {
     expect(html).not.toContain("<script>");
     expect(html).toContain("&lt;script&gt;");
     expect(html).not.toContain("javascript:");
-    expect(html).toContain('title="https://example.com"');
+    expect(html).toContain('title="Open https://example.com in your browser"');
     expect(html).not.toContain("<img");
     expect(html).toContain("image: img");
+  });
+
+  it("links a bare address, leaving the sentence's punctuation out of it", () => {
+    const opened = vi.fn();
+    render(<Markdown onLink={opened} source={"Docs are at https://example.com/a_b_c (see https://en.wikipedia.org/wiki/Foo_(bar)). Done."} />);
+    fireEvent.click(screen.getByText("https://example.com/a_b_c"));
+    fireEvent.click(screen.getByText("https://en.wikipedia.org/wiki/Foo_(bar)"));
+    expect(opened.mock.calls).toEqual([["https://example.com/a_b_c"], ["https://en.wikipedia.org/wiki/Foo_(bar)"]]);
+    expect(document.body.textContent).toContain("). Done.");
+  });
+
+  it("shows an artifact's link as a named pill that opens in the browser", () => {
+    const opened = vi.fn();
+    const url = "https://claude.ai/artifact/95s9H5VykZDRXsZSGfz3z4";
+    render(<Markdown onLink={opened} source={`The page is ready, but at a new link: ${url}. Or [the evolutions page](${url}).`} />);
+    const pills = document.querySelectorAll(".artifact-link");
+    expect(pills).toHaveLength(2);
+    expect(pills[0]?.textContent).toBe("Artifact95s9H5Vy");
+    expect(pills[1]?.textContent).toBe("the evolutions page");
+    expect(pills[0]?.getAttribute("title")).toBe(`Open ${url} in your browser`);
+    fireEvent.click(pills[0] as Element);
+    expect(opened).toHaveBeenCalledWith(url);
+    // The address is not printed out alongside its pill.
+    expect(document.body.textContent).not.toContain("claude.ai");
   });
 });

@@ -9,6 +9,7 @@
  */
 import { Fragment, type ReactNode } from "react";
 import { t } from "./i18n";
+import { IconExternal, IconSpark } from "./components/icons";
 
 export type Block =
   | { type: "heading"; level: number; text: string }
@@ -119,7 +120,45 @@ function safeHref(url: string): string | null {
 
 export type LinkHandler = (url: string) => void;
 
-const INLINE = /(`[^`]+`)|(\*\*[^*]+\*\*)|(__[^_]+__)|(\*[^*\n]+\*)|(_[^_\n]+_)|(~~[^~]+~~)|(!\[[^\]]*\]\([^)]*\))|(\[[^\]]+\]\([^)]*\))|(<https?:\/\/[^>\s]+>)/;
+const INLINE = /(`[^`]+`)|(\*\*[^*]+\*\*)|(__[^_]+__)|(\*[^*\n]+\*)|(_[^_\n]+_)|(~~[^~]+~~)|(!\[[^\]]*\]\([^)]*\))|(\[[^\]]+\]\([^)]*\))|(<https?:\/\/[^>\s]+>)|(https?:\/\/[^\s<>"'`]+)/;
+
+/** A Claude artifact's page, which reads better as a named link than as its address. */
+const ARTIFACT = /^https:\/\/claude\.ai\/(?:code\/)?artifact\/([\w-]+)/i;
+
+/**
+ * Where a bare address ends: sentence punctuation after it is the prose's,
+ * and so is a closing bracket the address did not open.
+ */
+function bareUrl(token: string): string {
+  let url = token;
+  for (;;) {
+    const last = url.at(-1) ?? "";
+    if (/[.,;:!?'"]/.test(last)) url = url.slice(0, -1);
+    else if (last === ")" && (url.match(/\(/g) ?? []).length < (url.match(/\)/g) ?? []).length) url = url.slice(0, -1);
+    else if (last === "]" && (url.match(/\[/g) ?? []).length < (url.match(/]/g) ?? []).length) url = url.slice(0, -1);
+    else return url;
+  }
+}
+
+/** A link opens in the default browser; an artifact's is a named pill. */
+function linkTo(href: string, label: ReactNode | null, key: number, onLink?: LinkHandler): ReactNode {
+  const artifact = ARTIFACT.exec(href);
+  if (artifact) {
+    return (
+      <button className="artifact-link" key={key} onClick={() => onLink?.(href)} title={t("Open {url} in your browser", { url: href })} type="button">
+        <IconSpark size={12} />
+        <span className="artifact-link-label">{label ?? t("Artifact")}</span>
+        {label === null && <span className="artifact-link-id mono">{(artifact[1] ?? "").slice(0, 8)}</span>}
+        <IconExternal size={11} />
+      </button>
+    );
+  }
+  return (
+    <button className="link inline-link" key={key} onClick={() => onLink?.(href)} title={t("Open {url} in your browser", { url: href })} type="button">
+      {label ?? href}
+    </button>
+  );
+}
 
 export type ImageRenderer = (src: string, alt: string) => ReactNode | null;
 
@@ -158,22 +197,15 @@ export function renderInline(text: string, onLink?: LinkHandler, onImage?: Image
       const parts = /\[([^\]]+)\]\(([^)]*)\)/.exec(token);
       const label = parts?.[1] ?? token;
       const href = safeHref(parts?.[2] ?? "");
-      out.push(
-        href ? (
-          <button className="link inline-link" key={key} onClick={() => onLink?.(href)} title={href} type="button">
-            {renderInline(label, onLink)}
-          </button>
-        ) : (
-          <span key={key}>{label}</span>
-        ),
-      );
+      // A label that is the address itself says nothing more than the pill would.
+      out.push(href ? linkTo(href, label.trim() === href ? null : renderInline(label, onLink), key, onLink) : <span key={key}>{label}</span>);
     } else if (match[9]) {
-      const href = token.slice(1, -1);
-      out.push(
-        <button className="link inline-link" key={key} onClick={() => onLink?.(href)} title={href} type="button">
-          {href}
-        </button>,
-      );
+      out.push(linkTo(token.slice(1, -1), null, key, onLink));
+    } else if (match[10]) {
+      const href = bareUrl(token);
+      out.push(linkTo(href, null, key, onLink));
+      rest = rest.slice(match.index + href.length);
+      continue;
     }
     rest = rest.slice(match.index + token.length);
   }

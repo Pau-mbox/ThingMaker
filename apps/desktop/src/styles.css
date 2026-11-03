@@ -2800,6 +2800,59 @@ code {
   font: inherit;
 }
 
+.inline-link {
+  overflow-wrap: anywhere;
+  text-align: left;
+}
+
+/* A Claude artifact's link: a named pill that opens in the default browser. */
+.artifact-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  max-width: 100%;
+  margin: 0 1px;
+  padding: 1px 8px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--panel-2);
+  color: var(--text);
+  font: inherit;
+  font-size: 0.92em;
+  line-height: 1.5;
+  vertical-align: baseline;
+  cursor: pointer;
+}
+
+.artifact-link:hover {
+  border-color: var(--focus);
+}
+
+.artifact-link:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 1px;
+}
+
+.artifact-link > svg {
+  flex: none;
+  color: var(--focus);
+}
+
+.artifact-link > svg:last-child {
+  color: var(--muted);
+}
+
+.artifact-link-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.artifact-link-id {
+  color: var(--muted);
+  font-size: 0.85em;
+}
+
 /* ---------- Accessibility ---------- */
 
 .sr-only {
