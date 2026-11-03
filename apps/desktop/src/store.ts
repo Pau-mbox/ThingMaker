@@ -1596,6 +1596,11 @@ export const useStore = create<State>((set, get) => ({
       case "session_named":
         void get().loadRecords(event.workspaceId);
         return;
+      case "document_loaded":
+        // Waits in the Big Thing tab, which reads it when opened; the agent
+        // tells the user to go there, so the tab is not switched under them.
+        if (state.sessions[event.handle]) set({ bigThingDoc: { ...get().bigThingDoc, [event.handle]: event.path } });
+        return;
       case "session_opened": {
         void get().loadRecords(event.workspaceId);
         if (state.sessions[event.handle]) return;

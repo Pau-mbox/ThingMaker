@@ -652,6 +652,8 @@ export function SessionPanel({ sessionId, embedded = false }: { sessionId: strin
   const storeTab = useStore((s) => s.sessionTab);
   const tab: SessionTab = embedded ? "transcript" : storeTab;
   const setTab = useStore((s) => s.setSessionTab);
+  // A document the agent loaded into Big Thing waits there until the tab is opened.
+  const docWaiting = useStore((s) => Boolean(s.bigThingDoc[sessionId])) && tab !== "odyssey";
   const storeSearchOpen = useStore((s) => s.transcriptSearchOpen);
   const searchOpen = !embedded && storeSearchOpen;
   const setSearchOpen = useStore((s) => s.setTranscriptSearchOpen);
@@ -1009,10 +1011,15 @@ export function SessionPanel({ sessionId, embedded = false }: { sessionId: strin
   const jobsWaiting = sessionJobs.filter((job) => job.status === "waiting").length;
   const agentsBusy = working + jobsBusy;
   const agentsLabel = `${t("Agents")}${agentsBusy > 0 ? ` · ${agentsBusy}` : ""}${jobsWaiting > 0 ? ` · ${t("{n} waiting", { n: jobsWaiting })}` : ""}`;
-  const tabs: { id: typeof tab; label: string }[] = [
+  const tabs: { id: typeof tab; label: string; waiting?: string }[] = [
     { id: "transcript", label: t("Conversation") },
     { id: "agents", label: agentsLabel },
-    ...(isWorker ? [] : [{ id: "odyssey" as const, label: odysseyLabel }, { id: "side" as const, label: sideLabel }]),
+    ...(isWorker
+      ? []
+      : [
+          { id: "odyssey" as const, label: odysseyLabel, ...(docWaiting ? { waiting: t("A document is waiting for you in Big Thing") } : {}) },
+          { id: "side" as const, label: sideLabel },
+        ]),
   ];
 
   return (
@@ -1072,9 +1079,11 @@ export function SessionPanel({ sessionId, embedded = false }: { sessionId: strin
               key={item.id}
               onClick={() => setTab(item.id)}
               role="tab"
+              title={item.waiting}
               type="button"
             >
               {item.label}
+              {item.waiting && <span aria-label={item.waiting} className="tab-dot" />}
             </button>
           ))}
         </div>

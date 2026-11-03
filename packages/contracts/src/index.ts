@@ -1029,6 +1029,8 @@ export type BigThingEvent =
   | { kind: "notify"; goalId: string; workspaceId: string; attention: "needs_input" | "blocked" | "done"; text: string }
   | { kind: "session_opened"; workspaceId: string; handle: string; agentSessionId: string }
   | { kind: "session_named"; workspaceId: string }
+  /** A session's agent loaded a document into its Big Thing tab. */
+  | { kind: "document_loaded"; handle: string; path: string }
   | { kind: "moved"; goalId: string; fromAgentSessionId?: string | null; toAgentSessionId: string; toHandle: string };
 
 export const BIGTHING_EVENT = "thingmaker://bigthing";

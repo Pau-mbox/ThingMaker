@@ -13,6 +13,7 @@ use serde_json::{Value, json};
 use super::{
     engine::{Engine, team_of},
     flow::Finished,
+    host::EngineEvent,
     protocol::{self, Amendment, Ask, ProposedMilestone, ProposedTask, Report, ReportStatus, TaskLine, TaskStatus, TurnProtocol, ask_kind},
 };
 use crate::{
@@ -28,6 +29,7 @@ use crate::{
 };
 
 const BIGTHING_INSTRUCTIONS: &str = "When this session runs a Big Thing goal, report to it with the `bigthing_*` tools: `bigthing_report` when a milestone is finished or blocked, `bigthing_task` as tasks move, `bigthing_ask` for a decision only the user can make, `bigthing_amend` to change the plan. \
+When the user asks you to use a document (a plan, a spec, a Markdown file you are to write) in Big Thing, or to run it as a Big Thing, do not do the work yourself: write the document, then call `bigthing_load_document` with its path, which loads it into this session's Big Thing tab, and tell the user to open that tab to finish setting the goal up and start it. Big Thing plans and runs the work from there. \
 `memory_read` and `memory_write` are the project's shared memory, which every session and worker reads; `board` is the run's task board.";
 
 fn object(properties: Value, required: &[&str]) -> Value {
@@ -156,7 +158,40 @@ fn run_tools() -> Vec<Value> {
             }), &["ops"]),
             "annotations": { "readOnlyHint": false, "destructiveHint": false, "openWorldHint": false }
         }),
+        json!({
+            "name": "bigthing_load_document",
+            "title": "Load a document into Big Thing",
+            "description": "Loads a Markdown or text document into this session's Big Thing tab, where the user sets up a goal from it (or adds it to the goal already running) and starts it. Use it when the user asks for a document to be used in, run by or handed to Big Thing: write the document first, then call this, then tell the user to open the Big Thing tab. Do not start the document's work yourself; Big Thing plans and runs it.",
+            "inputSchema": object(json!({
+                "path": { "type": "string", "description": "The document, absolute or relative to the workspace: .md, .markdown, .mdx or .txt." }
+            }), &["path"]),
+            "annotations": { "readOnlyHint": false, "destructiveHint": false, "openWorldHint": false }
+        }),
     ]
+}
+
+/// The largest document Big Thing reads as a plan, as the tab's own import.
+const MAX_DOCUMENT_BYTES: u64 = 1024 * 1024;
+
+/// A document the caller names, checked the way the Big Thing tab reads one.
+fn plan_document(root: &std::path::Path, path: &str) -> Result<std::path::PathBuf, String> {
+    let named = std::path::Path::new(path);
+    let path = if named.is_absolute() { named.to_path_buf() } else { root.join(named) };
+    let extension = path.extension().and_then(|value| value.to_str()).unwrap_or_default().to_ascii_lowercase();
+    if !matches!(extension.as_str(), "md" | "markdown" | "mdx" | "txt") {
+        return Err("Big Thing reads a Markdown or text file (.md, .markdown, .mdx, .txt).".into());
+    }
+    let metadata = std::fs::metadata(&path).map_err(|error| format!("Could not read {}: {error}. Write the document first.", path.display()))?;
+    if !metadata.is_file() {
+        return Err(format!("{} is not a file.", path.display()));
+    }
+    if metadata.len() > MAX_DOCUMENT_BYTES {
+        return Err("The document is larger than 1 MiB; Big Thing will not read it as a plan.".into());
+    }
+    if metadata.len() == 0 {
+        return Err("The document is empty.".into());
+    }
+    std::fs::canonicalize(&path).map_err(|error| format!("Could not read {}: {error}", path.display()))
 }
 
 fn string(arguments: &Value, key: &str) -> Option<String> {
@@ -181,7 +216,7 @@ impl TeamExtension for Engine {
     }
 
     fn call(&self, caller: &Caller, name: &str, arguments: &Value) -> Option<BoxFuture<Value>> {
-        let known = ["memory_read", "memory_write", "board", "bigthing_report", "bigthing_task", "bigthing_ask", "bigthing_propose_plan", "bigthing_amend"];
+        let known = ["memory_read", "memory_write", "board", "bigthing_report", "bigthing_task", "bigthing_ask", "bigthing_propose_plan", "bigthing_amend", "bigthing_load_document"];
         if !known.contains(&name) {
             return None;
         }
@@ -434,6 +469,22 @@ impl Engine {
                     "recorded": true,
                     "diff": diff,
                     "note": if held { "Applied when this turn ends where it is yours to change; changes to what a milestone is wait for the user. Work to the plan as it stands until you hear." } else { "Applied when this turn ends." }
+                }))
+            }
+            "bigthing_load_document" => {
+                let path = string(arguments, "path").ok_or("bigthing_load_document needs the document's path")?;
+                let path = plan_document(caller.root(), &path)?;
+                // A side conversation loads it into its main session's tab.
+                let handle = self.side_caller(caller).unwrap_or_else(|| caller.orchestrator().to_string());
+                let running = self.goal_for_caller(caller).filter(|goal| !matches!(goal.state, OdysseyState::Complete | OdysseyState::Abandoned));
+                self.inner.host.emit(EngineEvent::DocumentLoaded { handle, path: path.to_string_lossy().into_owned() });
+                Ok(json!({
+                    "loaded": true,
+                    "path": path.to_string_lossy(),
+                    "note": match running {
+                        Some(goal) => format!("The document is in the Big Thing tab, as new work to add to the goal \"{}\". Tell the user to open the Big Thing tab to review the change and add it. Do not start that work yourself.", goal.title),
+                        None => "The document is in the Big Thing tab, ready to set up a goal from. Stop here: tell the user to open the Big Thing tab to finish the setup (title, team, checks) and start it. Do not start the document's work yourself; Big Thing plans and runs it.".to_string(),
+                    }
                 }))
             }
             other => Err(format!("unknown tool {other}")),

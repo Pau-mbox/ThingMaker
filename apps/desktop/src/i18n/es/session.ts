@@ -506,4 +506,5 @@ export const session: Record<string, string> = {
   "Who is working": "Quién está trabajando",
   "Resize the office": "Cambiar el ancho de la oficina",
   "Drag to resize; double-click for the usual width": "Arrastra para cambiar el ancho; doble clic para el ancho habitual",
+  "A document is waiting for you in Big Thing": "Hay un documento esperándote en Big Thing",
 };

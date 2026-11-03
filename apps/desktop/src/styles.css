@@ -1138,6 +1138,18 @@ code {
   transform: rotate(-90deg);
 }
 
+/* Something waits in that tab: a document the agent loaded into Big Thing. */
+.tab-dot {
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  margin-left: 6px;
+  border-radius: 50%;
+  background: var(--focus);
+  box-shadow: 0 0 6px rgba(127, 179, 255, 0.8);
+  vertical-align: 1px;
+}
+
 .tab-badge {
   min-width: 16px;
   padding: 0 4px;

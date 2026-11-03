@@ -102,6 +102,7 @@ export const logic: Record<string, string> = {
   "Asked you a question": "Te ha hecho una pregunta",
   "Proposed the plan": "Plan propuesto",
   "Proposed a plan change": "Cambio de plan propuesto",
+  "Loaded a document into Big Thing": "Documento cargado en Big Thing",
   "Read {target} {range}": "Leído {target} {range}",
   "Read {target}": "Leído {target}",
   Read: "Leído",

@@ -100,6 +100,10 @@ spec, a migration.
    `bigthing_task`, `bigthing_ask`, `bigthing_amend` — each checked against the
    plan on the spot. Questions and plan changes land in the goal's **Inbox**;
    you answer while the run carries on.
+
+   Ask any session to write a plan and use it in Big Thing, and it loads the
+   document into its **Big Thing** tab (`bigthing_load_document`) instead of
+   doing the work itself; you finish setting the goal up there and start it.
 4. **Stay within the accounts.** Each turn's cost is measured. A turn that
    would not fit is moved to an account with room or held until the window
    resets; a spent account parks the run and resumes it by itself. With

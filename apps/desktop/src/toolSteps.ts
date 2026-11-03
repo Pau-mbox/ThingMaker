@@ -309,6 +309,7 @@ const TEAM_TOOLS: Record<string, string> = {
   bigthing_ask: t("Asked you a question"),
   bigthing_propose_plan: t("Proposed the plan"),
   bigthing_amend: t("Proposed a plan change"),
+  bigthing_load_document: t("Loaded a document into Big Thing"),
 };
 
 /** An MCP tool's call, `mcp__server__tool` (Claude) or `server · tool` (Codex), as words. */

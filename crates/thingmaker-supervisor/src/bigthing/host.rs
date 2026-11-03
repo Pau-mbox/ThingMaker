@@ -88,6 +88,9 @@ pub enum EngineEvent {
     SessionOpened { workspace_id: String, handle: String, agent_session_id: String },
     /// The engine named a session after its goal: re-read the session rows.
     SessionNamed { workspace_id: String },
+    /// A session loaded a document into its Big Thing tab, for the user to
+    /// set a goal up from (or add to the running one).
+    DocumentLoaded { handle: String, path: String },
     /// The goal moved to another session.
     Moved { goal_id: String, from_agent_session_id: Option<String>, to_agent_session_id: String, to_handle: String },
 }

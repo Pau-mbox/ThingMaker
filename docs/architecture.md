@@ -65,7 +65,8 @@ Kit is removed; Claude Code and Codex run end to end and either can orchestrate 
   - The protocol is `team` tools (`bigthing_report`, `bigthing_task`,
     `bigthing_ask`, `bigthing_amend`, `bigthing_propose_plan`), checked
     against the record when they are called; the `BIGTHING-*` lines are the
-    fallback.
+    fallback. `bigthing_load_document` hands a document the session wrote
+    to its Big Thing tab, for the user to set a goal up from.
   - Shared project memory (`memory_read`, `memory_write`) and the run's
     `board`, for the orchestrator and, on a reduced server, its workers.
   - Optional: a run's own branch and worktree (checkpoints commit, rollback,

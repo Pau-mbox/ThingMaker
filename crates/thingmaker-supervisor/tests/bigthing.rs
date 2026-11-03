@@ -342,6 +342,37 @@ async fn the_protocol_tools_answer_from_the_record_and_the_memory_is_shared() {
     assert!(fixture.delegation.combo(&live.handle).is_some(), "the session leads a team, so it has the tools");
 }
 
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn a_session_loads_a_document_into_its_big_thing_tab_instead_of_doing_the_work() {
+    let Some(fixture) = fixture_with(&["--follow-plan"]) else { return };
+    let (_goal_id, live) = fixture.goal(1).await;
+    std::fs::write(live.root.join("plan.md"), "# Plan\n\nWrite two files.").unwrap();
+    std::fs::write(live.root.join("notes.json"), "{}").unwrap();
+
+    // A session with no goal: the document waits in its tab for the user.
+    let fresh = Caller::Orchestrator { session: "fresh-1".into(), provider: Provider::Claude, root: live.root.clone() };
+    let names: Vec<String> = fixture.engine.tools(&fresh).iter().map(|tool| tool["name"].as_str().unwrap().to_string()).collect();
+    assert!(names.contains(&"bigthing_load_document".to_string()));
+    assert!(fixture.engine.instructions(&fresh).unwrap().contains("bigthing_load_document"));
+    let loaded = fixture.engine.call(&fresh, "bigthing_load_document", &json!({"path": "plan.md"})).unwrap().await;
+    assert_eq!(loaded["isError"], false, "{loaded}");
+    assert!(loaded["structuredContent"]["note"].as_str().unwrap().contains("open the Big Thing tab"), "{loaded}");
+    let expected = std::fs::canonicalize(live.root.join("plan.md")).unwrap().to_string_lossy().into_owned();
+    assert!(fixture.host.events.lock().unwrap().iter().any(|event| matches!(event, EngineEvent::DocumentLoaded { handle, path } if handle == "fresh-1" && *path == expected)));
+
+    // A session with a goal: the document is new work for it.
+    let running = Caller::Orchestrator { session: live.handle.clone(), provider: Provider::Claude, root: live.root.clone() };
+    let added = fixture.engine.call(&running, "bigthing_load_document", &json!({"path": expected})).unwrap().await;
+    assert!(added["structuredContent"]["note"].as_str().unwrap().contains("new work to add to the goal"), "{added}");
+
+    // Only a document that is there, and is one.
+    for (path, says) in [("missing.md", "Write the document first"), ("notes.json", "Markdown or text")] {
+        let refused = fixture.engine.call(&fresh, "bigthing_load_document", &json!({"path": path})).unwrap().await;
+        assert_eq!(refused["isError"], true);
+        assert!(refused["content"][0]["text"].as_str().unwrap().contains(says), "{refused}");
+    }
+}
+
 #[tokio::test(flavor = "multi_thread", worker_threads = 6)]
 async fn the_runner_hands_ready_tasks_to_workers_in_parallel_and_has_them_reviewed() {
     use thingmaker_supervisor::delegation::WorkerSlot;

@@ -159,6 +159,19 @@ describe("dropping a Markdown plan on the goal form", () => {
     expect(useStore.getState().bigThingDoc).toEqual({});
   });
 
+  it("takes a document the agent loaded, waiting for the tab without switching to it", async () => {
+    const before = useStore.getState().sessionTab;
+    act(() => useStore.getState().noteBigThing({ kind: "document_loaded", handle: SESSION, path: "/w/app/Docs/onboarding.md" }));
+    expect(useStore.getState().bigThingDoc).toEqual({ [SESSION]: "/w/app/Docs/onboarding.md" });
+    expect(useStore.getState().sessionTab).toBe(before);
+    // A session this window does not have is not given one.
+    act(() => useStore.getState().noteBigThing({ kind: "document_loaded", handle: "elsewhere", path: "/x.md" }));
+    expect(Object.keys(useStore.getState().bigThingDoc)).toEqual([SESSION]);
+    render(<OdysseyPane sessionId={SESSION} />);
+    await waitFor(() => expect(screen.getByText("onboarding.md")).toBeTruthy());
+    expect(useStore.getState().bigThingDoc).toEqual({});
+  });
+
   it("suggests the document's heading as the goal name, and nothing else", async () => {
     render(<OdysseyPane sessionId={SESSION} />);
     await drop(["/plans/onboarding.md"]);
