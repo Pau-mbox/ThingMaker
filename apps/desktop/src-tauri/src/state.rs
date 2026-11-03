@@ -75,6 +75,8 @@ pub struct AppState {
     pub engine: std::sync::OnceLock<thingmaker_supervisor::bigthing::Engine>,
     /// The model each live attachment was opened on, when one was asked for.
     pub actor_models: Mutex<HashMap<String, String>>,
+    /// Shared by sessions in the same tree; hooks own the cache's lifetime.
+    pub review_caches: Mutex<HashMap<PathBuf, std::sync::Weak<Mutex<thingmaker_supervisor::review::BaselineCache>>>>,
 }
 
 impl AppState {
@@ -84,6 +86,7 @@ impl AppState {
         let storage = Arc::new(Mutex::new(storage));
         let activity = thingmaker_supervisor::activity::ActivityService::new(Arc::clone(&storage));
         Ok(Self {
+            review_caches: Mutex::new(HashMap::new()),
             activity,
             storage,
             actors: Mutex::new(HashMap::new()),

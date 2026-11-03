@@ -155,6 +155,32 @@ deliberately off: freezing `Object.prototype` makes the common
 module load, blanking the window), and the CSP already prevents foreign script
 from reaching the page.
 
+## Message send latency
+
+The composer clears immediately and shows a local pending message. This is
+presentation state, never a fabricated history event. The supervisor's message
+or queue entry replaces it by request ID. A failed or uncertain send restores
+the original text, attachments and mentions alongside any newer draft; it is
+never retried automatically.
+
+Before dispatch, review still captures a baseline. Sessions sharing a root
+share a content cache, warmed and refreshed every two seconds while attached
+on Unix. Sending rechecks the tree and ignore rules and rereads changed files.
+Reuse requires matching size, mode, mtime, device, inode and nanosecond ctime,
+so restoring mtime or replacing a file does not hide an edit. Platforms without
+that change stamp fall back to full reads and do not poll in the background.
+Cold caches and newly changed files can still take longer; provider response
+time is separate.
+
+Native logs include `submission prepared`, `prompt review baseline ready`,
+`dispatching session prompt` and `submission completed` timings. The renderer
+logs the Send-to-acceptance duration without message contents. Snapshot debug
+logs also show how many files were reused. To compare full and cached capture:
+
+```bash
+SNAPSHOT_TIMING_ROOT=/path/to/workspace cargo test -p thingmaker-supervisor review::baseline::tests::snapshot_timing --lib -- --ignored --nocapture
+```
+
 ## Non-goals
 
 No API-key billing, no reading or proxying provider tokens, no rotation across

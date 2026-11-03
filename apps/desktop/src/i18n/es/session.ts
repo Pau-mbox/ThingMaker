@@ -127,6 +127,8 @@ export const session: Record<string, string> = {
   "Confirm the install on the phone.": "Confirma la instalación en el teléfono.",
   "Android app": "App de Android",
   "Sending…": "Enviando…",
+  "Sent": "Enviado",
+  "Queued": "En cola",
   "Install on this phone": "Instalar en este teléfono",
   "Install on phone": "Instalar en el teléfono",
   // ImagesPane

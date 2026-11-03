@@ -104,11 +104,45 @@ pub fn turn_snapshots(state: &AppState, workspace_id: &str, root: &str) -> Befor
     let store = blobs(state);
     let workspace_id = workspace_id.to_string();
     let root = std::path::PathBuf::from(root);
+    let cache = {
+        let mut caches = state.review_caches.lock().unwrap_or_else(|e| e.into_inner());
+        caches.retain(|_, cache| cache.strong_count() > 0);
+        if let Some(cache) = caches.get(&root).and_then(std::sync::Weak::upgrade) {
+            cache
+        } else {
+            let cache = std::sync::Arc::new(std::sync::Mutex::new(
+                thingmaker_supervisor::review::BaselineCache::new(root.clone(), store),
+            ));
+            caches.insert(root, std::sync::Arc::downgrade(&cache));
+            // Warm before the user sends, then refresh in the background. The
+            // weak owner stops this task once the last session releases it.
+            #[cfg(unix)]
+            {
+                let weak = std::sync::Arc::downgrade(&cache);
+                tauri::async_runtime::spawn(async move {
+                    loop {
+                        let weak = weak.clone();
+                        let alive = tauri::async_runtime::spawn_blocking(move || {
+                            let Some(cache) = weak.upgrade() else { return false };
+                            if let Ok(mut cache) = cache.try_lock() {
+                                let _ = cache.capture();
+                            }
+                            true
+                        }).await.unwrap_or(false);
+                        if !alive { break; }
+                        tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+                    }
+                });
+            }
+            cache
+        }
+    };
     BeforePrompt(std::sync::Arc::new(move |agent_session_id: &str| {
+        let started = std::time::Instant::now();
         let Some(session) = storage.with_storage(|s| s.session_by_agent_id(&workspace_id, agent_session_id)).ok().flatten() else {
             return;
         };
-        let manifest = match capture_baseline(&root, &store) {
+        let manifest = match cache.lock().unwrap_or_else(|e| e.into_inner()).capture() {
             Ok(manifest) => manifest,
             Err(error) => {
                 tracing::warn!(?error, "prompt snapshot capture failed");
@@ -122,6 +156,7 @@ pub fn turn_snapshots(state: &AppState, workspace_id: &str, root: &str) -> Befor
         if let Err(error) = result {
             tracing::warn!(%error, "prompt snapshot insert failed");
         }
+        tracing::info!(%agent_session_id, elapsed_ms = started.elapsed().as_millis() as u64, "prompt review baseline ready");
     }))
 }
 

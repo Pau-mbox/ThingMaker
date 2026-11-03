@@ -404,6 +404,7 @@ pub struct SubmitResponse {
 
 #[tauri::command]
 pub async fn session_submit(request: SubmitRequest, state: State<'_, AppState>) -> CommandResult<SubmitResponse> {
+    let started = std::time::Instant::now();
     if request.text.trim().is_empty() && request.attachment_ids.is_empty() && request.mentions.is_empty() {
         return Err(DesktopError::io("prompt is empty"));
     }
@@ -457,7 +458,9 @@ pub async fn session_submit(request: SubmitRequest, state: State<'_, AppState>) 
         return Err(storage_error(error));
     }
     let _ = state.with_storage(|storage| storage.outbox_transition(&request.request_id, SubmissionState::Writing, None));
+    tracing::info!(request_id = %request.request_id, preparation_ms = started.elapsed().as_millis() as u64, "submission prepared");
     let outcome = actor.submit(request.request_id.clone(), blocks).await?;
+    tracing::info!(request_id = %request.request_id, elapsed_ms = started.elapsed().as_millis() as u64, "submission completed");
     let (target_state, message) = match &outcome {
         SubmissionOutcome::Accepted => (SubmissionState::Accepted, None),
         SubmissionOutcome::Rejected { error } => (SubmissionState::Rejected, Some(error.message.clone())),
@@ -546,6 +549,7 @@ pub struct EnqueueRequest {
 /// would build it, so what was queued is what goes.
 #[tauri::command]
 pub async fn session_enqueue(request: EnqueueRequest, state: State<'_, AppState>) -> CommandResult<EnqueueOutcome> {
+    let started = std::time::Instant::now();
     if request.text.trim().is_empty() && request.attachment_ids.is_empty() && request.mentions.is_empty() {
         return Err(DesktopError::io("prompt is empty"));
     }
@@ -564,6 +568,7 @@ pub async fn session_enqueue(request: EnqueueRequest, state: State<'_, AppState>
         .ok_or_else(|| DesktopError::not_ready("session root unknown"))?;
     let mut blocks = prompt_blocks(&state, &actor, &root, &request.text, &request.attachment_ids, &request.mentions).await?;
     side_notes_first(&state, &request.handle.id, &mut blocks);
+    tracing::info!(request_id = %request.request_id, preparation_ms = started.elapsed().as_millis() as u64, "queued submission prepared");
     actor
         .enqueue(QueuedPrompt { id: request.request_id, text: request.text, blocks, restore: request.restore })
         .await

@@ -11,7 +11,7 @@ pub mod blobs;
 pub mod diff;
 pub mod git;
 
-pub use baseline::{BaselineFile, BaselineManifest, capture_baseline};
+pub use baseline::{BaselineCache, BaselineFile, BaselineManifest, capture_baseline};
 pub use blobs::BlobStore;
 pub use diff::{ChangeKind, DiffReport, FileChange, diff_against_baseline};
 pub use git::{
