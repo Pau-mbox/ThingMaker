@@ -19,6 +19,7 @@ pub mod skills;
 pub mod bigthing;
 pub mod support;
 pub mod terminal;
+pub mod update;
 pub mod workspace;
 
 use thingmaker_supervisor::DesktopError;

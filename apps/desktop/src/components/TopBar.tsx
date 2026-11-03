@@ -9,6 +9,7 @@ import { basenameOf, sessionTitle, useStore, viewExists } from "../store";
 import { navTarget } from "../navHistory";
 import { IconBack, IconBranch, IconCommand, IconExport, IconForward, IconPlug, IconSidebar } from "./icons";
 import { t } from "../i18n";
+import { UpdateButton } from "./AppUpdate";
 
 export function TopBar() {
   const view = useStore((s) => s.view);
@@ -118,6 +119,7 @@ export function TopBar() {
         )}
       </div>
       <div className="topbar-actions">
+        {!IS_REMOTE && <UpdateButton />}
         <button className="button small" title={t("Enter Chill mode (⌘⇧C)")} onClick={() => useStore.getState().setChillMode(true)} type="button">☾ Chill</button>
         <button
           className={`icon-button remote-hidden ${view.kind === "integrations" ? "on" : ""}`}

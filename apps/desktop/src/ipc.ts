@@ -39,6 +39,8 @@ import {
   type QuestionRecord,
   type QuestionState,
   type StepEdit,
+  type UpdateCheck,
+  type UpdateProgress,
   type ApprovalDecision,
   type OdysseyView,
   type AdoptedPlan,
@@ -357,6 +359,13 @@ export const api = {
   providerModels: (provider: Provider) => call<ProviderModel[]>(COMMANDS.providerModels, { provider }),
   providerVersions: (askLatest: boolean) => call<ProviderVersion[]>(COMMANDS.providerVersions, { askLatest }),
   providerUpdate: (provider: Provider) => call<ProviderUpdateResult>(COMMANDS.providerUpdate, { provider }),
+  appUpdateCheck: () => call<UpdateCheck>(COMMANDS.appUpdateCheck),
+  /** Resolves only if installing fails: on success the app restarts into the new version. */
+  appUpdateInstall: (onProgress: (progress: UpdateProgress) => void) => {
+    const channel = new Channel<UpdateProgress>();
+    channel.onmessage = onProgress;
+    return call<void>(COMMANDS.appUpdateInstall, { onProgress: channel });
+  },
   providerQuota: (provider: Provider) => call<QuotaSnapshot>(COMMANDS.providerQuota, { provider }),
   providerLogout: (provider: Provider) => call<void>(COMMANDS.providerLogout, { provider }),
   delegationComboGet: (handle: SessionHandle) => call<Combo | null>(COMMANDS.delegationComboGet, { handle }),

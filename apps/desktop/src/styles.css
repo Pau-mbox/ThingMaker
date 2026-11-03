@@ -7061,3 +7061,123 @@ html[data-platform="android"] { --traffic-lights: 8px; --titlebar: 52px; height:
     opacity: 0.8;
   }
 }
+
+/* ThingMaker's own updates (AppUpdate): the button left of Chill with its
+   blue dot, its panel, and the startup popup. */
+.update-wrap {
+  position: relative;
+  display: inline-flex;
+}
+
+.update-button {
+  position: relative;
+}
+
+.update-ready {
+  color: var(--text);
+}
+
+.update-dot {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--focus);
+  box-shadow: 0 0 0 2px var(--bg), 0 0 8px rgba(127, 179, 255, 0.8);
+  animation: update-glow 2.4s ease-in-out infinite;
+}
+
+@keyframes update-glow {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.55;
+  }
+}
+
+.update-panel {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 40;
+  width: 320px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px 14px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  background: var(--panel-2);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.45);
+  -webkit-app-region: no-drag;
+}
+
+.update-panel .button,
+.update-panel .button-small {
+  align-self: flex-start;
+}
+
+.update-error {
+  overflow-wrap: anywhere;
+}
+
+.update-notes {
+  max-height: 180px;
+  overflow: auto;
+  font-size: 12.5px;
+  color: var(--text-2);
+  border-left: 2px solid var(--border-strong);
+  padding-left: 10px;
+}
+
+.update-notes > :first-child {
+  margin-top: 0;
+}
+
+.update-progress {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 220px;
+}
+
+.update-meter {
+  height: 4px;
+  border-radius: 2px;
+  background: var(--panel-3);
+  overflow: hidden;
+}
+
+.update-meter > span {
+  display: block;
+  height: 100%;
+  background: var(--focus);
+  transition: width 200ms ease;
+}
+
+.update-prompt {
+  width: min(480px, 92vw);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.update-prompt h2,
+.update-prompt p {
+  margin: 0;
+}
+
+.update-prompt-actions {
+  align-items: center;
+  gap: 8px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .update-dot {
+    animation: none;
+  }
+}

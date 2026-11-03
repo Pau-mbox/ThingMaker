@@ -1,3 +1,4 @@
+import { IS_REMOTE } from "../remote/mode";
 import { lazy, Suspense, useEffect, useState } from "react";
 import { PhoneSection } from "./PhoneSection";
 import {
@@ -192,6 +193,37 @@ const BUILT_IN_CLAUDE_MODELS: ClaudeModelChoice[] = [
   { value: "sonnet", name: "Sonnet 5.5", needsCredits: false },
   { value: "haiku", name: "Haiku 4.5", needsCredits: false },
 ];
+
+/** ThingMaker's own version, a check, and whether a startup popup offers updates. */
+function UpdatesSection() {
+  const update = useStore((s) => s.appUpdate);
+  const uiPrefs = useStore((s) => s.uiPrefs);
+  const setUiPrefs = useStore((s) => s.setUiPrefs);
+  const checkForUpdate = useStore((s) => s.checkForUpdate);
+  return (
+    <section>
+      <h3>{t("Updates")}</h3>
+      <div className="row wrap">
+        <span className="small">
+          {update.available
+            ? t("ThingMaker {version} is available", { version: update.available.version })
+            : update.current
+              ? t("ThingMaker {version} is up to date", { version: update.current })
+              : t("Not checked yet")}
+        </span>
+        <button className="button button-small" disabled={update.checking} onClick={() => void checkForUpdate("manual")} type="button">
+          {update.checking ? t("Checking for updates…") : t("Check again")}
+        </button>
+      </div>
+      {update.error && <p className="small muted">{update.error}</p>}
+      <label className="small row">
+        <input checked={uiPrefs.updateReminder !== false} onChange={(event) => void setUiPrefs({ updateReminder: event.target.checked })} type="checkbox" />
+        {t("Offer new versions in a popup when ThingMaker starts")}
+      </label>
+      <p className="small muted">{t("Updates come from ThingMaker's GitHub releases and are checked against its signing key before they install.")}</p>
+    </section>
+  );
+}
 
 export function SettingsPanel() {
   const settings = useStore((s) => s.settings);
@@ -409,6 +441,8 @@ export function SettingsPanel() {
           <span className="small muted">{t("Paid input and output, counted from the agent's own transcript. Blank means no ceiling; the spend is still recorded.")}</span>
         </label>
       </section>
+
+      {!IS_REMOTE && <UpdatesSection />}
 
       <section>
         <h3>{t("Language")}</h3>

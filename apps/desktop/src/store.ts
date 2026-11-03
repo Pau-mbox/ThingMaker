@@ -38,6 +38,7 @@ import type {
   PlanChangeRecord,
   QuestionRecord,
   ApprovalDecision,
+  AvailableUpdate,
   StepEdit,
   RepositoryInfo,
   StepState,
@@ -88,6 +89,22 @@ export type SessionUsage = {
 };
 
 export const EMPTY_SESSION_USAGE: SessionUsage = { turnStart: null, latest: null, lastTurn: null, totalPrimary: 0, totalSecondary: 0, turns: 0, resets: 0, sampling: false, error: null };
+
+/** ThingMaker's own updates (REL-03): what the last check said, and an install under way. */
+export type AppUpdateState = {
+  /** The version running now, once a check has said. */
+  current: string | null;
+  available: AvailableUpdate | null;
+  checking: boolean;
+  checkedAt: number | null;
+  /** Why the last check or install failed. */
+  error: string | null;
+  installing: { downloaded: number; total: number | null } | null;
+  /** The startup popup is waiting: an update was found at startup and the reminder is on. */
+  prompt: boolean;
+};
+
+const UPDATE_CHECK_EVERY_MS = 6 * 60 * 60 * 1000;
 
 export type LiveSession = {
   handle: SessionHandle;
@@ -263,6 +280,13 @@ type State = {
   /** Text for the screen-reader live region (settled events only, UX-11). */
   announcement: string;
   uiPrefs: UiPrefs;
+  appUpdate: AppUpdateState;
+  /** Asks GitHub for a newer release. At startup it may raise the popup. */
+  checkForUpdate: (reason: "startup" | "timer" | "manual") => Promise<void>;
+  /** Downloads, verifies and installs the update found, then restarts. */
+  installUpdate: () => Promise<void>;
+  /** Closes the startup popup; `forever` also turns the reminder off. */
+  dismissUpdatePrompt: (forever?: boolean) => void;
   sidebarCollapsed: boolean;
   chillMode: boolean;
   setChillMode: (enabled: boolean) => void;
@@ -887,6 +911,7 @@ export const useStore = create<State>((set, get) => ({
   transcriptSearchOpen: false,
   announcement: "",
   uiPrefs: DEFAULT_UI_PREFS,
+  appUpdate: { current: null, available: null, checking: false, checkedAt: null, error: null, installing: null, prompt: false },
   bigThingDoc: {},
   // On the phone the sidebar is a drawer, closed until asked for.
   sidebarCollapsed: IS_REMOTE,
@@ -908,6 +933,13 @@ export const useStore = create<State>((set, get) => ({
       // start, then twice a day. It asks npm, so it is never on the hot path.
       setTimeout(() => void get().loadProviderVersions(), 20_000);
       setInterval(() => void get().loadProviderVersions(), 12 * 60 * 60 * 1000);
+      // ThingMaker's own releases: shortly after start (after the
+      // preferences, which say whether to offer the popup), then every few
+      // hours. The phone has no install of its own to update.
+      if (!IS_REMOTE) {
+        setTimeout(() => void get().checkForUpdate("startup"), 5_000);
+        setInterval(() => void get().checkForUpdate("timer"), UPDATE_CHECK_EVERY_MS);
+      }
       // Inspection never launches an agent; doing it up front lets the sidebar show
       // real trust state instead of "not inspected yet".
       for (const workspace of workspaces) {
@@ -2029,6 +2061,48 @@ export const useStore = create<State>((set, get) => ({
     for (const f of fresh) seen.add(f);
     const observed = initial ? (get().observedImages[sessionId] ?? []) : [...(get().observedImages[sessionId] ?? []), ...fresh];
     set({ seenImageFiles: { ...get().seenImageFiles, [sessionId]: [...seen] }, observedImages: { ...get().observedImages, [sessionId]: observed } });
+  },
+
+  async checkForUpdate(reason) {
+    if (get().appUpdate.checking || get().appUpdate.installing) return;
+    set({ appUpdate: { ...get().appUpdate, checking: true, error: null } });
+    try {
+      const check = await api.appUpdateCheck();
+      const remind = get().uiPrefs.updateReminder !== false;
+      set({
+        appUpdate: {
+          ...get().appUpdate,
+          current: check.current,
+          available: check.available ?? null,
+          checking: false,
+          checkedAt: Date.now(),
+          error: null,
+          prompt: get().appUpdate.prompt || (reason === "startup" && remind && Boolean(check.available)),
+        },
+      });
+    } catch (error) {
+      // Offline, or no release published yet: said quietly by the button,
+      // never as an error banner.
+      set({ appUpdate: { ...get().appUpdate, checking: false, checkedAt: Date.now(), error: asError(error).message } });
+    }
+  },
+
+  async installUpdate() {
+    if (!get().appUpdate.available || get().appUpdate.installing) return;
+    set({ appUpdate: { ...get().appUpdate, installing: { downloaded: 0, total: null }, error: null } });
+    try {
+      // On success the app restarts into the new version and this never returns.
+      await api.appUpdateInstall((progress) => set({ appUpdate: { ...get().appUpdate, installing: { downloaded: progress.downloaded, total: progress.total ?? null } } }));
+    } catch (error) {
+      // The update was used up; a fresh check offers it again.
+      set({ appUpdate: { ...get().appUpdate, installing: null, error: asError(error).message } });
+      void get().checkForUpdate("manual");
+    }
+  },
+
+  dismissUpdatePrompt(forever = false) {
+    set({ appUpdate: { ...get().appUpdate, prompt: false } });
+    if (forever) void get().setUiPrefs({ updateReminder: false });
   },
 
   async setUiPrefs(patch) {

@@ -77,6 +77,8 @@ pub struct AppState {
     pub actor_models: Mutex<HashMap<String, String>>,
     /// Shared by sessions in the same tree; hooks own the cache's lifetime.
     pub review_caches: Mutex<HashMap<PathBuf, std::sync::Weak<Mutex<thingmaker_supervisor::review::BaselineCache>>>>,
+    /// The update the last check found, kept so installing is the one the person saw.
+    pub pending_update: Mutex<Option<tauri_plugin_updater::Update>>,
 }
 
 impl AppState {
@@ -87,6 +89,7 @@ impl AppState {
         let activity = thingmaker_supervisor::activity::ActivityService::new(Arc::clone(&storage));
         Ok(Self {
             review_caches: Mutex::new(HashMap::new()),
+            pending_update: Mutex::new(None),
             activity,
             storage,
             actors: Mutex::new(HashMap::new()),

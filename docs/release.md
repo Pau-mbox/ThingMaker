@@ -42,20 +42,64 @@ where it is installed: claude-agent-acp in a global npm prefix, `codex` on
 PATH or inside the ChatGPT app, or as chosen in Providers. The executable is
 also the team relay, started with `--thingmaker-mcp`.
 
-## Signing order and updater (REL-03) - not yet
+## Updates from GitHub releases (REL-03) - implemented
 
-1. Sign the app bundle with a Developer ID identity (local builds are only
-   ad-hoc signed, which is enough on the machine that built them).
-2. Notarize (macOS) and verify the installed result with `codesign --verify`
-   and a launch smoke test.
-3. Updater: use `tauri-plugin-updater` with a pinned public key committed in
-   `tauri.conf.json` and the private key held only in release infrastructure.
-   Updater signature verification is separate from OS code signing. Rotate
-   keys by shipping a release that trusts both the old and new key before
-   removing the old one.
+ThingMaker updates itself from this repository's GitHub releases.
 
-The updater plugin is not enabled in this repository: no key pair exists yet,
-and enabling it with a placeholder key would be a nonfunctional promise.
+**In the app.** About five seconds after start, then every six hours, the
+app asks `https://github.com/Pau-mbox/ThingMaker/releases/latest/download/latest.json`
+whether a newer version exists (`tauri-plugin-updater`, driven from Rust:
+`app_update_check`, `app_update_install`). While one does, the button left of
+Chill carries a blue dot; its panel shows the version and the release notes
+and installs it. At startup a popup offers it too, unless Settings > Updates
+turns that off. Installing downloads the bundle, verifies its signature
+against the public key pinned in `tauri.conf.json` (`plugins.updater.pubkey`),
+installs it and restarts; on Windows the installer runs passively and
+restarts the app itself. A restart stops running sessions, and the app says
+so first. The phone has nothing to update and shows none of this.
+
+**The pipeline.** `.github/workflows/release.yml` runs on a `v*` tag. It
+builds one universal macOS app (Intel and Apple silicon) and the Windows
+installer with `tauri.release.conf.json` laid over the usual config, which
+turns on the signed update bundles and gives the macOS app an ad-hoc
+signature. It leaves a **draft** release with the installers, the update
+bundles, their `.sig` files and `latest.json`. Nothing reaches anyone until
+the draft is published.
+
+Local builds (`pnpm app`) do not make update bundles and need no key.
+
+**The key.** Update bundles are signed with a minisign key pair made by
+`tauri signer generate`. The public key is committed in `tauri.conf.json`.
+The private key and its password live outside the repository
+(`~/.tauri/thingmaker-updater.key` and `.password` on the machine that made
+them) and in two repository secrets the workflow reads:
+
+```bash
+gh secret set TAURI_SIGNING_PRIVATE_KEY --repo Pau-mbox/ThingMaker < ~/.tauri/thingmaker-updater.key
+gh secret set TAURI_SIGNING_PRIVATE_KEY_PASSWORD --repo Pau-mbox/ThingMaker < ~/.tauri/thingmaker-updater.password
+```
+
+Losing the private key means installed apps can no longer verify updates:
+keep a copy somewhere safe. To rotate it, ship one release whose
+`tauri.conf.json` trusts the new key, signed with the old one.
+
+**Cutting a release.**
+
+1. `pnpm release 0.2.0` sets the version in `tauri.conf.json`, the Cargo
+   workspace and both `package.json` files, refreshes `Cargo.lock`, commits
+   "Release v0.2.0" and tags `v0.2.0`. It refuses a version that is not newer
+   or a tree with uncommitted changes.
+2. `git push origin main && git push origin v0.2.0` starts the workflow.
+3. When both builds are attached, edit the draft's notes (the app shows them)
+   and publish it. Every ThingMaker from then on sees the update.
+
+**What is still missing.** The macOS app is ad-hoc signed, not signed with an
+Apple Developer ID or notarized, and the Windows installer is not
+Authenticode-signed. The first install from a download therefore meets
+Gatekeeper ("cannot be opened": right-click > Open, or System Settings >
+Privacy & Security > Open Anyway) or SmartScreen ("More info" > "Run
+anyway"). Updates installed from inside the app do not go through that
+again. Developer ID signing and notarization need an Apple Developer account.
 
 ## Atomic compatibility and rollback (REL-04) - partial
 

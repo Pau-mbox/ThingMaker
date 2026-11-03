@@ -261,3 +261,9 @@ export const IconOffice = (p: IconProps) => (
     <path d="M8 20h8M12 16v4M8 9h3M8 12h6" />
   </Svg>
 );
+export const IconUpdate = (p: IconProps) => (
+  <Svg {...p}>
+    <circle cx="12" cy="12" r="8.5" />
+    <path d="M12 7.5v8M8.5 12.5 12 16l3.5-3.5" />
+  </Svg>
+);

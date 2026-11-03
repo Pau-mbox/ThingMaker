@@ -97,6 +97,7 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_notification::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .setup(move |app| {
             let file_handle = std::sync::Arc::clone(&file_handle);
             let data_dir = app
@@ -206,6 +207,8 @@ pub fn run() {
             keep_awake::keep_awake_status,
             commands::providers::provider_versions,
             commands::providers::provider_update,
+            commands::update::app_update_check,
+            commands::update::app_update_install,
             keep_awake::keep_awake_refresh,
             commands::session::session_queue,
             commands::session::session_cancel,

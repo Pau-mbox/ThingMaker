@@ -7,6 +7,7 @@ import { Sidebar } from "./components/Sidebar";
 import { WorkspaceView } from "./components/WorkspaceView";
 import { SessionPanel } from "./components/SessionPanel";
 import { OfficePane } from "./components/OfficePane";
+import { UpdatePrompt } from "./components/AppUpdate";
 import { SignInPanel } from "./components/SignInPanel";
 import { SettingsPanel } from "./components/SettingsPanel";
 import { AttentionBanner, CloseRequestDialog, LockedResumeDialog } from "./components/Attention";
@@ -132,6 +133,7 @@ export function App() {
       <CommandPalette />
       <CloseRequestDialog />
       <LockedResumeDialog />
+      {!IS_REMOTE && <UpdatePrompt />}
       {IS_REMOTE && !chillMode && <ConnectionBanner />}
       {chillMode && <ErrorBoundary label="Chill" onReset={() => setChillMode(false)} fallback={<div className="chill" role="alert" aria-label={t("Chill rendering unavailable")}><button aria-label={t("Back to work")} onClick={() => setChillMode(false)}><svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor"><path d="M9 5H5v14h4M13 8l4 4-4 4M9 12h11" /></svg></button></div>}><Suspense fallback={<div className="chill" aria-label={t("Opening Chill")} />}><ChillView onExit={() => setChillMode(false)} /></Suspense></ErrorBoundary>}
       <div className="shell" style={chillMode ? { display: "none" } : undefined}>

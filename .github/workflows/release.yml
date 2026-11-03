@@ -1,0 +1,62 @@
+# Builds ThingMaker for macOS (one universal app, Intel and Apple silicon) and
+# Windows when a version tag is pushed, signs the update bundles with the
+# updater key, and leaves a draft release with `latest.json` for the app's
+# updater. Publishing the draft is what rolls the update out.
+#
+# Needs two repository secrets (docs/release.md): TAURI_SIGNING_PRIVATE_KEY
+# and TAURI_SIGNING_PRIVATE_KEY_PASSWORD.
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: macos-latest
+            rust_targets: aarch64-apple-darwin,x86_64-apple-darwin
+            args: --target universal-apple-darwin --config src-tauri/tauri.release.conf.json
+          - platform: windows-latest
+            rust_targets: ""
+            args: --config src-tauri/tauri.release.conf.json
+    runs-on: ${{ matrix.platform }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.rust_targets }}
+
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: ". -> target"
+
+      - run: pnpm install --frozen-lockfile
+
+      - uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        with:
+          projectPath: apps/desktop
+          tagName: ${{ github.ref_name }}
+          releaseName: ThingMaker ${{ github.ref_name }}
+          releaseBody: Install it from the files below, or update from inside ThingMaker.
+          releaseDraft: true
+          prerelease: false
+          args: ${{ matrix.args }}

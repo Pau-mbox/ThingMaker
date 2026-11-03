@@ -151,7 +151,16 @@ which worker did each task, and the project memory.
 - **Gemini:** install Google's Antigravity and sign in to its `agy` CLI; the
   quota is your Google account's, shared with the Antigravity app.
 
-### 2. Build and install ThingMaker
+### 2. Install ThingMaker
+
+**From a release.** Download the macOS app or the Windows installer from the
+[latest release](https://github.com/Pau-mbox/ThingMaker/releases/latest). The
+first time, macOS asks you to confirm an app from an unidentified developer
+(right-click > Open) and Windows SmartScreen asks too ("More info" > "Run
+anyway"). From then on ThingMaker updates itself: a blue dot on the button
+left of Chill says a new version is ready, and installing it restarts the app.
+
+**From source**, to change it or to run the latest commit:
 
 #### Windows
 
@@ -205,6 +214,9 @@ pnpm app
 `pnpm app` builds a release `ThingMaker.app` and installs it in
 `/Applications`. Run it again whenever you pull changes; a running ThingMaker
 picks up the new build when you reopen it.
+
+To publish a release that everyone's ThingMaker can update to, see
+[docs/release.md](docs/release.md) (`pnpm release <version>`).
 
 ### 3. Your first team
 

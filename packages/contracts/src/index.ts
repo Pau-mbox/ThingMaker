@@ -1419,7 +1419,14 @@ export type UiPrefs = {
    *  turn, or steer it into this one (when the agent can be steered). The
    *  other is one modifier away. */
   followUp: "queue" | "steer";
+  /** Whether a newer ThingMaker found at startup is offered in a popup. Absent on older saves: on. */
+  updateReminder?: boolean;
 };
+
+/** A newer ThingMaker release than the running one (REL-03). */
+export type AvailableUpdate = { version: string; notes?: string; publishedAtUnixMs?: number };
+export type UpdateCheck = { current: string; available?: AvailableUpdate };
+export type UpdateProgress = { downloaded: number; total?: number };
 
 export type DiffResponse = { report: DiffReport; baseline?: BaselineRecord; isGitRepository: boolean };
 
@@ -1529,6 +1536,8 @@ export const COMMANDS = {
   keepAwakeStatus: "keep_awake_status",
   providerVersions: "provider_versions",
   providerUpdate: "provider_update",
+  appUpdateCheck: "app_update_check",
+  appUpdateInstall: "app_update_install",
   keepAwakeRefresh: "keep_awake_refresh",
   sessionCancel: "session_cancel",
   sessionSetConfigOption: "session_set_config_option",
