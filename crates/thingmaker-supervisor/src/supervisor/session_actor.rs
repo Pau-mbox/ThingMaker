@@ -1513,10 +1513,12 @@ impl ActorState {
         let internal = self.internal.clone();
         let before_prompt = self.config.before_prompt.clone();
         tokio::spawn(async move {
+            let dispatch_started = Instant::now();
             if let Some(BeforePrompt(hook)) = before_prompt {
                 let id = session_id.clone();
                 let _ = tokio::task::spawn_blocking(move || hook(&id)).await;
             }
+            tracing::info!(request_id = %request_id, preparation_ms = dispatch_started.elapsed().as_millis() as u64, "dispatching session prompt");
             let result = transport.request_observed(
                 "session/prompt",
                 json!({ "sessionId": session_id, "prompt": blocks }),

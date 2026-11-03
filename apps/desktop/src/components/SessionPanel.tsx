@@ -6,6 +6,7 @@ import { t } from "../i18n";
 import { useStore, isWorkerIn, latestSide, sessionTitle, type SessionTab } from "../store";
 import { api } from "../ipc";
 import { ConfigPickers } from "./ConfigPickers";
+import { PendingPrompt } from "./PendingPrompt";
 import { TeamChip } from "./TeamEditor";
 import { FilesPane } from "./FilesPane";
 import { ChangesPane } from "./ChangesPane";
@@ -1166,6 +1167,7 @@ export function SessionPanel({ sessionId, embedded = false }: { sessionId: strin
               ))}
               </Fragment>
             ))}
+            <PendingPrompt sessionId={sessionId} />
             {/* What this session has changed on disk, at the end of the
                 reading order so it is the last thing before the composer. */}
             {projection.cards.length > 0 && <CodeChangesCard refreshKey={projection.cards.length} sessionId={sessionId} workspaceId={session.workspaceId} />}
@@ -1191,7 +1193,7 @@ export function SessionPanel({ sessionId, embedded = false }: { sessionId: strin
                 </div>
               </details>
             )}
-            {projection.cards.length === 0 && <p className="muted">{t("Attached. Send a prompt to begin.")}</p>}
+            {projection.cards.length === 0 && !session.pendingPrompt && <p className="muted">{t("Attached. Send a prompt to begin.")}</p>}
             {query && filteredCards.length === 0 && <p className="muted">{t("No entries match.")}</p>}
           </div>
         </>

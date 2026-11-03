@@ -95,6 +95,8 @@ export type LiveSession = {
   snapshot: Snapshot;
   projection: Projection;
   inFlightRequestId: string | null;
+  /** Local feedback only; the supervisor's echo/queue replaces it. */
+  pendingPrompt?: { requestId: string; text: string; attachments: AttachmentSnapshot[]; mentions: Mention[]; queued: boolean; accepted: boolean } | undefined;
   steerInFlight: boolean;
   attention: AttentionKind;
   openedAt: number;
@@ -483,6 +485,22 @@ function asError(error: unknown): DesktopError {
   return { code: "IO", message: error instanceof Error ? error.message : String(error), retry: "user_action" };
 }
 
+function promptPublished(projection: Projection, requestId: string): boolean {
+  return projection.messages.has(`user|prompt-${requestId}`) || projection.queue.items.some((item) => item.id === requestId);
+}
+
+/** Restore a failed submission without overwriting a newly started draft. */
+function restorePrompt(state: State, sessionId: string, prompt: NonNullable<LiveSession["pendingPrompt"]>) {
+  const current = state.drafts[sessionId] ?? "";
+  const attachments = state.attachments[sessionId] ?? [];
+  const mentions = state.mentions[sessionId] ?? [];
+  return {
+    drafts: { ...state.drafts, [sessionId]: [prompt.text, current].filter(Boolean).join("\n\n") },
+    attachments: { ...state.attachments, [sessionId]: [...prompt.attachments.filter((a) => !attachments.some((b) => a.id === b.id)), ...attachments] },
+    mentions: { ...state.mentions, [sessionId]: [...prompt.mentions.filter((a) => !mentions.some((b) => JSON.stringify(a) === JSON.stringify(b))), ...mentions] },
+  };
+}
+
 function attentionFor(event: EventEnvelope, current: AttentionKind): AttentionKind {
   const payload = event.payload;
   // Permission requests are answered by the workspace's trust, with nobody
@@ -782,7 +800,7 @@ async function attachLive(get: Get, set: Set, handle: SessionHandle, workspaceId
       }
     }
     if (viewing) attention = "none";
-    set({ sessions: { ...get().sessions, [id]: { ...current, projection: { ...current.projection }, attention, turnStartedAt, lastEventAt: Date.now() } } });
+    set({ sessions: { ...get().sessions, [id]: { ...current, projection: { ...current.projection }, pendingPrompt: current.pendingPrompt && !promptPublished(current.projection, current.pendingPrompt.requestId) ? current.pendingPrompt : undefined, attention, turnStartedAt, lastEventAt: Date.now() } } });
     if (announcement) get().announce(announcement);
     if (!viewing && attention !== "none" && attention !== current.attention) {
       const settings = get().settings;
@@ -2514,7 +2532,15 @@ export const useStore = create<State>((set, get) => ({
     const mentions = get().mentions[sessionId] ?? [];
     if (!session || (!draft.trim() && attachments.length === 0 && mentions.length === 0) || session.inFlightRequestId) return;
     const requestId = crypto.randomUUID();
-    set({ sessions: { ...get().sessions, [sessionId]: { ...session, inFlightRequestId: requestId } }, error: null });
+    const pendingPrompt = { requestId, text: draft, attachments, mentions, queued: false, accepted: false };
+    const started = performance.now();
+    set({
+      sessions: { ...get().sessions, [sessionId]: { ...session, inFlightRequestId: requestId, pendingPrompt } },
+      drafts: { ...get().drafts, [sessionId]: "" },
+      attachments: { ...get().attachments, [sessionId]: [] },
+      mentions: { ...get().mentions, [sessionId]: [] },
+      error: null,
+    });
     try {
       const brief = get().sideBrief[sessionId];
       const response = await api.sessionSubmit(
@@ -2529,21 +2555,17 @@ export const useStore = create<State>((set, get) => ({
           const { [sessionId]: _sent, ...rest } = get().sideBrief;
           set({ sideBrief: rest });
         }
-        set({
-          drafts: { ...get().drafts, [sessionId]: "" },
-          attachments: { ...get().attachments, [sessionId]: [] },
-          mentions: { ...get().mentions, [sessionId]: [] },
-        });
+        const current = get().sessions[sessionId];
+        if (current) set({ sessions: { ...get().sessions, [sessionId]: { ...current, pendingPrompt: current.pendingPrompt?.requestId === requestId && !promptPublished(current.projection, requestId) ? { ...pendingPrompt, accepted: true } : undefined } } });
       } else {
-        // Rejected or uncertain: draft, attachments and mentions are preserved
-        // so nothing the user assembled is lost.
-        set({ error: response.outcome.error });
+        set({ ...restorePrompt(get(), sessionId, pendingPrompt), error: response.outcome.error });
       }
     } catch (error) {
-      set({ error: asError(error) });
+      set({ ...restorePrompt(get(), sessionId, pendingPrompt), error: asError(error) });
     } finally {
       const current = get().sessions[sessionId];
-      if (current) set({ sessions: { ...get().sessions, [sessionId]: { ...current, inFlightRequestId: null } } });
+      if (current) set({ sessions: { ...get().sessions, [sessionId]: { ...current, inFlightRequestId: null, pendingPrompt: current.pendingPrompt?.accepted ? current.pendingPrompt : undefined } } });
+      console.debug("session send", { requestId, elapsedMs: Math.round(performance.now() - started) });
     }
   },
 
@@ -2571,7 +2593,14 @@ export const useStore = create<State>((set, get) => ({
     const mentions = get().mentions[sessionId] ?? [];
     if (!session || (!draft.trim() && attachments.length === 0 && mentions.length === 0) || session.inFlightRequestId) return;
     const requestId = crypto.randomUUID();
-    set({ sessions: { ...get().sessions, [sessionId]: { ...session, inFlightRequestId: requestId } }, error: null });
+    const pendingPrompt = { requestId, text: draft, attachments, mentions, queued: true, accepted: false };
+    set({
+      sessions: { ...get().sessions, [sessionId]: { ...session, inFlightRequestId: requestId, pendingPrompt } },
+      drafts: { ...get().drafts, [sessionId]: "" },
+      attachments: { ...get().attachments, [sessionId]: [] },
+      mentions: { ...get().mentions, [sessionId]: [] },
+      error: null,
+    });
     try {
       // The composer's own state rides along, so taking the prompt back out
       // to edit restores its chips too, from this window or the phone.
@@ -2581,16 +2610,13 @@ export const useStore = create<State>((set, get) => ({
         const { [sessionId]: _sent, ...rest } = get().sideBrief;
         set({ sideBrief: rest });
       }
-      set({
-        drafts: { ...get().drafts, [sessionId]: "" },
-        attachments: { ...get().attachments, [sessionId]: [] },
-        mentions: { ...get().mentions, [sessionId]: [] },
-      });
+      const current = get().sessions[sessionId];
+      if (current) set({ sessions: { ...get().sessions, [sessionId]: { ...current, pendingPrompt: current.pendingPrompt?.requestId === requestId && !promptPublished(current.projection, requestId) ? { ...pendingPrompt, accepted: true } : undefined } } });
     } catch (error) {
-      set({ error: asError(error) });
+      set({ ...restorePrompt(get(), sessionId, pendingPrompt), error: asError(error) });
     } finally {
       const current = get().sessions[sessionId];
-      if (current) set({ sessions: { ...get().sessions, [sessionId]: { ...current, inFlightRequestId: null } } });
+      if (current) set({ sessions: { ...get().sessions, [sessionId]: { ...current, inFlightRequestId: null, pendingPrompt: current.pendingPrompt?.accepted ? current.pendingPrompt : undefined } } });
     }
   },
 
