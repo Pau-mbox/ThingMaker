@@ -164,13 +164,15 @@ the original text, attachments and mentions alongside any newer draft; it is
 never retried automatically.
 
 Before dispatch, review still captures a baseline. Sessions sharing a root
-share a content cache, warmed and refreshed every two seconds while attached
-on Unix. Sending rechecks the tree and ignore rules and rereads changed files.
-Reuse requires matching size, mode, mtime, device, inode and nanosecond ctime,
-so restoring mtime or replacing a file does not hide an edit. Platforms without
-that change stamp fall back to full reads and do not poll in the background.
-Cold caches and newly changed files can still take longer; provider response
-time is separate.
+share a content cache, updated only when a prompt needs a baseline. There is
+no background warm-up or periodic rescan: idle sessions do no snapshot work,
+and intermediate edits between prompts are not stored by the cache. Sending
+rechecks the tree and ignore rules and rereads changed files. Reuse requires
+matching size, mode, mtime, device, inode and nanosecond ctime, so restoring
+mtime or replacing a file does not hide an edit. Platforms without that change
+stamp fall back to full reads. The first send starts with a cold cache; large
+trees still incur a metadata walk per send. Provider response time is separate.
+Existing blobs are retained; this change does not introduce garbage collection.
 
 Native logs include `submission prepared`, `prompt review baseline ready`,
 `dispatching session prompt` and `submission completed` timings. The renderer

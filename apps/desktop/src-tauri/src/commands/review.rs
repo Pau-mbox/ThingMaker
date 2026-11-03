@@ -114,26 +114,8 @@ pub fn turn_snapshots(state: &AppState, workspace_id: &str, root: &str) -> Befor
                 thingmaker_supervisor::review::BaselineCache::new(root.clone(), store),
             ));
             caches.insert(root, std::sync::Arc::downgrade(&cache));
-            // Warm before the user sends, then refresh in the background. The
-            // weak owner stops this task once the last session releases it.
-            #[cfg(unix)]
-            {
-                let weak = std::sync::Arc::downgrade(&cache);
-                tauri::async_runtime::spawn(async move {
-                    loop {
-                        let weak = weak.clone();
-                        let alive = tauri::async_runtime::spawn_blocking(move || {
-                            let Some(cache) = weak.upgrade() else { return false };
-                            if let Ok(mut cache) = cache.try_lock() {
-                                let _ = cache.capture();
-                            }
-                            true
-                        }).await.unwrap_or(false);
-                        if !alive { break; }
-                        tokio::time::sleep(std::time::Duration::from_secs(2)).await;
-                    }
-                });
-            }
+            // Capture only when a prompt needs a baseline. Idle sessions must
+            // not walk the tree or retain intermediate edits in the blob store.
             cache
         }
     };
@@ -423,4 +405,46 @@ fn read_image(path: &Path, relative: String) -> CommandResult<WorkspaceImage> {
         credentials: if mime == "image/png" { thingmaker_supervisor::c2pa::content_credentials(&bytes) } else { None },
         data_base64: out,
     })
+}
+
+#[cfg(test)]
+mod turn_snapshot_tests {
+    use super::*;
+    use thingmaker_supervisor::{agents::Provider, storage::workspaces::SessionOrigin};
+
+    #[test]
+    fn open_sessions_only_capture_on_prompt_and_skip_intermediate_edits() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path().join("workspace");
+        std::fs::create_dir(&root).unwrap();
+        std::fs::write(root.join("file.txt"), "before prompt").unwrap();
+        let state = AppState::initialize(&temp.path().join("data"), None).unwrap();
+        let root_text = root.to_str().unwrap();
+        let workspace = state.with_storage(|s| s.workspace_upsert(root_text, root_text, "test")).unwrap();
+        let session = state.with_storage(|s| s.session_upsert(&workspace.id, "agent", SessionOrigin::Desktop, Provider::Claude)).unwrap();
+        let first = turn_snapshots(&state, &workspace.id, root_text);
+        let second = turn_snapshots(&state, &workspace.id, root_text);
+        assert_eq!(state.review_caches.lock().unwrap().len(), 1);
+
+        // Opening a session must not start any snapshot I/O.
+        std::thread::sleep(std::time::Duration::from_millis(100));
+        assert!(!blobs(&state).dir().exists());
+        first.0("agent");
+        let baseline = state.with_storage(|s| s.baseline_latest(&workspace.id, Some(&session.id), TURN_SCOPE)).unwrap().unwrap();
+        assert_eq!(baseline.file_count, 1);
+
+        std::fs::write(root.join("file.txt"), "intermediate edit").unwrap();
+        // Longer than the old poll interval: open hooks must do no work.
+        std::thread::sleep(std::time::Duration::from_millis(2200));
+        assert!(blobs(&state).get(&BlobStore::hash(b"intermediate edit")).unwrap().is_none());
+        assert_eq!(state.with_storage(|s| s.baseline_latest(&workspace.id, Some(&session.id), TURN_SCOPE)).unwrap().unwrap().id, baseline.id);
+
+        std::fs::write(root.join("file.txt"), "next prompt").unwrap();
+        second.0("agent");
+        let next = state.with_storage(|s| s.baseline_latest(&workspace.id, Some(&session.id), TURN_SCOPE)).unwrap().unwrap();
+        let (_, manifest) = state.with_storage(|s| s.baseline_get(&next.id)).unwrap().unwrap();
+        assert_eq!(manifest.files["file.txt"].hash, BlobStore::hash(b"next prompt"));
+        assert!(blobs(&state).get(&BlobStore::hash(b"intermediate edit")).unwrap().is_none());
+        assert!(state.with_storage(|s| s.baseline_get(&baseline.id)).unwrap().is_none());
+    }
 }
