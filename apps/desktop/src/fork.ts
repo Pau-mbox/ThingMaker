@@ -10,18 +10,19 @@
 import type { Provider } from "@thingmaker/contracts";
 import type { Card } from "./projection";
 
-/** `Title (fork)`, then `Title (fork 2)`, … — the first not already taken. */
-export function forkTitle(base: string, taken: readonly string[]): string {
-  const root = base.replace(/ \(fork(?: \d+)?\)$/, "");
+/** `Title (fork)`, then `Title (fork 2)`, … — the first not already taken.
+ *  A side chat is `Title (side)`, numbered the same way. */
+export function forkTitle(base: string, taken: readonly string[], word: "fork" | "side" = "fork"): string {
+  const root = base.replace(/ \((?:fork|side)(?: \d+)?\)$/, "");
   const names = new Set(taken);
-  if (!names.has(`${root} (fork)`)) return `${root} (fork)`;
-  for (let n = 2; ; n += 1) if (!names.has(`${root} (fork ${n})`)) return `${root} (fork ${n})`;
+  if (!names.has(`${root} (${word})`)) return `${root} (${word})`;
+  for (let n = 2; ; n += 1) if (!names.has(`${root} (${word} ${n})`)) return `${root} (${word} ${n})`;
 }
 
 /** A branch for a fork in its own worktree: `fork/login-work-3f2a`. */
 export function forkBranch(title: string, suffix = Math.random().toString(16).slice(2, 6)): string {
   const words = title
-    .replace(/ \(fork(?: \d+)?\)$/, "")
+    .replace(/ \((?:fork|side)(?: \d+)?\)$/, "")
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, " ")
     .trim()

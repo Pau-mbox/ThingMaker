@@ -520,4 +520,9 @@ export const session: Record<string, string> = {
   "{count} nested sessions reported back": "{count} sesiones anidadas informaron de vuelta",
   "· goes with your next message, as context": "· va con tu próximo mensaje, como contexto",
   "Passed on by sessions nested under this one, not written by you.": "Lo pasaron sesiones anidadas bajo esta, no lo escribiste tú.",
+  "Passed on by a side chat, not written by you.": "Lo pasó un chat aparte, no lo escribiste tú.",
+  "Side chat → this session: {note}": "Chat aparte → esta sesión: {note}",
+  "Side chat → this session: {n} notes": "Chat aparte → esta sesión: {n} notas",
+  "Talk to a copy of this session without adding to its conversation. The copy opens as a session nested under this one, and reports back.": "Habla con una copia de esta sesión sin añadir nada a su conversación. La copia se abre como una sesión anidada bajo esta, e informa de vuelta.",
+  "Side chat": "Chat aparte",
 };

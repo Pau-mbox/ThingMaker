@@ -39,17 +39,14 @@ function stateWord(task: BackgroundTask): string {
   }
 }
 
-/** The tasks of a session and of its side transcript, newest first. */
+/** The tasks of a session, newest first. */
 export function useBackgroundTasks(sessionId: string): Listed[] {
-  const sideId = useStore((s) => s.sides[sessionId]);
   const main = useStore((s) => s.sessions[sessionId]);
-  const side = useStore((s) => (sideId ? s.sessions[sideId] : undefined));
   return useMemo(() => {
     const tasks: Listed[] = [];
     for (const task of main?.projection.background.values() ?? []) tasks.push({ ...task, sessionId, side: false });
-    if (sideId) for (const task of side?.projection.background.values() ?? []) tasks.push({ ...task, sessionId: sideId, side: true });
     return tasks.sort((a, b) => b.startedAtUnixMs - a.startedAtUnixMs);
-  }, [main, side, sessionId, sideId]);
+  }, [main, sessionId]);
 }
 
 /** The session bar's icon, and the window it opens. */

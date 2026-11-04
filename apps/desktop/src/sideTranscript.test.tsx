@@ -1,9 +1,10 @@
 /**
- * The Side Transcript: a copy of a session, with its whole conversation as
- * context, shown inside it. These check that it is opened as a copy (and as
- * a summary where the provider cannot copy), that it is kept per session and
- * stays out of the session list, and that what it passes to the main session
- * reads as its own and not as the user's.
+ * Side chats: a copy of a session to talk to without adding to its
+ * conversation, opened as a session nested under it that can also act on its
+ * Big Thing. These check that it is opened as a linked copy (and as a summary
+ * where the provider cannot copy), that it is listed under its session, and
+ * that what it passes to the main session reads as its own and not as the
+ * user's.
  */
 import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -23,7 +24,7 @@ vi.mock("@tauri-apps/api/webview", () => ({ getCurrentWebview: () => ({ onDragDr
 import { splitSideNotes } from "./bigThingTurns";
 import { api } from "./ipc";
 import { emptyProjection } from "./projection";
-import { latestSide, useStore, type LiveSession } from "./store";
+import { useStore, type LiveSession } from "./store";
 import { Sidebar } from "./components/Sidebar";
 import { SideNotesCard } from "./components/BigThingLinks";
 
@@ -52,74 +53,40 @@ function mainSession(provider: "claude" | "gemini" = "claude"): LiveSession {
   } as unknown as LiveSession;
 }
 
-/** Stops `openSide` right after the open request, so only it is examined. */
+/** Stops the fork right after the open request, so only it is examined. */
 const STOP = new Error("stop after the open request");
 
-describe("opening a side transcript", () => {
-  it("copies the main session, on its provider and model, linked to it", async () => {
-    useStore.setState({ workspaces: [workspace], sessions: { main: mainSession() }, records: { w1: [] } });
+describe("starting a side chat", () => {
+  it("copies the main session, on its provider and model, linked to it and named as a side chat", async () => {
+    useStore.setState({ workspaces: [workspace], sessions: { main: mainSession() }, records: { w1: [record({ agentSessionId: "agent-main", titleOverlay: "Login" })] } });
     const open = vi.spyOn(api, "sessionOpen").mockRejectedValue(STOP);
-    await useStore.getState().openSide("main");
+    await useStore.getState().forkSession({ workspaceId: "w1", agentSessionId: "agent-main", provider: "claude", key: "main" }, undefined, { side: true });
     expect(open).toHaveBeenCalledTimes(1);
     expect(open.mock.calls[0]![0]).toMatchObject({ workspaceId: "w1", provider: "claude", model: "opus", sideOf: "main", mode: { mode: "fork", session_id: "agent-main" } });
-    expect(useStore.getState().sideOpening.main).toBe(false);
   });
 
-  it("starts a new session from a summary where the provider cannot copy one", async () => {
-    useStore.setState({ workspaces: [workspace], sessions: { main: mainSession() }, records: { w1: [] } });
-    const open = vi.spyOn(api, "sessionOpen").mockRejectedValueOnce({ code: "UNSUPPORTED", message: "no fork" }).mockRejectedValue(STOP);
-    await useStore.getState().openSide("main");
-    expect(open.mock.calls.map((call) => call[0].mode.mode)).toEqual(["fork", "new"]);
-    expect(open.mock.calls[1]![0].sideOf).toBe("main");
-  });
-
-  it("never asks Antigravity for a copy", async () => {
+  it("starts a new session from a summary on Antigravity, still linked", async () => {
     useStore.setState({ workspaces: [workspace], sessions: { main: mainSession("gemini") }, records: { w1: [] } });
     const open = vi.spyOn(api, "sessionOpen").mockRejectedValue(STOP);
-    await useStore.getState().openSide("main");
+    await useStore.getState().forkSession({ workspaceId: "w1", agentSessionId: "agent-main", provider: "gemini", key: "main" }, undefined, { side: true });
     expect(open.mock.calls.map((call) => call[0].mode.mode)).toEqual(["new"]);
-  });
-
-  it("resumes the side transcript the session already has", async () => {
-    const records = [
-      record({ agentSessionId: "agent-main" }),
-      record({ agentSessionId: "side-old", origin: "side", parentSessionId: "row-agent-main", createdAt: 1 }),
-      record({ agentSessionId: "side-new", origin: "side", parentSessionId: "row-agent-main", createdAt: 2 }),
-    ];
-    useStore.setState({ workspaces: [workspace], sessions: { main: mainSession() }, records: { w1: records } });
-    vi.spyOn(api, "sessionListOpen").mockResolvedValue([]);
-    const open = vi.spyOn(api, "sessionOpen").mockRejectedValue(STOP);
-    await useStore.getState().openSide("main");
-    expect(open.mock.calls[0]![0]).toMatchObject({ mode: { mode: "resume", session_id: "side-new" }, sideOf: "main" });
-    // Asked for a fresh one, it copies again instead.
-    await useStore.getState().openSide("main", true);
-    expect(open.mock.calls[1]![0].mode).toEqual({ mode: "fork", session_id: "agent-main" });
-  });
-
-  it("finds a session's newest side transcript, and only its own", () => {
-    const records = [
-      record({ agentSessionId: "a", origin: "side", parentSessionId: "row-x", createdAt: 5 }),
-      record({ agentSessionId: "b", origin: "side", parentSessionId: "row-main", createdAt: 1 }),
-      record({ agentSessionId: "c", origin: "side", parentSessionId: "row-main", createdAt: 3 }),
-      record({ agentSessionId: "d", origin: "desktop", parentSessionId: "row-main", createdAt: 9 }),
-    ];
-    expect(latestSide(records, "row-main")?.agentSessionId).toBe("c");
-    expect(latestSide(records, "row-none")).toBeUndefined();
+    expect(open.mock.calls[0]![0].sideOf).toBe("main");
   });
 });
 
-describe("the side transcript in the rest of the app", () => {
-  it("is not listed as a session of its own", () => {
+describe("side chats in the rest of the app", () => {
+  it("are listed under their session, as nested sessions", () => {
     useStore.setState({
       workspaces: [workspace],
       inspections: { w1: { record: workspace, trustStale: false } as never },
       sessions: {},
       sessionOrder: [],
-      records: { w1: [record({ agentSessionId: "9e08bad3-0015-4de2-9591-53bf1e167ef4" }), record({ agentSessionId: "51de0000-0015-4de2-9591-53bf1e167ef4", origin: "side", parentSessionId: "row-9e08bad3-0015-4de2-9591-53bf1e167ef4" })] },
+      records: { w1: [record({ agentSessionId: "9e08bad3-0015-4de2-9591-53bf1e167ef4", titleOverlay: "Login" }), record({ agentSessionId: "51de0000-0015-4de2-9591-53bf1e167ef4", titleOverlay: "Login (side)", origin: "fork", parentSessionId: "row-9e08bad3-0015-4de2-9591-53bf1e167ef4" })] },
     });
     render(<Sidebar />);
-    expect(screen.getByText(/Session 9e08bad3/i)).toBeTruthy();
-    expect(screen.queryByText(/51de0000/)).toBeNull();
+    const titles = screen.getAllByText(/^Login/).map((node) => node.textContent);
+    expect(titles).toEqual(["Login", "Login (side)"]);
+    expect(screen.getByRole("button", { name: /1 nested session/ })).toBeTruthy();
   });
 
   it("reads what it passed to the main session as its own, apart from the user's words", () => {
@@ -131,7 +98,7 @@ describe("the side transcript in the rest of the app", () => {
     expect(splitSideNotes("A message that merely mentions [From the side transcript]")).toEqual({ notes: [], rest: "A message that merely mentions [From the side transcript]" });
     const { notes, rest } = splitSideNotes(text);
     render(<SideNotesCard notes={notes} own={rest} />);
-    expect(screen.getByText("Side Transcript → this session: 2 notes")).toBeTruthy();
+    expect(screen.getByText("Side chat → this session: 2 notes")).toBeTruthy();
     expect(screen.getByText("Now carry on with the tests")).toBeTruthy();
   });
 });

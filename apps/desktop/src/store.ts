@@ -135,7 +135,7 @@ export type View =
   | { kind: "teams" }
   | { kind: "integrations" };
 
-export type SessionTab = "transcript" | "files" | "changes" | "terminal" | "agents" | "context" | "artifacts" | "images" | "odyssey" | "side";
+export type SessionTab = "transcript" | "files" | "changes" | "terminal" | "agents" | "context" | "artifacts" | "images" | "odyssey";
 
 /** Every session view, in bar order. The command palette is the keyboard route
  *  to all of them, including the ones the bar keeps behind a menu or an icon,
@@ -157,7 +157,7 @@ export type OdysseyRuntime = {
   forecast?: string | null;
 };
 
-export const SESSION_TABS: SessionTab[] = ["transcript", "agents", "odyssey", "side", "terminal", "files", "changes", "context", "artifacts", "images"];
+export const SESSION_TABS: SessionTab[] = ["transcript", "agents", "odyssey", "terminal", "files", "changes", "context", "artifacts", "images"];
 
 export const DEFAULT_UI_PREFS: UiPrefs = { enterSends: true, reducedMotion: "system", transcriptPage: 50, followUp: "queue" };
 
@@ -226,12 +226,6 @@ type State = {
   view: View;
   sessions: Record<string, LiveSession>;
   sessionOrder: string[];
-  /** Side Transcript: a main session's handle → its side session's handle.
-   *  A side session is a copy of the main one with its whole conversation,
-   *  shown inside it rather than in the session list. */
-  sides: Record<string, string>;
-  /** A side session being opened, by its main session's handle. */
-  sideOpening: Record<string, boolean>;
   /** A side session that could not be copied (a provider with no fork)
    *  starts empty: the summary of its main conversation rides in front of
    *  its first prompt. By the side session's handle. */
@@ -388,7 +382,7 @@ type State = {
    * model, effort and team, and opens it. With a point, the copy ends there
    * ("Fork from here"). Returns the fork's handle.
    */
-  forkSession: (source: ForkSource, point?: ForkPoint, options?: { worktree?: boolean }) => Promise<string | null>;
+  forkSession: (source: ForkSource, point?: ForkPoint, options?: { worktree?: boolean; side?: boolean }) => Promise<string | null>;
   /** What nested forks reported, waiting for a session's next message, by
    *  the parent's agent session id. Sent with that message, as context. */
   nestedReports: Record<string, NestedReport[]>;
@@ -495,7 +489,6 @@ type State = {
   selectSession: (sessionId: string) => void;
   /** Opens the main session's side session: the one it has, resumed, or a
    *  new copy of the main conversation when `fresh` or there is none. */
-  openSide: (mainId: string, fresh?: boolean) => Promise<void>;
   setDraft: (sessionId: string, draft: string) => void;
   send: (sessionId: string) => Promise<void>;
   steer: (sessionId: string) => Promise<void>;
@@ -562,23 +555,11 @@ function isWorkerSession(get: Get, id: string, session: LiveSession): boolean {
 export function isWorkerIn(state: Pick<State, "jobs" | "records">, id: string, session: LiveSession | undefined): boolean {
   if (Object.values(state.jobs).some((jobs) => jobs.some((job) => job.workerSession === id))) return true;
   const agentId = session?.snapshot.agentSessionId;
-  return !!session && !!agentId && !!(state.records[session.workspaceId] ?? []).find((record) => record.agentSessionId === agentId)?.parentSessionId;
+  // Listed under another session and not a fork of it: a worker.
+  const record = agentId ? (state.records[session?.workspaceId ?? ""] ?? []).find((entry) => entry.agentSessionId === agentId) : undefined;
+  return !!session && !!record?.parentSessionId && record.origin !== "fork" && record.origin !== "side";
 }
 
-/** The newest side session recorded for a main session's row. */
-export function latestSide(records: readonly SessionRecord[], mainRowId: string): SessionRecord | undefined {
-  return records.filter((record) => record.origin === "side" && record.parentSessionId === mainRowId && record.archiveState !== "unavailable").sort((a, b) => b.createdAt - a.createdAt)[0];
-}
-
-/** Whether a live session is some session's side session. */
-export function isSideSession(state: Pick<State, "sides">, id: string): boolean {
-  return Object.values(state.sides).includes(id);
-}
-
-/** What a side session that could not be copied is told about its main one. */
-function sideBrief(main: LiveSession): string {
-  return `This is a side conversation opened next to a main ${PROVIDER_LABELS[main.snapshot.provider]} session in the same workspace; the main conversation goes on separately. What the main session has done so far is summarised below.\n\n${handoffBrief(main.projection.cards, main.snapshot.provider)}`;
-}
 
 export function basenameOf(path: string): string {
   const parts = path.replace(/[\\/]+$/, "").split(/[\\/]/);
@@ -773,7 +754,7 @@ function reportsSent(get: Get, set: Set, agentSessionId: string | null) {
   set({ nestedReports: { ...get().nestedReports, [agentSessionId]: [] } });
 }
 
-async function attachLive(get: Get, set: Set, handle: SessionHandle, workspaceId: string, focus: boolean, side = false): Promise<void> {
+async function attachLive(get: Get, set: Set, handle: SessionHandle, workspaceId: string, focus: boolean): Promise<void> {
   const snapshot = await api.sessionSnapshot(handle);
   const projection = projectionFromSnapshot(snapshot);
   const id = handle.id;
@@ -793,8 +774,7 @@ async function attachLive(get: Get, set: Set, handle: SessionHandle, workspaceId
 };
   set({
     sessions: { ...get().sessions, [id]: live },
-    // A side session is shown inside its main session, not in the list.
-    sessionOrder: side ? get().sessionOrder.filter((s) => s !== id) : [...get().sessionOrder.filter((s) => s !== id), id],
+    sessionOrder: [...get().sessionOrder.filter((s) => s !== id), id],
     ...(focus ? { view: { kind: "session", sessionId: id } as View, sessionTab: "transcript" as SessionTab } : {}),
   });
   // Read any goal this session is driving now rather than when its tab is
@@ -817,8 +797,7 @@ async function attachLive(get: Get, set: Set, handle: SessionHandle, workspaceId
     const current = get().sessions[id];
     if (!current || events.length === 0) return;
     const view = get().view;
-    // A side session is in view when its main session shows its tab.
-    const viewing = view.kind === "session" && (view.sessionId === id || (get().sides[view.sessionId] === id && get().sessionTab === "side"));
+    const viewing = view.kind === "session" && view.sessionId === id;
     let attention = current.attention;
     let announcement: string | null = null;
     let turnStartedAt = current.turnStartedAt;
@@ -903,8 +882,6 @@ export const useStore = create<State>((set, get) => ({
   view: { kind: "welcome" },
   sessions: {},
   sessionOrder: [],
-  sides: {},
-  sideOpening: {},
   sideBrief: {},
   nestedReports: {},
   reporting: {},
@@ -1876,8 +1853,7 @@ export const useStore = create<State>((set, get) => ({
       const workspaceId = entry.workspaceId ?? get().workspaces.find((w) => w.canonicalRoot === entry.root)?.id;
       if (!workspaceId) continue;
       try {
-        await attachLive(get, set, entry.handle, workspaceId, false, !!entry.sideOf);
-        if (entry.sideOf) set({ sides: { ...get().sides, [entry.sideOf]: entry.handle.id } });
+        await attachLive(get, set, entry.handle, workspaceId, false);
       } catch (error) {
         set({ error: asError(error) });
       }
@@ -2404,7 +2380,9 @@ export const useStore = create<State>((set, get) => ({
     const records = get().records[workspaceId] ?? [];
     const record = records.find((entry) => entry.agentSessionId === agentSessionId);
     const base = live ? sessionTitle(live, records) : record?.titleOverlay || record?.autoTitle || t("Session");
-    const title = forkTitle(base, records.map((entry) => entry.titleOverlay || entry.autoTitle || ""));
+    // A side chat is a fork that can also act on this session's goal.
+    const side = Boolean(how?.side && live);
+    const title = forkTitle(base, records.map((entry) => entry.titleOverlay || entry.autoTitle || ""), side ? "side" : "fork");
     // The copy works the way the original does: its model, effort and team.
     const options = live ? asConfigOptions(live.snapshot.configOptions) : [];
     const chosen = (option: { currentValue?: unknown } | undefined) => (typeof option?.currentValue === "string" && option.currentValue !== "default" ? option.currentValue : undefined);
@@ -2428,7 +2406,7 @@ export const useStore = create<State>((set, get) => ({
         set({ workspaces: await api.workspaceList(), inspections: { ...get().inspections, [inspection.record.id]: inspection } });
         target = inspection.record.id;
       }
-      const launch = { workspaceId: target, provider, ...(model ? { model } : {}), ...(effort ? { reasoningEffort: effort } : {}), ...(team ? { combo: team } : {}) };
+      const launch = { workspaceId: target, provider, ...(model ? { model } : {}), ...(effort ? { reasoningEffort: effort } : {}), ...(team ? { combo: team } : {}), ...(side && live ? { sideOf: live.handle.id } : {}) };
       const opened = copies
         ? await api.sessionOpen({ ...launch, mode: { mode: "fork", session_id: agentSessionId }, ...(provider === "claude" && point?.at ? { forkAt: point.at } : {}) })
         : await api.sessionOpen({ ...launch, mode: { mode: "new" } });
@@ -2654,64 +2632,6 @@ export const useStore = create<State>((set, get) => ({
     return "applied";
   },
 
-  async openSide(mainId, fresh = false) {
-    const main = get().sessions[mainId];
-    if (!main || get().sideOpening[mainId]) return;
-    const current = get().sides[mainId];
-    if (!fresh && current && get().sessions[current] && get().sessions[current]!.projection.process !== "exited") return;
-    const workspaceId = main.workspaceId;
-    const records = get().records[workspaceId] ?? [];
-    const mainRow = records.find((record) => record.agentSessionId === main.snapshot.agentSessionId);
-    const stored = fresh || !mainRow ? undefined : latestSide(records, mainRow.id);
-    const provider = main.snapshot.provider;
-    // The side session answers with the main session's model and effort.
-    const options = asConfigOptions(main.projection.configOptions ?? main.snapshot.configOptions);
-    const model = options.find((option) => option.configId === "model")?.currentValue;
-    const effort = options.find((option) => isEffortOption(option.configId))?.currentValue;
-    const base = {
-      workspaceId,
-      provider,
-      ...(typeof model === "string" ? { model } : {}),
-      ...(typeof effort === "string" && effort !== "default" ? { reasoningEffort: effort } : {}),
-      sideOf: mainId,
-    };
-    set({ sideOpening: { ...get().sideOpening, [mainId]: true }, error: null });
-    try {
-      let handle: SessionHandle;
-      let brief: string | null = null;
-      if (stored) {
-        const running = (await api.sessionListOpen()).find((entry) => entry.agentSessionId === stored.agentSessionId);
-        handle = running ? running.handle : (await api.sessionOpen({ ...base, provider: stored.provider, mode: { mode: "resume", session_id: stored.agentSessionId } })).handle;
-      } else {
-        const source = main.snapshot.agentSessionId;
-        if (!source) throw new Error(t("This session has no conversation to copy yet. Send it a message first."));
-        try {
-          // Antigravity has no way to copy a session.
-          if (provider === "gemini") throw { code: "UNSUPPORTED" };
-          handle = (await api.sessionOpen({ ...base, mode: { mode: "fork", session_id: source } })).handle;
-        } catch (error) {
-          if ((error as { code?: string } | null)?.code !== "UNSUPPORTED") throw error;
-          handle = (await api.sessionOpen({ ...base, mode: { mode: "new" } })).handle;
-          brief = sideBrief(main);
-        }
-        // A fresh copy replaces the side session the main one had.
-        const previous = current ? get().sessions[current] : undefined;
-        if (previous) {
-          await api.sessionStop(previous.handle).catch(() => undefined);
-          const { [previous.handle.id]: _old, ...rest } = get().sessions;
-          set({ sessions: rest });
-        }
-      }
-      await attachLive(get, set, handle, workspaceId, false, true);
-      set({ sides: { ...get().sides, [mainId]: handle.id }, ...(brief ? { sideBrief: { ...get().sideBrief, [handle.id]: brief } } : {}) });
-      void get().loadRecords(workspaceId);
-    } catch (error) {
-      set({ error: asError(error) });
-    } finally {
-      set({ sideOpening: { ...get().sideOpening, [mainId]: false } });
-    }
-  },
-
   selectSession(sessionId) {
     if (!get().sessions[sessionId]) return;
     set({ sessionTab: "transcript", transcriptSearchOpen: false });
@@ -2903,12 +2823,7 @@ export const useStore = create<State>((set, get) => ({
     set({ busy: t("Stopping session") });
     try {
       await api.sessionStop(session.handle);
-      // The native side stops its side session with it.
-      const side = get().sides[sessionId];
       const { [sessionId]: _removed, ...rest } = get().sessions;
-      if (side) delete rest[side];
-      const { [sessionId]: _side, ...sides } = get().sides;
-      set({ sides });
       const order = get().sessionOrder.filter((s) => s !== sessionId);
       const view: View = get().view.kind === "session" ? { kind: "workspace", workspaceId: session.workspaceId } : get().view;
       set({ sessions: rest, sessionOrder: order, view });

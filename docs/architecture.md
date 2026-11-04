@@ -89,6 +89,16 @@ Kit is removed; Claude Code and Codex run end to end and either can orchestrate 
     worker refused for its limit before doing any work hands its job on.
   - Jobs show in the Agents view, and worker sessions sit under their
     orchestrator in the sidebar.
+- **Forks** (`session/fork`; `storage::forks`, `commands::forks`): a copy of
+  a session, nested under it (`origin = 'fork'`, `parent_session_id`).
+  - Claude Code copies up to any of its messages (claude-agent-acp's fork
+    point); Codex copies whole threads; otherwise a new session is briefed.
+    A fork into a worktree brings Claude's transcript beside that folder's.
+  - At the end of each turn a fork's final answer is held for its parent and
+    rides in front of the parent's next message as context; the
+    `report_to_parent` tool sends one on purpose. Nothing is steered into a
+    turn or starts one.
+  - A side chat is a fork linked to its parent's Big Thing goal.
   - Switching the orchestrator to the other provider is a handoff: a new
     session with the same team and a brief in its composer.
 

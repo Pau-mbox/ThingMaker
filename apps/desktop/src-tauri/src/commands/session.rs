@@ -314,8 +314,10 @@ pub async fn session_open(request: OpenRequest, state: State<'_, AppState>) -> C
     // session and only says so in the `session/new` reply, so the id the
     // desktop reserved is not the id the transcript is under.
     let recorded_id = snapshot.agent_session_id.clone().unwrap_or_else(|| session_id.as_str().to_string());
+    // A side chat is a fork like any other, nested under its session; it
+    // also acts on that session's goal (below).
     let origin = match &request.mode {
-        _ if request.side_of.is_some() => SessionOrigin::Side,
+        _ if request.side_of.is_some() => SessionOrigin::Fork,
         OpenRequestMode::Fork { .. } => SessionOrigin::Fork,
         _ => SessionOrigin::Desktop,
     };
@@ -685,17 +687,13 @@ pub async fn session_stop(
     state: State<'_, AppState>,
 ) -> CommandResult<thingmaker_supervisor::transport::ExitInfo> {
     let actor = actor_for(&state, &handle)?;
-    // Its workers go with it, and its side sessions.
+    // Its workers go with it. Its side chats are nested sessions of their
+    // own and carry on; they only stop acting on its goal.
     super::delegation::release(&state, &handle.id).await;
     if let Some(engine) = state.engine.get() {
         engine.unlink_side(&handle.id);
         for side in engine.sides_of(&handle.id) {
             engine.unlink_side(&side);
-            if let Some(side_actor) = state.actor(&side) {
-                super::delegation::release(&state, &side).await;
-                let _ = side_actor.stop().await;
-                state.remove_actor(&side);
-            }
         }
     }
     let exit = actor.stop().await;

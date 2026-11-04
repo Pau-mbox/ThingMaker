@@ -3,7 +3,7 @@ import { getCurrentWebview } from "@tauri-apps/api/webview";
 import type { ContentBlock, Mention, Provider, ToolPatch } from "@thingmaker/contracts";
 import { PROVIDER_LABELS } from "@thingmaker/contracts";
 import { t } from "../i18n";
-import { useStore, isWorkerIn, latestSide, sessionTitle, type SessionTab } from "../store";
+import { useStore, isWorkerIn, sessionTitle, type SessionTab } from "../store";
 import { api } from "../ipc";
 import { ConfigPickers } from "./ConfigPickers";
 import { PendingPrompt } from "./PendingPrompt";
@@ -29,6 +29,7 @@ import { bigThingTurnOf, splitSideNotes, userMessageText } from "../bigThingTurn
 import { AttachmentThumb, BlockImage, InlineImage, workspaceImageRenderer } from "./InlineImage";
 import { Markdown } from "../markdown";
 import { copiesItself, forkPointAt, splitNestedReports } from "../fork";
+import { hasConversation } from "../team";
 import { NestedBanner, NestedReportsCard, NestedReportsStrip } from "./NestedSessions";
 import type { Card } from "../projection";
 import { assignImages, keyOf, type ImageRef } from "../transcriptImages";
@@ -614,75 +615,35 @@ export function ViewsMenu({ tab, onPick, badges }: { tab: SessionTab; onPick: (t
 }
 
 /**
- * The Side Transcript: a copy of this session with its whole conversation as
- * context, to talk to without adding to the main conversation. It has the
- * same tools, Big Thing's included; what it changes in the run is passed to
- * the main session. Kept per session: opening the tab again resumes it.
+ * A side chat: talk to a copy of this session without adding to its
+ * conversation. The copy is a nested session of its own (a fork that can
+ * also change this session's Big Thing, which is then told), and opens.
  */
-function SidePane({ mainId }: { mainId: string }) {
-  const sideId = useStore((s) => s.sides[mainId]);
-  const live = useStore((s) => (sideId ? !!s.sessions[sideId] : false));
-  const opening = useStore((s) => !!s.sideOpening[mainId]);
-  const provider = useStore((s) => s.sessions[mainId]?.snapshot.provider);
-  const canCopy = useStore((s) => !!s.sessions[mainId]?.snapshot.agentSessionId && (s.sessions[mainId]?.projection.cards.length ?? 0) > 0);
-  const stored = useStore((s) => {
-    const main = s.sessions[mainId];
-    if (!main) return false;
-    const records = s.records[main.workspaceId] ?? [];
-    const row = records.find((record) => record.agentSessionId === main.snapshot.agentSessionId);
-    return !!row && !!latestSide(records, row.id);
-  });
-  const hasGoal = useStore((s) => !!s.odyssey[mainId]);
-  const openSide = useStore((s) => s.openSide);
-  // A side session this one already has is picked up again on its own; a
-  // new one is only made when asked.
-  const resumed = useRef(false);
-  useEffect(() => {
-    if (live || opening || !stored || resumed.current) return;
-    resumed.current = true;
-    void openSide(mainId);
-  }, [live, opening, stored, mainId, openSide]);
-
-  if (sideId && live) {
-    return (
-      <div className="side-pane">
-        <div className="side-bar small">
-          <span className="muted">
-            {t("A copy of this conversation. What you say here stays here.")}
-            {hasGoal ? ` ${t("Changes it makes to the Big Thing are passed to the main session.")}` : ""}
-          </span>
-          <button className="link small" disabled={opening} onClick={() => void openSide(mainId, true)} title={t("Copy the main conversation again, as it is now")} type="button">
-            {opening ? t("Copying…") : t("Start fresh from the main conversation")}
-          </button>
-        </div>
-        <SessionPanel embedded sessionId={sideId} />
-      </div>
-    );
-  }
+function SideChatButton({ sessionId }: { sessionId: string }) {
+  const forkSession = useStore((s) => s.forkSession);
+  const ready = useStore((s) => Boolean(s.sessions[sessionId]?.snapshot.agentSessionId) && hasConversation(s.sessions[sessionId]?.projection.cards));
+  const busy = useStore((s) => s.busy !== null);
+  const start = () => {
+    const session = useStore.getState().sessions[sessionId];
+    const agentSessionId = session?.snapshot.agentSessionId;
+    if (!session || !agentSessionId) return;
+    void forkSession({ workspaceId: session.workspaceId, agentSessionId, provider: session.snapshot.provider, key: sessionId }, undefined, { side: true });
+  };
   return (
-    <div className="side-pane side-empty">
-      <h3>{t("Side Transcript")}</h3>
-      <p className="muted">
-        {t("Talk to a copy of this session without adding to its conversation. The copy knows everything said here so far, runs on the same model and has the same tools.")}
-      </p>
-      {hasGoal && <p className="muted">{t("It can change this session's Big Thing; the main session is told what changed.")}</p>}
-      {provider === "gemini" && <p className="small muted">{t("Antigravity cannot copy a session, so the side transcript starts from a summary of this conversation.")}</p>}
-      <div className="row">
-        <button className="button button-primary" disabled={opening || (!stored && !canCopy)} onClick={() => void openSide(mainId)} type="button">
-          {opening ? (stored ? t("Opening the side transcript…") : t("Copying the conversation…")) : stored ? t("Open the side transcript") : t("Start a side transcript")}
-        </button>
-      </div>
-      {!stored && !canCopy && <p className="small muted">{t("Send this session a message first: there is nothing to copy yet.")}</p>}
-    </div>
+    <button
+      className="tab tab-side"
+      disabled={!ready || busy}
+      onClick={start}
+      title={ready ? t("Talk to a copy of this session without adding to its conversation. The copy opens as a session nested under this one, and reports back.") : t("Send this session a message first: there is nothing to copy yet.")}
+      type="button"
+    >
+      <IconBranch size={13} /> {t("Side chat")}
+    </button>
   );
 }
 
-/**
- * One session: its conversation, its views and its prompt. `embedded` is a
- * side session shown inside its main session's Side Transcript tab — its
- * conversation and its prompt only.
- */
-export function SessionPanel({ sessionId, embedded = false }: { sessionId: string; embedded?: boolean }) {
+/** One session: its conversation, its views and its prompt. */
+export function SessionPanel({ sessionId }: { sessionId: string }) {
   const session = useStore((s) => s.sessions[sessionId]);
   const draft = useStore((s) => s.drafts[sessionId] ?? "");
   const setDraft = useStore((s) => s.setDraft);
@@ -695,12 +656,12 @@ export function SessionPanel({ sessionId, embedded = false }: { sessionId: strin
   const focusToken = useStore((s) => s.focusComposerToken);
   const inspection = useStore((s) => (session ? s.inspections[session.workspaceId] : undefined));
   const storeTab = useStore((s) => s.sessionTab);
-  const tab: SessionTab = embedded ? "transcript" : storeTab;
+  const tab: SessionTab = storeTab;
   const setTab = useStore((s) => s.setSessionTab);
   // A document the agent loaded into Big Thing waits there until the tab is opened.
   const docWaiting = useStore((s) => Boolean(s.bigThingDoc[sessionId])) && tab !== "odyssey";
   const storeSearchOpen = useStore((s) => s.transcriptSearchOpen);
-  const searchOpen = !embedded && storeSearchOpen;
+  const searchOpen = storeSearchOpen;
   const setSearchOpen = useStore((s) => s.setTranscriptSearchOpen);
   const uiPrefs = useStore((s) => s.uiPrefs);
   const attachments = useStore((s) => s.attachments[sessionId] ?? EMPTY_LIST);
@@ -865,9 +826,8 @@ export function SessionPanel({ sessionId, embedded = false }: { sessionId: strin
           if (state.view.kind !== "session") return;
           // A drop listener is webview-wide, so the tab that owns the drop
           // gets it: the Big Thing tab reads a dropped Markdown plan, and a
-          // file dropped there must not also become an attachment. On the
-          // Side Transcript tab the side session takes it.
-          if (embedded ? state.sessionTab !== "side" : state.sessionTab === "odyssey" || state.sessionTab === "side") return;
+          // file dropped there must not also become an attachment.
+          if (state.sessionTab === "odyssey") return;
           api
             .attachmentAddPaths(event.payload.paths)
             .then((snapshots) => addAttachments(sessionId, snapshots))
@@ -879,7 +839,7 @@ export function SessionPanel({ sessionId, embedded = false }: { sessionId: strin
       })
       .catch(() => undefined);
     return () => unlisten?.();
-  }, [sessionId, addAttachments, setError, embedded]);
+  }, [sessionId, addAttachments, setError]);
 
   // Grow the composer with its content: one line when empty, up to four,
   // then it scrolls. The bounds live in CSS (min-height/max-height); this
@@ -956,15 +916,9 @@ export function SessionPanel({ sessionId, embedded = false }: { sessionId: strin
   // A worker does a task for its orchestrator; a Big Thing is led from the
   // orchestrator's session, so a worker has no Big Thing tab.
   const isWorker = useStore((s) => isWorkerIn(s, sessionId, s.sessions[sessionId]));
-  // Whether this session's side session is working, for its tab's label.
-  const sideBusy = useStore((s) => {
-    const side = s.sides[sessionId];
-    const foreground = side ? s.sessions[side]?.projection.foreground : undefined;
-    return foreground === "running" || foreground === "awaiting_user";
-  });
   const setSessionTab = useStore((s) => s.setSessionTab);
   useEffect(() => {
-    if (isWorker && (tab === "odyssey" || tab === "side")) setSessionTab("transcript");
+    if (isWorker && tab === "odyssey") setSessionTab("transcript");
   }, [isWorker, tab, setSessionTab]);
   const cardImages = useMemo(
     () => (session ? assignImages(session.projection.cards, session.projection.toolCalls, workspaceRoot) : new Map<string, ImageRef[]>()),
@@ -1045,7 +999,6 @@ export function SessionPanel({ sessionId, embedded = false }: { sessionId: strin
   const odysseyLabel = odysseyView
     ? `Big Thing ${odysseyView.milestones.filter((m) => m.state === "verified").length}/${odysseyView.milestones.length}`
     : "Big Thing";
-  const sideLabel = sideBusy ? `${t("Side Transcript")} · …` : t("Side Transcript");
   // Only the views you watch stay in the bar; the rest live behind one menu
   // and the terminal behind one icon, so the bar reads at a glance.
   // Agents is a main tab again, second: delegated jobs and subagents are
@@ -1063,13 +1016,11 @@ export function SessionPanel({ sessionId, embedded = false }: { sessionId: strin
       ? []
       : [
           { id: "odyssey" as const, label: odysseyLabel, ...(docWaiting ? { waiting: t("A document is waiting for you in Big Thing") } : {}) },
-          { id: "side" as const, label: sideLabel },
         ]),
   ];
 
   return (
-    <section className={`panel session-panel ${embedded ? "session-panel-embedded" : ""} ${dropping ? "drop-target" : ""}`}>
-      {!embedded && (
+    <section className={`panel session-panel ${dropping ? "drop-target" : ""}`}>
       <>
       <header className="session-header">
         <h2
@@ -1132,6 +1083,7 @@ export function SessionPanel({ sessionId, embedded = false }: { sessionId: strin
             </button>
           ))}
         </div>
+        {!isWorker && <SideChatButton sessionId={sessionId} />}
         <span className="tabs-spacer" />
         {/* The terminal is still a view (the command palette opens it); its
             place in the bar went to the commands left running in the
@@ -1140,7 +1092,6 @@ export function SessionPanel({ sessionId, embedded = false }: { sessionId: strin
         {!IS_REMOTE && <ViewsMenu onPick={setTab} tab={tab} />}
       </div>
       </>
-      )}
       {active && <div aria-hidden="true" className="progress-line" />}
       {tab === "transcript" && (
         <>
@@ -1260,10 +1211,6 @@ export function SessionPanel({ sessionId, embedded = false }: { sessionId: strin
       {tab === "artifacts" && <ArtifactsPane agentSessionId={session.snapshot.agentSessionId} workspaceId={session.workspaceId} />}
       {tab === "images" && <ImagesPane sessionId={sessionId} />}
       {tab === "odyssey" && <OdysseyPane sessionId={sessionId} />}
-      {tab === "side" && <SidePane mainId={sessionId} />}
-
-      {/* The side session has its own prompt, inside its tab. */}
-      {tab !== "side" && (
       <footer className="composer">
         {/* Between the transcript and the prompt, so anything still running
             stays visible however far the transcript has scrolled. */}
@@ -1441,7 +1388,6 @@ export function SessionPanel({ sessionId, embedded = false }: { sessionId: strin
         </>
         )}
       </footer>
-      )}
     </section>
   );
 }

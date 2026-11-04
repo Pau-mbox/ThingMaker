@@ -13,7 +13,7 @@ vi.mock("./ipc", () => ({
   }),
 }));
 import { api } from "./ipc";
-import { EMPTY_SESSION_USAGE, useStore, type LiveSession } from "./store";
+import { EMPTY_SESSION_USAGE, isWorkerIn, useStore, type LiveSession } from "./store";
 import { emptyProjection, type Card } from "./projection";
 import { copiesItself, forkBranch, forkPointAt, forkTitle, splitNestedReports } from "./fork";
 import { HANDOFF_SPLIT } from "./team";
@@ -70,6 +70,17 @@ describe("fork names", () => {
     expect(forkTitle("Login work", [])).toBe("Login work (fork)");
     expect(forkTitle("Login work", ["Login work (fork)"])).toBe("Login work (fork 2)");
     expect(forkTitle("Login work (fork)", ["Login work (fork)", "Login work (fork 2)"])).toBe("Login work (fork 3)");
+  });
+
+  it("call a side chat a side chat", () => {
+    expect(forkTitle("Login work", ["Login work (side)"], "side")).toBe("Login work (side 2)");
+    expect(forkTitle("Login work (fork)", [], "side")).toBe("Login work (side)");
+  });
+
+  it("do not make a fork a worker: it keeps its own Big Thing and side chats", () => {
+    const records = (origin: "fork" | "desktop") => ({ w1: [{ id: "r2", workspaceId: "w1", agentSessionId: "agent-main", origin, parentSessionId: "r1", archiveState: "active" as const, pinned: false, provider: "claude" as const, createdAt: 0 }] });
+    expect(isWorkerIn({ jobs: {}, records: records("fork") }, "main", live("main"))).toBe(false);
+    expect(isWorkerIn({ jobs: {}, records: records("desktop") }, "main", live("main"))).toBe(true);
   });
 
   it("give a worktree fork a branch of its own", () => {

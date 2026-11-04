@@ -91,14 +91,6 @@ describe("the background tasks icon", () => {
     expect(screen.getByRole("listitem").textContent).toContain("Failed (exit 2)");
   });
 
-  it("lists the side transcript's tasks too, marked as its", () => {
-    useStore.setState({ sessions: { s1: session("s1", []), side: session("side", [task({ taskId: "fromside", command: "npm run dev" })]) }, sides: { s1: "side" } });
-    const { container } = render(<BackgroundTasksButton sessionId="s1" />);
-    expect(container.querySelector(".badge-dot-running")).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: "Background tasks: 1 running" }));
-    expect(screen.getByRole("listitem").textContent).toContain("Side Transcript");
-  });
-
   it("shows a task's output, read from the session that ran it", async () => {
     useStore.setState({ sessions: { s1: session("s1", [task({ state: "completed", exitCode: 0, endedAtUnixMs: Date.now() })]) } });
     const read = vi.spyOn(api, "sessionBackgroundOutput").mockResolvedValue({ text: "Installed ThingMaker.app\n\n[exited with code 0]\n", bytes: 41 });
