@@ -91,3 +91,17 @@ export function copiesItself(provider: Provider, point: ForkPoint | undefined, c
   if (provider === "gemini") return false;
   return !point?.at || point.at === lastAgentMessage(cards ?? []);
 }
+
+/** A report a nested session sent, as it reads in the parent's transcript. */
+export type ShownReport = { from: string; text: string };
+
+/**
+ * The reports in front of a message the parent was sent (the host puts them
+ * there, `reports_prompt`), and what follows them.
+ */
+export function splitNestedReports(text: string): { reports: ShownReport[]; rest: string } {
+  const match = /^\s*<nested-session-reports>\n[\s\S]*?<\/nested-session-reports>\s*/.exec(text);
+  if (!match) return { reports: [], rest: text };
+  const reports = [...match[0].matchAll(/<report from="([^"]*)">\n([\s\S]*?)\n<\/report>/g)].map((found) => ({ from: found[1] ?? "", text: (found[2] ?? "").trim() }));
+  return { reports, rest: text.slice(match[0].length).trim() };
+}

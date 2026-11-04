@@ -88,6 +88,8 @@ pub enum EngineEvent {
     SessionOpened { workspace_id: String, handle: String, agent_session_id: String },
     /// The engine named a session after its goal: re-read the session rows.
     SessionNamed { workspace_id: String },
+    /// A nested fork reported back: held for its parent's next message.
+    NestedReport { workspace_id: String, parent_agent_session_id: String, report: crate::storage::forks::NestedReport },
     /// A session loaded a document into its Big Thing tab, for the user to
     /// set a goal up from (or add to the running one).
     DocumentLoaded { handle: String, path: String },

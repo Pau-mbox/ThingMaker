@@ -1030,11 +1030,17 @@ export type BigThingEvent =
   | { kind: "notify"; goalId: string; workspaceId: string; attention: "needs_input" | "blocked" | "done"; text: string }
   | { kind: "session_opened"; workspaceId: string; handle: string; agentSessionId: string }
   | { kind: "session_named"; workspaceId: string }
+  /** A nested fork reported back: held for its parent's next message. */
+  | { kind: "nested_report"; workspaceId: string; parentAgentSessionId: string; report: NestedReport }
   /** A session's agent loaded a document into its Big Thing tab. */
   | { kind: "document_loaded"; handle: string; path: string }
   | { kind: "moved"; goalId: string; fromAgentSessionId?: string | null; toAgentSessionId: string; toHandle: string };
 
 export const BIGTHING_EVENT = "thingmaker://bigthing";
+
+/** What a nested fork said, held for the session it was copied from: context
+ *  for that session's next message, never a prompt of its own. */
+export type NestedReport = { forkAgentSessionId: string; title: string; text: string; atUnixMs: number };
 
 /** Phone access changed: a phone paired, connected or left; the bridge started or stopped. */
 export const REMOTE_EVENT = "thingmaker://remote";
@@ -1550,6 +1556,9 @@ export const COMMANDS = {
   sessionPin: "session_pin",
   sessionRename: "session_rename",
   sessionNest: "session_nest",
+  sessionNestedReports: "session_nested_reports",
+  sessionReporting: "session_reporting",
+  sessionSetReporting: "session_set_reporting",
   mcpOverview: "mcp_overview",
   mcpCatalog: "mcp_catalog",
   mcpParse: "mcp_parse",

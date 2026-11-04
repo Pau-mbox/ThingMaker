@@ -10,6 +10,7 @@ pub mod activity;
 pub mod artifacts;
 pub mod attachments;
 pub mod drafts;
+pub mod forks;
 pub mod memory;
 pub mod migrations;
 pub mod odyssey;

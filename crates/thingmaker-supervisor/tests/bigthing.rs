@@ -373,6 +373,42 @@ async fn a_session_loads_a_document_into_its_big_thing_tab_instead_of_doing_the_
     }
 }
 
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn a_nested_fork_reports_back_as_context_held_for_its_parent() {
+    let Some(fixture) = fixture_with(&[]) else { return };
+    // The mock names every session alike, so the parent is a listed session
+    // of its own id, and the live one is the fork under it.
+    let fork = fixture.host.launch(None, None).await.unwrap();
+    let parent = {
+        let storage = fixture.storage.lock().unwrap();
+        let parent = storage.session_upsert(&fixture.host.workspace_id, "parent-agent", SessionOrigin::Desktop, Provider::Claude).unwrap();
+        storage.session_set_title_overlay(&parent.id, Some("Main work")).unwrap();
+        storage.session_set_title_overlay(&fork.row_id, Some("Main work (fork)")).unwrap();
+        storage.session_mark_fork(&fork.row_id).unwrap();
+        storage.session_set_parent(&fork.row_id, Some(&parent.id)).unwrap();
+        parent
+    };
+    let as_fork = Caller::Orchestrator { session: fork.handle.clone(), provider: Provider::Claude, root: fork.root.clone() };
+    let as_other = Caller::Orchestrator { session: "not-nested".into(), provider: Provider::Claude, root: fork.root.clone() };
+    let names = |caller: &Caller| fixture.engine.tools(caller).iter().map(|tool| tool["name"].as_str().unwrap().to_string()).collect::<Vec<_>>();
+    assert!(names(&as_fork).contains(&"report_to_parent".to_string()));
+    assert!(!names(&as_other).contains(&"report_to_parent".to_string()), "only a nested fork has a parent");
+    assert!(fixture.engine.instructions(&as_fork).unwrap().contains("nested under the session it was copied from"));
+
+    let sent = fixture.engine.call(&as_fork, "report_to_parent", &json!({"report": "The flaky test was a race; fixed in auth.rs."})).unwrap().await;
+    assert_eq!(sent["isError"], false, "{sent}");
+    assert!(sent["structuredContent"]["note"].as_str().unwrap().contains("\"Main work\" gets it with its next message"), "{sent}");
+    let held = fixture.storage.lock().unwrap().nested_reports(&parent.id).unwrap();
+    assert_eq!((held.len(), held[0].title.as_str()), (1, "Main work (fork)"));
+    assert!(fixture.host.events.lock().unwrap().iter().any(|event| matches!(event, EngineEvent::NestedReport { parent_agent_session_id, .. } if parent_agent_session_id == "parent-agent")));
+
+    let refused = fixture.engine.call(&as_other, "report_to_parent", &json!({"report": "x"})).unwrap().await;
+    assert_eq!(refused["isError"], true);
+    fixture.storage.lock().unwrap().nested_set_reporting(&fork.row_id, false).unwrap();
+    let off = fixture.engine.call(&as_fork, "report_to_parent", &json!({"report": "y"})).unwrap().await;
+    assert!(off["content"][0]["text"].as_str().unwrap().contains("turned off"), "{off}");
+}
+
 #[tokio::test(flavor = "multi_thread", worker_threads = 6)]
 async fn the_runner_hands_ready_tasks_to_workers_in_parallel_and_has_them_reviewed() {
     use thingmaker_supervisor::delegation::WorkerSlot;

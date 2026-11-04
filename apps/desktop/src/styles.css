@@ -1372,6 +1372,58 @@ code {
   margin: 0;
 }
 
+/* Nested sessions: where a fork is nested, and what forks reported back. */
+.nested-banner {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 4px;
+  color: var(--muted);
+}
+
+.nested-reporting {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  cursor: pointer;
+}
+
+.nested-strip {
+  border: 1px dashed var(--border-strong);
+  border-radius: var(--radius);
+  padding: 4px 10px;
+}
+
+.nested-strip-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 2px 0;
+  border: 0;
+  background: none;
+  color: var(--text-2);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.nested-strip-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 220px;
+  overflow-y: auto;
+  margin: 4px 0 6px;
+  padding: 0;
+  list-style: none;
+}
+
+.nested-strip-list p {
+  margin: 2px 0 0;
+  white-space: pre-wrap;
+}
+
 .card-side-note ul {
   margin: 8px 0 2px;
   padding-left: 18px;

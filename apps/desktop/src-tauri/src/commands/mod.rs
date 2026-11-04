@@ -8,6 +8,7 @@ pub mod app;
 pub mod artifacts;
 pub mod attachments;
 pub mod delegation;
+pub mod forks;
 pub mod git;
 pub mod mcp;
 pub mod odyssey;

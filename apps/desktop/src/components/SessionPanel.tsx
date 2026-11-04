@@ -28,7 +28,8 @@ import { BackgroundTasksButton } from "./BackgroundTasks";
 import { bigThingTurnOf, splitSideNotes, userMessageText } from "../bigThingTurns";
 import { AttachmentThumb, BlockImage, InlineImage, workspaceImageRenderer } from "./InlineImage";
 import { Markdown } from "../markdown";
-import { copiesItself, forkPointAt } from "../fork";
+import { copiesItself, forkPointAt, splitNestedReports } from "../fork";
+import { NestedBanner, NestedReportsCard, NestedReportsStrip } from "./NestedSessions";
 import type { Card } from "../projection";
 import { assignImages, keyOf, type ImageRef } from "../transcriptImages";
 import { detectTestRun, editedFilesIn, shellResultsOf } from "../toolSummary";
@@ -313,8 +314,11 @@ function CardBody({ card, sessionId }: { card: Card; sessionId: string }) {
         const text = userMessageText(card);
         const turn = bigThingTurnOf(card.message.messageId, text);
         if (turn) return <BigThingTurnCard card={card} sessionId={sessionId} text={text} turn={turn} />;
-        // Nor are notes the side session passed on.
-        const { notes, rest } = splitSideNotes(text);
+        // Nor are the reports nested sessions passed on, or notes the side
+        // session did.
+        const nested = splitNestedReports(text);
+        const { notes, rest } = splitSideNotes(nested.rest);
+        if (nested.reports.length > 0) return <NestedReportsCard own={rest} reports={nested.reports} />;
         if (notes.length > 0) return <SideNotesCard notes={notes} own={rest} />;
       }
       return (
@@ -1271,6 +1275,8 @@ export function SessionPanel({ sessionId, embedded = false }: { sessionId: strin
         {tab !== "odyssey" && (
         <>
         <QueueStrip active={active} canSteer={canSteer} queue={projection.queue} sessionId={sessionId} />
+        <NestedBanner sessionId={sessionId} />
+        <NestedReportsStrip sessionId={sessionId} />
         <div className="composer-card">
         {(attachments.length > 0 || mentions.length > 0) && (
           <div className="attachment-strip">

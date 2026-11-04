@@ -51,7 +51,7 @@ import type {
   ProviderVersion,
   TurnPhase,
 } from "@thingmaker/contracts";
-import { EMPTY_COMBO, JOB_EVENT, SESSION_TITLE_EVENT, type SessionTitleChange, ODYSSEY_STATE_NOTE, PROVIDERS, PROVIDER_LABELS, BIGTHING_EVENT, asConfigOptions, isEffortOption, type Combo, type JobView, type ProviderModel, type BigThingEvent, type BigThingRuntime, type TeamPreset } from "@thingmaker/contracts";
+import { EMPTY_COMBO, JOB_EVENT, SESSION_TITLE_EVENT, type SessionTitleChange, ODYSSEY_STATE_NOTE, PROVIDERS, PROVIDER_LABELS, BIGTHING_EVENT, asConfigOptions, isEffortOption, type Combo, type JobView, type ProviderModel, type BigThingEvent, type BigThingRuntime, type NestedReport, type TeamPreset } from "@thingmaker/contracts";
 import { HANDOFF_SPLIT, handoffBrief, hasConversation, readPresets, upsertJob, upsertPreset, withoutHandoff } from "./team";
 import { copiesItself, forkBranch, forkTitle, type ForkPoint } from "./fork";
 
@@ -389,6 +389,13 @@ type State = {
    * ("Fork from here"). Returns the fork's handle.
    */
   forkSession: (source: ForkSource, point?: ForkPoint, options?: { worktree?: boolean }) => Promise<string | null>;
+  /** What nested forks reported, waiting for a session's next message, by
+   *  the parent's agent session id. Sent with that message, as context. */
+  nestedReports: Record<string, NestedReport[]>;
+  /** Whether a fork passes its answers on to its parent, by its agent session id. */
+  reporting: Record<string, boolean>;
+  loadNesting: (workspaceId: string, agentSessionId: string) => Promise<void>;
+  setReporting: (workspaceId: string, agentSessionId: string, on: boolean) => Promise<void>;
   /** Lists a nested session on its own again, or under another session. */
   nestSession: (workspaceId: string, agentSessionId: string, parentAgentSessionId: string | null) => Promise<void>;
   /**
@@ -760,6 +767,12 @@ type MoveTarget = { kind: "session"; sessionId: string } | { kind: "new"; agent:
  * in order, deduplicated by sequence), then the live stream. Events that
  * arrive while history is loading are buffered and applied after it.
  */
+/** The reports a sent message carried: the host took them with it. */
+function reportsSent(get: Get, set: Set, agentSessionId: string | null) {
+  if (!agentSessionId || !get().nestedReports[agentSessionId]?.length) return;
+  set({ nestedReports: { ...get().nestedReports, [agentSessionId]: [] } });
+}
+
 async function attachLive(get: Get, set: Set, handle: SessionHandle, workspaceId: string, focus: boolean, side = false): Promise<void> {
   const snapshot = await api.sessionSnapshot(handle);
   const projection = projectionFromSnapshot(snapshot);
@@ -788,6 +801,7 @@ async function attachLive(get: Get, set: Set, handle: SessionHandle, workspaceId
   // first opened: a run has to continue whether or not anyone is looking.
   void get().loadOdyssey(id);
   void get().loadTeam(id);
+  if (snapshot.agentSessionId) void get().loadNesting(workspaceId, snapshot.agentSessionId);
 
   let historyDone = false;
   const buffered: EventEnvelope[] = [];
@@ -892,6 +906,8 @@ export const useStore = create<State>((set, get) => ({
   sides: {},
   sideOpening: {},
   sideBrief: {},
+  nestedReports: {},
+  reporting: {},
   drafts: {},
   teams: {},
   jobs: {},
@@ -1608,6 +1624,12 @@ export const useStore = create<State>((set, get) => ({
       case "session_named":
         void get().loadRecords(event.workspaceId);
         return;
+      case "nested_report": {
+        // One report per fork waits: its latest.
+        const held = (get().nestedReports[event.parentAgentSessionId] ?? []).filter((report) => report.forkAgentSessionId !== event.report.forkAgentSessionId);
+        set({ nestedReports: { ...get().nestedReports, [event.parentAgentSessionId]: [...held, event.report] } });
+        return;
+      }
       case "document_loaded":
         // Waits in the Big Thing tab, which reads it when opened; the agent
         // tells the user to go there, so the tab is not switched under them.
@@ -2436,6 +2458,24 @@ export const useStore = create<State>((set, get) => ({
     }
   },
 
+  async loadNesting(workspaceId, agentSessionId) {
+    try {
+      const [reports, reporting] = await Promise.all([api.sessionNestedReports(workspaceId, agentSessionId), api.sessionReporting(workspaceId, agentSessionId)]);
+      set({ nestedReports: { ...get().nestedReports, [agentSessionId]: reports }, reporting: { ...get().reporting, [agentSessionId]: reporting } });
+    } catch {
+      // Not listed yet: nothing waits for it, and it is no fork.
+    }
+  },
+
+  async setReporting(workspaceId, agentSessionId, on) {
+    try {
+      await api.sessionSetReporting(workspaceId, agentSessionId, on);
+      set({ reporting: { ...get().reporting, [agentSessionId]: on } });
+    } catch (error) {
+      set({ error: asError(error) });
+    }
+  },
+
   async nestSession(workspaceId, agentSessionId, parentAgentSessionId) {
     try {
       await api.sessionNest(workspaceId, agentSessionId, parentAgentSessionId);
@@ -2715,6 +2755,7 @@ export const useStore = create<State>((set, get) => ({
           const { [sessionId]: _sent, ...rest } = get().sideBrief;
           set({ sideBrief: rest });
         }
+        reportsSent(get, set, session.snapshot.agentSessionId);
         const current = get().sessions[sessionId];
         if (current) set({ sessions: { ...get().sessions, [sessionId]: { ...current, pendingPrompt: current.pendingPrompt?.requestId === requestId && !promptPublished(current.projection, requestId) ? { ...pendingPrompt, accepted: true } : undefined } } });
       } else {
@@ -2770,6 +2811,7 @@ export const useStore = create<State>((set, get) => ({
         const { [sessionId]: _sent, ...rest } = get().sideBrief;
         set({ sideBrief: rest });
       }
+      reportsSent(get, set, session.snapshot.agentSessionId);
       const current = get().sessions[sessionId];
       if (current) set({ sessions: { ...get().sessions, [sessionId]: { ...current, pendingPrompt: current.pendingPrompt?.requestId === requestId && !promptPublished(current.projection, requestId) ? { ...pendingPrompt, accepted: true } : undefined } } });
     } catch (error) {

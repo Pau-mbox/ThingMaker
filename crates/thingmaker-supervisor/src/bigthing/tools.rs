@@ -170,6 +170,19 @@ fn run_tools() -> Vec<Value> {
     ]
 }
 
+/// The tool a nested fork reports back with.
+fn fork_tools() -> Vec<Value> {
+    vec![json!({
+        "name": "report_to_parent",
+        "title": "Report back to the parent session",
+        "description": "This session is a fork nested under the session it was copied from. Sends that session what it should know: a finding, a decision, what is done or in the way. It is context for its next message, not a request, so it never starts work there. Your final answer at the end of each turn is passed on as well; use this for something worth saying on its own, or mid-turn. Keep it short and self-contained.",
+        "inputSchema": object(json!({ "report": { "type": "string", "description": "What the parent session should know, in a few sentences." } }), &["report"]),
+        "annotations": { "readOnlyHint": false, "destructiveHint": false, "openWorldHint": false }
+    })]
+}
+
+const FORK_INSTRUCTIONS: &str = "This session is a fork, nested under the session it was copied from (its parent). Your final answer at the end of each turn is passed to the parent as context for its next message; `report_to_parent` sends it something on its own. Neither starts work there.";
+
 /// The largest document Big Thing reads as a plan, as the tab's own import.
 const MAX_DOCUMENT_BYTES: u64 = 1024 * 1024;
 
@@ -207,16 +220,22 @@ impl TeamExtension for Engine {
         let mut tools = memory_tools();
         if matches!(caller, Caller::Orchestrator { .. }) {
             tools.extend(run_tools());
+            if self.nested_agent_id(caller).is_some() {
+                tools.extend(fork_tools());
+            }
         }
         tools
     }
 
     fn instructions(&self, caller: &Caller) -> Option<String> {
-        matches!(caller, Caller::Orchestrator { .. }).then(|| BIGTHING_INSTRUCTIONS.to_string())
+        if !matches!(caller, Caller::Orchestrator { .. }) {
+            return None;
+        }
+        Some(if self.nested_agent_id(caller).is_some() { format!("{BIGTHING_INSTRUCTIONS} {FORK_INSTRUCTIONS}") } else { BIGTHING_INSTRUCTIONS.to_string() })
     }
 
     fn call(&self, caller: &Caller, name: &str, arguments: &Value) -> Option<BoxFuture<Value>> {
-        let known = ["memory_read", "memory_write", "board", "bigthing_report", "bigthing_task", "bigthing_ask", "bigthing_propose_plan", "bigthing_amend", "bigthing_load_document"];
+        let known = ["memory_read", "memory_write", "board", "bigthing_report", "bigthing_task", "bigthing_ask", "bigthing_propose_plan", "bigthing_amend", "bigthing_load_document", "report_to_parent"];
         if !known.contains(&name) {
             return None;
         }
@@ -225,7 +244,7 @@ impl TeamExtension for Engine {
         let name = name.to_string();
         let arguments = arguments.clone();
         Some(Box::pin(async move {
-            if name.starts_with("bigthing_") && !matches!(caller, Caller::Orchestrator { .. }) {
+            if (name.starts_with("bigthing_") || name == "report_to_parent") && !matches!(caller, Caller::Orchestrator { .. }) {
                 return error_result("Only the run's orchestrator reports to Big Thing.");
             }
             match engine.answer_tool(&caller, &name, &arguments) {
@@ -471,6 +490,12 @@ impl Engine {
                     "note": if held { "Applied when this turn ends where it is yours to change; changes to what a milestone is wait for the user. Work to the plan as it stands until you hear." } else { "Applied when this turn ends." }
                 }))
             }
+            "report_to_parent" => {
+                let report = string(arguments, "report").ok_or("report_to_parent needs a report")?;
+                let fork = self.nested_agent_id(caller).ok_or("This session is not nested under another one, so there is no parent to report to.")?;
+                let parent = self.report_to_parent(&fork, &report)?;
+                Ok(json!({ "reported": true, "note": format!("\"{parent}\" gets it with its next message, as context. Carry on.") }))
+            }
             "bigthing_load_document" => {
                 let path = string(arguments, "path").ok_or("bigthing_load_document needs the document's path")?;
                 let path = plan_document(caller.root(), &path)?;
@@ -489,6 +514,12 @@ impl Engine {
             }
             other => Err(format!("unknown tool {other}")),
         }
+    }
+
+    /// The agent's id for the caller's session, when it is a nested fork.
+    fn nested_agent_id(&self, caller: &Caller) -> Option<String> {
+        let live = self.inner.host.live_handle(caller.orchestrator())?;
+        self.db(|storage| storage.nested_parent(&live.agent_session_id)).ok().flatten().map(|_| live.agent_session_id)
     }
 
     fn running_goal(&self, caller: &Caller) -> Result<OdysseyRecord, String> {

@@ -512,4 +512,12 @@ export const session: Record<string, string> = {
   "Starts a new session from this point, briefed on the conversation so far: {provider} cannot copy part of a conversation. This one stays as it is.": "Empieza una sesión nueva desde este punto, con un resumen de la conversación hasta aquí: {provider} no puede copiar parte de una conversación. Esta se queda como está.",
   "Starts a new session from this point. This one stays as it is.": "Empieza una sesión nueva desde este punto. Esta se queda como está.",
   "fork from here": "bifurcar desde aquí",
+  "its parent session": "su sesión madre",
+  "Nested in": "Anidada en",
+  "At the end of each turn, its answer is passed to “{name}” as context for its next message. It never starts work there.": "Al final de cada turno, su respuesta pasa a «{name}» como contexto para su próximo mensaje. Nunca pone a trabajar a esa sesión.",
+  "Reports back": "Informa de vuelta",
+  "“{name}” reported back": "«{name}» informó de vuelta",
+  "{count} nested sessions reported back": "{count} sesiones anidadas informaron de vuelta",
+  "· goes with your next message, as context": "· va con tu próximo mensaje, como contexto",
+  "Passed on by sessions nested under this one, not written by you.": "Lo pasaron sesiones anidadas bajo esta, no lo escribiste tú.",
 };

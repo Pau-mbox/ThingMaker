@@ -394,6 +394,28 @@ impl Engine {
         });
     }
 
+    /// Holds what a nested fork said for the session it was copied from, as
+    /// context for that session's next message: never steered into a turn,
+    /// never a prompt of its own. Returns the parent's name; an error when
+    /// the session is not a nested fork, or was told not to report back.
+    pub fn report_to_parent(&self, fork_agent_session_id: &str, text: &str) -> Result<String, String> {
+        let text = crate::storage::forks::clip(text);
+        if text.is_empty() {
+            return Err("There is nothing to report.".into());
+        }
+        let Some((fork, parent)) = self.db(|storage| storage.nested_parent(fork_agent_session_id)).ok().flatten() else {
+            return Err("This session is not nested under another one, so there is no parent to report to.".into());
+        };
+        if !self.db(|storage| storage.nested_reporting(&fork.id)).unwrap_or(true) {
+            return Err("Reporting back is turned off for this session.".into());
+        }
+        let title = |row: &crate::storage::workspaces::SessionRecord| row.title_overlay.clone().or_else(|| row.auto_title.clone().filter(|title| !title.is_empty())).unwrap_or_else(|| "a nested session".into());
+        let report = crate::storage::forks::NestedReport { fork_agent_session_id: fork.agent_session_id.clone(), title: title(&fork), text, at_unix_ms: crate::bigthing::clock::now_ms() };
+        self.db(|storage| storage.nested_report_hold(&parent.id, report.clone())).map_err(|error| error.message)?;
+        self.inner.host.emit(EngineEvent::NestedReport { workspace_id: parent.workspace_id.clone(), parent_agent_session_id: parent.agent_session_id.clone(), report });
+        Ok(title(&parent))
+    }
+
     /// The notes held for a main session, taken: the caller sends them.
     pub fn take_main_notes(&self, main: &str) -> Vec<String> {
         self.inner.main_notes.lock().unwrap_or_else(|poisoned| poisoned.into_inner()).remove(main).unwrap_or_default()

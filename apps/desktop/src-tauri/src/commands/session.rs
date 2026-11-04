@@ -343,6 +343,7 @@ pub async fn session_open(request: OpenRequest, state: State<'_, AppState>) -> C
     let _ = state.with_storage(|storage| storage.session_touch(&desktop_session.id));
     let _ = state.with_storage(|storage| storage.setting_set(super::delegation::COMBO_KEY, &super::delegation::session_scope(&desktop_session.id), &combo));
     super::delegation::watch_orchestrator(&state, &actor);
+    super::forks::watch_nested(&state, &actor);
     state.insert_actor(handle.id.clone(), recorded_id.clone(), actor, PathBuf::from(&record.canonical_root));
     state.set_actor_model(&handle.id, opened_model.as_deref());
     // Baseline before agent work (REV-02). Captured off the command path so a
@@ -476,6 +477,7 @@ pub async fn session_submit(request: SubmitRequest, state: State<'_, AppState>) 
 
     let mut blocks = prompt_blocks(&state, &actor, &root, &request.text, &request.attachment_ids, &request.mentions).await?;
     side_notes_first(&state, &request.handle.id, &mut blocks);
+    super::forks::reports_first(&state, &request.handle.id, &mut blocks);
     let payload = serde_json::to_vec(&blocks).unwrap_or_default();
     let hash = content_hash(&payload);
     let payload_dir = state.data_dir.join("outbox");
@@ -608,6 +610,7 @@ pub async fn session_enqueue(request: EnqueueRequest, state: State<'_, AppState>
         .ok_or_else(|| DesktopError::not_ready("session root unknown"))?;
     let mut blocks = prompt_blocks(&state, &actor, &root, &request.text, &request.attachment_ids, &request.mentions).await?;
     side_notes_first(&state, &request.handle.id, &mut blocks);
+    super::forks::reports_first(&state, &request.handle.id, &mut blocks);
     tracing::info!(request_id = %request.request_id, preparation_ms = started.elapsed().as_millis() as u64, "queued submission prepared");
     actor
         .enqueue(QueuedPrompt { id: request.request_id, text: request.text, blocks, restore: request.restore })

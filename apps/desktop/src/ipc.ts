@@ -19,6 +19,7 @@ import {
   type QueueRestore,
   isDesktopError,
   type Combo,
+  type NestedReport,
   type JobView,
   type JobRetryPolicy,
   type AttachmentPreview,
@@ -264,6 +265,9 @@ export const api = {
     call<void>(COMMANDS.sessionArchive, { request: { workspaceId, agentSessionId, archived, provider } }),
   sessionPin: (workspaceId: string, agentSessionId: string, pinned: boolean, provider?: Provider) =>
     call<void>(COMMANDS.sessionPin, { request: { workspaceId, agentSessionId, pinned, provider } }),
+  sessionNestedReports: (workspaceId: string, agentSessionId: string) => call<NestedReport[]>(COMMANDS.sessionNestedReports, { request: { workspaceId, agentSessionId } }),
+  sessionReporting: (workspaceId: string, agentSessionId: string) => call<boolean>(COMMANDS.sessionReporting, { request: { workspaceId, agentSessionId } }),
+  sessionSetReporting: (workspaceId: string, agentSessionId: string, on: boolean) => call<void>(COMMANDS.sessionSetReporting, { request: { workspaceId, agentSessionId, on } }),
   sessionNest: (workspaceId: string, agentSessionId: string, parentAgentSessionId: string | null) =>
     call<void>(COMMANDS.sessionNest, { request: { workspaceId, agentSessionId, parentAgentSessionId } }),
   sessionRename: (workspaceId: string, agentSessionId: string, title: string | null, provider?: Provider) =>
