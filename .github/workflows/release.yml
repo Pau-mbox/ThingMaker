@@ -1,7 +1,8 @@
 # Builds ThingMaker for macOS (one universal app, Intel and Apple silicon) and
 # Windows when a version tag is pushed, signs the update bundles with the
 # updater key, and leaves a draft release with `latest.json` for the app's
-# updater. Publishing the draft is what rolls the update out.
+# updater. Publishing the draft is what rolls the update out. The draft is
+# made first, once; both builds upload to it.
 #
 # Needs two repository secrets (docs/release.md): TAURI_SIGNING_PRIVATE_KEY
 # and TAURI_SIGNING_PRIVATE_KEY_PASSWORD.
@@ -15,7 +16,29 @@ permissions:
   contents: write
 
 jobs:
+  # The draft release is made once, before the builds: each build creating it
+  # raced the other, and the one that lost failed after a full build.
+  create-release:
+    runs-on: ubuntu-latest
+    outputs:
+      release_id: ${{ steps.release.outputs.id }}
+    steps:
+      - id: release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          # A re-run finds the draft it made the first time.
+          id=$(gh api "repos/$GH_REPO/releases" --jq ".[] | select(.tag_name == \"$TAG\") | .id" | head -n 1)
+          if [ -z "$id" ]; then
+            gh release create "$TAG" --draft --verify-tag --title "ThingMaker $TAG" --notes "Install it from the files below, or update from inside ThingMaker."
+            id=$(gh api "repos/$GH_REPO/releases" --jq ".[] | select(.tag_name == \"$TAG\") | .id" | head -n 1)
+          fi
+          echo "id=$id" >> "$GITHUB_OUTPUT"
+
   build:
+    needs: create-release
     strategy:
       fail-fast: false
       matrix:
@@ -54,9 +77,5 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
           projectPath: apps/desktop
-          tagName: ${{ github.ref_name }}
-          releaseName: ThingMaker ${{ github.ref_name }}
-          releaseBody: Install it from the files below, or update from inside ThingMaker.
-          releaseDraft: true
-          prerelease: false
+          releaseId: ${{ needs.create-release.outputs.release_id }}
           args: ${{ matrix.args }}
