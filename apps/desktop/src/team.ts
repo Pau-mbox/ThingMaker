@@ -49,6 +49,15 @@ export function uniqueName(base: string, taken: string[]): string {
   for (let n = 2; ; n += 1) if (!lower.has(`${base}-${n}`.toLowerCase())) return `${base}-${n}`;
 }
 
+/** Names filled in, so what is saved is what the orchestrator will read. */
+export function tidyCombo(combo: Combo): Combo {
+  const names = combo.workers.map((worker) => worker.name);
+  return {
+    ...combo,
+    workers: combo.workers.map((worker, index) => ({ ...worker, name: worker.name.trim() || uniqueName(worker.model ?? worker.provider, names.filter((_, at) => at !== index)) })),
+  };
+}
+
 /** `Codex · luna, Claude Code · sonnet` for a chip's title. */
 export function teamSummary(combo: Combo | undefined): string {
   if (!combo || combo.workers.length === 0) return t("No workers: the orchestrator works alone.");

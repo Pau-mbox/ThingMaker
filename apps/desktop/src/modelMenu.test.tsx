@@ -59,8 +59,15 @@ describe("model menu", () => {
     render(<ConfigPickers configOptions={OPTIONS} disabled={false} sessionId="s1" />);
     const chip = screen.getByRole("button", { name: /GPT-6.1 Sol/ });
     expect(chip.textContent).toContain("High");
-    expect(screen.getByText(/mode: Accept edits/)).toBeTruthy();
+    // Editing the workspace is the usual mode: nothing to say about it.
+    expect(screen.queryByText(/mode:/)).toBeNull();
     expect(screen.queryByText(/Fast mode/)).toBeNull();
+  });
+
+  it("shows the mode only when it holds the agent back from editing", () => {
+    const plan = OPTIONS.map((option) => (option.id === "mode" ? { ...option, currentValue: "plan", options: [{ value: "plan", name: "Plan" }] } : option));
+    render(<ConfigPickers configOptions={plan} disabled={false} sessionId="s1" />);
+    expect(screen.getByText("mode: Plan")).toBeTruthy();
   });
 
   it("toggles Fast mode and steps the effort, with no reset button", () => {

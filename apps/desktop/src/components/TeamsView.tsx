@@ -8,22 +8,21 @@ import { useEffect, useState } from "react";
 import { type JobRetryPolicy, type TeamPreset } from "@thingmaker/contracts";
 import { api } from "../ipc";
 import { useStore } from "../store";
-import { newPreset, teamSummary } from "../team";
+import { newPreset, teamSummary, tidyCombo } from "../team";
 import { STARTERS, modelName, starterCombo, starterLead, usableProviders, type Catalogs, type StarterId } from "../teamRoles";
-import { tidyCombo } from "./TeamEditor";
 import { TeamChart, roleNames, useCatalogs } from "./TeamChart";
 import { ProviderBadge } from "./ProviderMark";
 import { t } from "../i18n";
 
 /** `Opus 5.5 leads · 2 helpers`, under a team's name in the list. */
-function describe(preset: TeamPreset, catalogs: Catalogs): string {
+export function describe(preset: Pick<TeamPreset, "orchestrator" | "combo">, catalogs: Catalogs): string {
   const lead = modelName(catalogs, preset.orchestrator.provider, preset.orchestrator.model) ?? t("Account default");
   const count = preset.combo.workers.length;
   return count === 0 ? t("{lead} leads, on its own", { lead }) : count === 1 ? t("{lead} leads · 1 helper", { lead }) : t("{lead} leads · {count} helpers", { lead, count });
 }
 
 /** The providers on a team, lead first, as a row of faces. */
-function Faces({ preset }: { preset: TeamPreset }) {
+export function Faces({ preset }: { preset: Pick<TeamPreset, "orchestrator" | "combo"> }) {
   const providers = [preset.orchestrator.provider, ...preset.combo.workers.map((worker) => worker.provider)].slice(0, 6);
   return (
     <span className="teams-faces">

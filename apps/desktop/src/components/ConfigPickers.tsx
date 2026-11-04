@@ -368,6 +368,9 @@ export function ModelMenu({
   );
 }
 
+/** A permission mode that holds the agent back from editing: Claude's `plan`, Codex's `read-only`. */
+const RESTRICTED_MODE = /plan|read/i;
+
 /** Renders every advertised option: model, effort and Fast mode share one menu, others a plain select. */
 export function ConfigPickers({ sessionId, configOptions, disabled }: { sessionId: string; configOptions: unknown; disabled: boolean }) {
   const setConfigOption = useStore((s) => s.setConfigOption);
@@ -386,7 +389,10 @@ export function ConfigPickers({ sessionId, configOptions, disabled }: { sessionI
         if (option.configId === "agent") return null;
         // The permission mode is the workspace's trust, decided at launch; it is
         // shown, not offered, so a click cannot step around that decision.
+        // Editing the workspace is the usual mode and goes unsaid; only a
+        // session held to planning or reading shows its mode.
         if (option.configId === "mode") {
+          if (!RESTRICTED_MODE.test(String(option.currentValue ?? ""))) return null;
           const current = choices(option).find((c) => c.choice.value === option.currentValue);
           return (
             <span className="chip small" key={option.configId} title={t("Set by the workspace's trust: trusted workspaces accept edits, others plan")}>
