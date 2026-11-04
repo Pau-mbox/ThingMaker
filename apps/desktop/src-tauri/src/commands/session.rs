@@ -67,6 +67,10 @@ pub struct OpenRequest {
     /// of. Its run tools then act on the main session's goal.
     #[serde(default)]
     pub side_of: Option<String>,
+    /// For a fork: the agent's message the copy ends at. Absent copies the
+    /// whole conversation.
+    #[serde(default)]
+    pub fork_at: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -112,6 +116,29 @@ fn transcript_exists(state: &AppState, provider: Provider, root: &Path, session_
         }
         Provider::Gemini => thingmaker_supervisor::agents::gemini::launch::conversation_path(&home, session_id).is_file(),
     }
+}
+
+/// For a fork into another folder (a worktree of the project): Claude Code
+/// keeps a session's transcript under its folder, and copies one only from
+/// there, so the source's transcript is put beside this folder's sessions
+/// first. Codex keeps its threads in one place, and needs nothing.
+fn bring_transcript(state: &AppState, provider: Provider, record: &WorkspaceRecord, session_id: &str) -> bool {
+    if provider != Provider::Claude {
+        return false;
+    }
+    let Some(home) = state.home.clone() else { return false };
+    let Ok(Some(source)) = state.with_storage(|storage| storage.session_by_agent_id_anywhere(session_id)) else { return false };
+    let Ok(Some(workspace)) = state.with_storage(|storage| storage.workspace_get(&source.workspace_id)) else { return false };
+    let from = thingmaker_supervisor::agents::claude::transcript_usage::transcript_path(&home, Path::new(&workspace.canonical_root), session_id);
+    let to = thingmaker_supervisor::agents::claude::transcript_usage::transcript_path(&home, Path::new(&record.canonical_root), session_id);
+    if !from.is_file() || to.exists() {
+        return to.is_file();
+    }
+    let copied = to.parent().is_some_and(|folder| std::fs::create_dir_all(folder).is_ok()) && std::fs::copy(&from, &to).is_ok();
+    if !copied {
+        tracing::warn!(from = %from.display(), to = %to.display(), "could not bring a transcript over for a fork");
+    }
+    copied
 }
 
 /// A provider's launch for a session in `record`, used for the user's
@@ -220,6 +247,7 @@ pub async fn session_open(request: OpenRequest, state: State<'_, AppState>) -> C
     }
     if let OpenRequestMode::Fork { session_id } = &request.mode
         && !transcript_exists(&state, provider, Path::new(&record.canonical_root), session_id)
+        && !bring_transcript(&state, provider, &record, session_id)
     {
         return Err(DesktopError::not_ready("This session has no conversation to copy yet. Send it a message first."));
     }
@@ -258,6 +286,7 @@ pub async fn session_open(request: OpenRequest, state: State<'_, AppState>) -> C
     config.attachment_generation = generation;
     if let OpenRequestMode::Fork { session_id } = &request.mode {
         config.fork_from = Some(session_id.clone());
+        config.fork_at = request.fork_at.clone();
     }
     config.before_prompt = Some(super::review::turn_snapshots(&state, &record.id, &record.canonical_root));
 
@@ -285,10 +314,21 @@ pub async fn session_open(request: OpenRequest, state: State<'_, AppState>) -> C
     // session and only says so in the `session/new` reply, so the id the
     // desktop reserved is not the id the transcript is under.
     let recorded_id = snapshot.agent_session_id.clone().unwrap_or_else(|| session_id.as_str().to_string());
-    let origin = if request.side_of.is_some() { SessionOrigin::Side } else { SessionOrigin::Desktop };
+    let origin = match &request.mode {
+        _ if request.side_of.is_some() => SessionOrigin::Side,
+        OpenRequestMode::Fork { .. } => SessionOrigin::Fork,
+        _ => SessionOrigin::Desktop,
+    };
     let desktop_session = state
         .with_storage(|storage| storage.session_upsert(&record.id, &recorded_id, origin, provider))
         .map_err(storage_error)?;
+    // A fork is listed under the session it was copied from.
+    if request.side_of.is_none()
+        && matches!(request.mode, OpenRequestMode::Fork { .. })
+        && let Some(source) = &row_before
+    {
+        let _ = state.with_storage(|storage| storage.session_set_parent(&desktop_session.id, Some(source)));
+    }
     // A side session hangs off its main session's row, which is how the
     // interface finds it again, and acts on that session's goal.
     if let Some(main) = &request.side_of {
@@ -723,6 +763,45 @@ pub fn session_rename(request: RenameRequest, state: State<'_, AppState>) -> Com
     state
         .with_storage(|storage| storage.session_set_title_overlay(&record.id, request.title.as_deref()))
         .map_err(storage_error)
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct NestRequest {
+    pub workspace_id: String,
+    pub agent_session_id: String,
+    /// The session to list it under; `None` moves it out to the top level.
+    pub parent_agent_session_id: Option<String>,
+}
+
+/// Files a session under another as a nested fork, or moves it out to stand
+/// on its own. Only the desktop index changes.
+#[tauri::command]
+pub fn session_nest(request: NestRequest, state: State<'_, AppState>) -> CommandResult<()> {
+    let row = state
+        .with_storage(|storage| storage.session_by_agent_id(&request.workspace_id, &request.agent_session_id))
+        .map_err(storage_error)?
+        .ok_or_else(|| DesktopError::not_ready("that session is not in this workspace's list"))?;
+    let parent = match &request.parent_agent_session_id {
+        Some(parent) => Some(
+            state
+                .with_storage(|storage| storage.session_by_agent_id(&request.workspace_id, parent))
+                .map_err(storage_error)?
+                .ok_or_else(|| DesktopError::not_ready("the session to nest it under is not in this workspace's list"))?
+                .id,
+        ),
+        None => None,
+    };
+    if parent.as_deref() == Some(row.id.as_str()) {
+        return Err(DesktopError::conflict("A session cannot be nested under itself."));
+    }
+    state.with_storage(|storage| {
+        if parent.is_some() {
+            storage.session_mark_fork(&row.id)?;
+        }
+        storage.session_set_parent(&row.id, parent.as_deref())
+    })
+    .map_err(storage_error)
 }
 
 /// Desktop records for a workspace's sessions (archive flags, origin, the

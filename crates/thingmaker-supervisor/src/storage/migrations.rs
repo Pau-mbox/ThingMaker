@@ -9,7 +9,7 @@ use rusqlite::params;
 
 use super::{Storage, now_unix_ms};
 
-pub const SCHEMA_VERSION: i64 = 22;
+pub const SCHEMA_VERSION: i64 = 23;
 
 struct Migration {
     version: i64,
@@ -138,6 +138,7 @@ const MIGRATIONS: &[Migration] = &[
     Migration { version: 20, name: "activity", sql: include_str!("schema/0020_activity.sql"), rebuilds: false },
     Migration { version: 21, name: "session_titles", sql: include_str!("schema/0021_session_titles.sql"), rebuilds: false },
     Migration { version: 22, name: "task_flow", sql: include_str!("schema/0022_task_flow.sql"), rebuilds: false },
+    Migration { version: 23, name: "session_forks", sql: include_str!("schema/0023_session_forks.sql"), rebuilds: true },
 ];
 
 #[derive(Debug, thiserror::Error)]

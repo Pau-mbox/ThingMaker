@@ -414,13 +414,14 @@ export type SessionRecord = {
    *  (Claude Code's ai-title, Codex's thread name) or its first prompt. ""
    *  means it was looked for and there is none. A rename wins over it. */
   autoTitle?: string;
-  origin: "desktop" | "cli" | "unknown" | "side";
+  origin: "desktop" | "cli" | "unknown" | "side" | "fork";
   archiveState: "active" | "archived" | "unavailable";
   pinned: boolean;
   lastSeen?: number;
   /** The provider this session runs on. */
   provider: Provider;
-  /** The orchestrator's row, for a worker session a `delegate` opened. */
+  /** The row it is listed under: the orchestrator, for a worker session a
+   *  `delegate` opened; the session it was copied from, for a fork. */
   parentSessionId?: string;
   createdAt: number;
 };
@@ -1548,6 +1549,7 @@ export const COMMANDS = {
   sessionArchive: "session_archive",
   sessionPin: "session_pin",
   sessionRename: "session_rename",
+  sessionNest: "session_nest",
   mcpOverview: "mcp_overview",
   mcpCatalog: "mcp_catalog",
   mcpParse: "mcp_parse",

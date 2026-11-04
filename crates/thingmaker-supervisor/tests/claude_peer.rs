@@ -740,6 +740,23 @@ async fn a_fork_is_a_new_session_with_the_old_ones_context_and_none_of_its_repla
 }
 
 #[tokio::test]
+async fn a_fork_can_end_at_a_message_the_agent_names() {
+    let root = tempfile::tempdir().unwrap();
+    let Some(mut at) = config(&[], None, PermissionStance::AcceptEdits, root.path()) else { return };
+    at.fork_from = Some(AGENT_SESSION.into());
+    at.fork_at = Some("m-reply-1".into());
+    let actor = SessionActor::open(at).await.expect("forked at the message");
+    assert_eq!(actor.snapshot().await.unwrap().agent_session_id.as_deref(), Some("a7c2f1d0-5b3e-4c8a-9f61-2d4e8b0c7a19"));
+    let _ = actor.stop().await;
+
+    let Some(mut missing) = config(&[], None, PermissionStance::AcceptEdits, root.path()) else { return };
+    missing.fork_from = Some(AGENT_SESSION.into());
+    missing.fork_at = Some("m-gone".into());
+    let error = SessionActor::open(missing).await.expect_err("no such message");
+    assert!(error.message.contains("m-gone"), "{error:?}");
+}
+
+#[tokio::test]
 async fn an_agent_that_cannot_fork_is_refused_before_a_session_exists() {
     let root = tempfile::tempdir().unwrap();
     let Some(mut config) = config(&["--no-fork"], None, PermissionStance::AcceptEdits, root.path()) else { return };

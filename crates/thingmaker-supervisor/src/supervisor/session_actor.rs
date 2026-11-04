@@ -115,6 +115,9 @@ pub struct SessionActorConfig {
     /// Opens the session as a copy of this one (ACP `session/fork`), with its
     /// whole conversation as context, instead of a fresh `session/new`.
     pub fork_from: Option<String>,
+    /// With `fork_from`, the message the copy ends at (the agent's own
+    /// message id); `None` copies the whole conversation.
+    pub fork_at: Option<String>,
     pub before_prompt: Option<BeforePrompt>,
 }
 
@@ -133,6 +136,7 @@ impl SessionActorConfig {
             event_capacity: 4096,
             mcp_servers: Vec::new(),
             fork_from: None,
+            fork_at: None,
             before_prompt: None,
         }
     }
@@ -1807,6 +1811,9 @@ impl ActorState {
                             // The copy is made from the agent's transcript on
                             // disk, which can take a while for a long session.
                             params["sessionId"] = Value::String(source);
+                            if let Some(at) = self.config.fork_at.clone() {
+                                fork_point(&mut params, &at);
+                            }
                             self.set_attachment(AttachmentState::New);
                             self.spawn_request("session/fork", params, self.config.timeouts.turn, None, Internal::AttachResult);
                         } else {
@@ -2323,4 +2330,14 @@ pub fn content_blocks_to_values(blocks: &[ContentBlock]) -> Vec<Value> {
         .iter()
         .map(|block| serde_json::to_value(block).expect("content blocks serialize"))
         .collect()
+}
+
+/// Where a `session/fork` copy ends: the message as the agent named it,
+/// under the `_meta` key `claude-agent-acp` reads (JetBrains AIR's fork
+/// point), kept beside whatever `_meta` the launch already sends.
+fn fork_point(params: &mut Value, message_id: &str) {
+    if !params.get("_meta").is_some_and(Value::is_object) {
+        params["_meta"] = json!({});
+    }
+    params["_meta"]["jetbrains"] = json!({ "air": { "fork": { "version": 1, "messageId": message_id } } });
 }

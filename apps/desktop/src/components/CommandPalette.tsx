@@ -78,6 +78,12 @@ export function CommandPalette() {
         list.push({ id: "session.refresh", label: t("Refresh from snapshot"), run: () => void state.refreshSnapshot(id) });
         list.push({ id: "session.search", label: t("Search transcript"), hint: "⌘F", run: () => state.setTranscriptSearchOpen(true) });
         list.push({ id: "session.export", label: t("Export transcript as Markdown…"), run: () => void state.exportTranscript(id) });
+        const agentSessionId = session.snapshot.agentSessionId;
+        if (agentSessionId) {
+          const source = { workspaceId: session.workspaceId, agentSessionId, provider: session.snapshot.provider, key: id };
+          list.push({ id: "session.fork", label: t("Fork this session"), run: () => void state.forkSession(source) });
+          list.push({ id: "session.fork.worktree", label: t("Fork this session into a worktree"), run: () => void state.forkSession(source, undefined, { worktree: true }) });
+        }
         for (const tab of SESSION_TABS) {
           list.push({ id: `tab.${tab}`, label: t("Show the {tab} tab", { tab: tabName(tab) }), run: () => state.setSessionTab(tab) });
         }

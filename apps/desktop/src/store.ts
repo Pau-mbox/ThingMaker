@@ -53,6 +53,7 @@ import type {
 } from "@thingmaker/contracts";
 import { EMPTY_COMBO, JOB_EVENT, SESSION_TITLE_EVENT, type SessionTitleChange, ODYSSEY_STATE_NOTE, PROVIDERS, PROVIDER_LABELS, BIGTHING_EVENT, asConfigOptions, isEffortOption, type Combo, type JobView, type ProviderModel, type BigThingEvent, type BigThingRuntime, type TeamPreset } from "@thingmaker/contracts";
 import { HANDOFF_SPLIT, handoffBrief, hasConversation, readPresets, upsertJob, upsertPreset, withoutHandoff } from "./team";
+import { copiesItself, forkBranch, forkTitle, type ForkPoint } from "./fork";
 
 /** Preference keys (scope `ui`) for saved teams. */
 const TEAM_PRESETS_KEY = "teamPresets";
@@ -383,6 +384,14 @@ type State = {
    */
   handOff: (sessionId: string, provider: Provider, preset?: TeamPreset) => Promise<void>;
   /**
+   * Copies a session into a new one nested under it, on the same provider,
+   * model, effort and team, and opens it. With a point, the copy ends there
+   * ("Fork from here"). Returns the fork's handle.
+   */
+  forkSession: (source: ForkSource, point?: ForkPoint, options?: { worktree?: boolean }) => Promise<string | null>;
+  /** Lists a nested session on its own again, or under another session. */
+  nestSession: (workspaceId: string, agentSessionId: string, parentAgentSessionId: string | null) => Promise<void>;
+  /**
    * The provider (and model, effort) a session's next message goes to,
    * chosen in the model menu; nothing changes until that message is sent.
    * Choosing the session's own provider again clears it.
@@ -578,6 +587,9 @@ export function basenameOf(path: string): string {
  */
 /** Where a session's next message goes when it is another provider. */
 export type PendingProvider = { provider: Provider; model?: string; effort?: string };
+/** The session a fork is copied from: open (`key`) or only in the list. */
+export type ForkSource = { workspaceId: string; agentSessionId: string; provider: Provider; key?: string };
+
 /** A session that carries on another's conversation on a different provider. */
 export type Continuation = { fromAgentSessionId: string; fromProvider: Provider };
 
@@ -2362,6 +2374,75 @@ export const useStore = create<State>((set, get) => ({
     }
     set({ drafts: { ...get().drafts, [key]: brief } });
     get().selectSession(key);
+  },
+
+  async forkSession(source, point, how) {
+    const { workspaceId, agentSessionId, provider } = source;
+    const live = (source.key ? get().sessions[source.key] : undefined) ?? Object.values(get().sessions).find((session) => session.snapshot.agentSessionId === agentSessionId);
+    const records = get().records[workspaceId] ?? [];
+    const record = records.find((entry) => entry.agentSessionId === agentSessionId);
+    const base = live ? sessionTitle(live, records) : record?.titleOverlay || record?.autoTitle || t("Session");
+    const title = forkTitle(base, records.map((entry) => entry.titleOverlay || entry.autoTitle || ""));
+    // The copy works the way the original does: its model, effort and team.
+    const options = live ? asConfigOptions(live.snapshot.configOptions) : [];
+    const chosen = (option: { currentValue?: unknown } | undefined) => (typeof option?.currentValue === "string" && option.currentValue !== "default" ? option.currentValue : undefined);
+    const model = chosen(options.find((option) => option.configId === "model"));
+    const effort = chosen(options.find((option) => isEffortOption(option.configId)));
+    const team = live ? get().teams[live.handle.id] : undefined;
+    const cards = live?.projection.cards;
+    const copies = copiesItself(provider, point, cards);
+    if (!copies && !point?.fresh && !cards) {
+      set({ error: { code: "NOT_READY", message: t("Open this session first: {provider} cannot copy a session itself, so the fork starts from a summary of the open conversation.", { provider: PROVIDER_LABELS[provider] }), retry: "user_action" } });
+      return null;
+    }
+    set({ busy: t("Forking “{title}”", { title: base }), error: null });
+    try {
+      // Into a worktree: a branch of its own from where the project is now,
+      // uncommitted changes carried over, as a workspace of its own.
+      let target = workspaceId;
+      if (how?.worktree) {
+        const created = await api.worktreeCreate(workspaceId, forkBranch(title), "HEAD", true);
+        const inspection = await api.workspaceInspect(created.workspace.displayPath);
+        set({ workspaces: await api.workspaceList(), inspections: { ...get().inspections, [inspection.record.id]: inspection } });
+        target = inspection.record.id;
+      }
+      const launch = { workspaceId: target, provider, ...(model ? { model } : {}), ...(effort ? { reasoningEffort: effort } : {}), ...(team ? { combo: team } : {}) };
+      const opened = copies
+        ? await api.sessionOpen({ ...launch, mode: { mode: "fork", session_id: agentSessionId }, ...(provider === "claude" && point?.at ? { forkAt: point.at } : {}) })
+        : await api.sessionOpen({ ...launch, mode: { mode: "new" } });
+      await attachLive(get, set, opened.handle, target, false);
+      const key = opened.handle.id;
+      const forked = get().sessions[key]?.snapshot.agentSessionId ?? opened.snapshot.agentSessionId;
+      if (!forked) throw new Error(t("The agent did not name the new session."));
+      // A copy by brief: what was said up to the point rides, unseen, in
+      // front of the first message, as a side session's does.
+      if (!copies && !point?.fresh && cards) {
+        const brief = handoffBrief(cards.slice(0, (point?.upTo ?? cards.length - 1) + 1), provider);
+        set({ sideBrief: { ...get().sideBrief, [key]: brief } });
+      }
+      // Nested where it is listed with its source: a worktree's sessions are
+      // listed under the worktree.
+      if (target === workspaceId) await api.sessionNest(workspaceId, forked, agentSessionId);
+      await get().renameSession(target, forked, title);
+      if (point?.draft) set({ drafts: { ...get().drafts, [key]: point.draft } });
+      await get().loadRecords(target);
+      get().selectSession(key);
+      return key;
+    } catch (error) {
+      set({ error: asError(error) });
+      return null;
+    } finally {
+      set({ busy: null });
+    }
+  },
+
+  async nestSession(workspaceId, agentSessionId, parentAgentSessionId) {
+    try {
+      await api.sessionNest(workspaceId, agentSessionId, parentAgentSessionId);
+      await get().loadRecords(workspaceId);
+    } catch (error) {
+      set({ error: asError(error) });
+    }
   },
 
   setPendingProvider(sessionId, pending) {

@@ -71,8 +71,11 @@ type Row = {
   trusted: boolean;
   pinned: boolean;
   archived: boolean;
-  /** The orchestrator's agent session id, for a worker a `delegate` opened. */
+  /** The agent session id it is listed under: the orchestrator, for a worker
+   *  a `delegate` opened; the session it was copied from, for a fork. */
   parent: string | null;
+  /** A fork: a nested session of its own, not a worker. */
+  fork: boolean;
 };
 
 /** Siblings without a wrapper element: rows stay direct children of the list. */
@@ -80,20 +83,39 @@ function SessionGroup({ children }: { children: ReactNode }) {
   return <>{children}</>;
 }
 
-/** Workers listed right under the session they work for; a worker whose
- *  orchestrator is not in the list stands on its own. */
+/** Workers and forks listed right under the session they belong to, at any
+ *  depth (a fork of a fork); one whose parent is not in the list stands on
+ *  its own. */
 export function nestWorkers<T extends { id: string | null; parent: string | null }>(rows: T[]): T[] {
   const ids = new Set(rows.map((row) => row.id));
   const out: T[] = [];
-  for (const row of rows) {
-    if (row.parent && ids.has(row.parent)) continue;
+  const placed = new Set<T>();
+  const place = (row: T) => {
+    if (placed.has(row)) return;
+    placed.add(row);
     out.push(row);
-    if (row.id) out.push(...rows.filter((child) => child.parent === row.id));
-  }
+    if (row.id) for (const child of rows) if (child.parent === row.id) place(child);
+  };
+  for (const row of rows) if (!(row.parent && ids.has(row.parent))) place(row);
   return out;
 }
 
-function SessionRow({ row, showProject, onMenu, renaming, onRename }: { row: Row; showProject?: boolean; onMenu: (row: Row, at: { x: number; y: number }) => void; renaming: boolean; onRename: (title: string | null) => void }) {
+function SessionRow({
+  row,
+  showProject,
+  onMenu,
+  renaming,
+  onRename,
+  depth = 0,
+}: {
+  row: Row;
+  showProject?: boolean;
+  onMenu: (row: Row, at: { x: number; y: number }) => void;
+  renaming: boolean;
+  onRename: (title: string | null) => void;
+  /** How deep it is nested: under a session, a fork of a fork, … */
+  depth?: number;
+}) {
   const view = useStore((s) => s.view);
   const selectSession = useStore((s) => s.selectSession);
   const openSession = useStore((s) => s.openSession);
@@ -149,7 +171,10 @@ function SessionRow({ row, showProject, onMenu, renaming, onRename }: { row: Row
   }
 
   return (
-    <li className={`session-li ${row.archived ? "archived" : ""} ${row.parent ? "session-worker" : ""}`} onContextMenu={(event) => {
+    <li
+      className={`session-li ${row.archived ? "archived" : ""} ${depth > 0 ? (row.fork ? "session-nested" : "session-worker") : ""}`}
+      style={depth > 0 ? { marginLeft: 14 * depth } : undefined}
+      onContextMenu={(event) => {
       event.preventDefault();
       onMenu(row, { x: event.clientX, y: event.clientY });
     }}>
@@ -207,9 +232,11 @@ function SessionRow({ row, showProject, onMenu, renaming, onRename }: { row: Row
 }
 
 /** Right-click (or the ⋯ action) menu for one session row. */
-function RowMenu({ row, at, onClose, onRename }: { row: Row; at: { x: number; y: number }; onClose: () => void; onRename: () => void }) {
+function RowMenu({ row, at, onClose, onRename, parentLabel }: { row: Row; at: { x: number; y: number }; onClose: () => void; onRename: () => void; parentLabel: string | null }) {
   const pinSession = useStore((s) => s.pinSession);
   const archiveSession = useStore((s) => s.archiveSession);
+  const forkSession = useStore((s) => s.forkSession);
+  const nestSession = useStore((s) => s.nestSession);
   const menu = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -248,6 +275,33 @@ function RowMenu({ row, at, onClose, onRename }: { row: Row; at: { x: number; y:
       <button className="context-item" onClick={act(onRename)} role="menuitem" type="button">
         {t("Rename…")}
       </button>
+      {row.id && (
+        <button
+          className="context-item"
+          onClick={act(() => row.id && void forkSession({ workspaceId: row.workspaceId, agentSessionId: row.id, provider: row.provider, ...(row.liveId ? { key: row.liveId } : {}) }))}
+          role="menuitem"
+          title={t("A copy of this conversation in a new session, nested under this one. This one stays as it is.")}
+          type="button"
+        >
+          {t("Fork")}
+        </button>
+      )}
+      {row.id && (
+        <button
+          className="context-item"
+          onClick={act(() => row.id && void forkSession({ workspaceId: row.workspaceId, agentSessionId: row.id, provider: row.provider, ...(row.liveId ? { key: row.liveId } : {}) }, undefined, { worktree: true }))}
+          role="menuitem"
+          title={t("The same copy, working in a Git worktree of its own: a new branch from here, with your uncommitted changes carried over.")}
+          type="button"
+        >
+          {t("Fork into a worktree")}
+        </button>
+      )}
+      {row.id && row.fork && row.parent && (
+        <button className="context-item" onClick={act(() => row.id && void nestSession(row.workspaceId, row.id, null))} role="menuitem" type="button">
+          {parentLabel ? t("Move out of “{name}”", { name: parentLabel }) : t("Move out to the top level")}
+        </button>
+      )}
       <button className="context-item" onClick={act(() => row.id && void pinSession(row.workspaceId, row.id, !row.pinned))} role="menuitem" type="button">
         {row.pinned ? t("Unpin") : t("Pin to top")}
       </button>
@@ -325,6 +379,14 @@ export function Sidebar() {
     setOpenTeams(next);
     remember("thingmaker.sidebar.openTeams", next);
   };
+  // Sessions whose nested forks are folded away. Open by default: a fork is
+  // something you made and came back for. Remembered on this machine.
+  const [closedForks, setClosedForks] = useState<Record<string, boolean>>(() => remembered("thingmaker.sidebar.closedForks", {}));
+  const toggleForks = (id: string) => {
+    const next = { ...closedForks, [id]: !closedForks[id] };
+    setClosedForks(next);
+    remember("thingmaker.sidebar.closedForks", next);
+  };
   const renameSession = useStore((s) => s.renameSession);
   const removeWorkspace = useStore((s) => s.removeWorkspace);
   const [removing, setRemoving] = useState<{ id: string; name: string; live: number } | null>(null);
@@ -345,6 +407,7 @@ export function Sidebar() {
     const parentOf = new Map(
       workspaceRecords.filter((r) => r.parentSessionId).map((r) => [r.agentSessionId, agentIdOf.get(r.parentSessionId as string) ?? null] as const),
     );
+    const forks = new Set(workspaceRecords.filter((r) => r.origin === "fork").map((r) => r.agentSessionId));
 
     const liveRows: Row[] = live.map((session) => ({
       workspaceId: workspace.id,
@@ -361,6 +424,7 @@ export function Sidebar() {
       pinned: session.snapshot.agentSessionId !== null && pinned.has(session.snapshot.agentSessionId),
       archived: false,
       parent: (session.snapshot.agentSessionId && parentOf.get(session.snapshot.agentSessionId)) || null,
+      fork: session.snapshot.agentSessionId !== null && forks.has(session.snapshot.agentSessionId),
     }));
 
     // Every session the desktop has opened is in its own records, whichever
@@ -387,6 +451,7 @@ export function Sidebar() {
         pinned: pinned.has(record.agentSessionId),
         archived: archived.has(record.agentSessionId),
         parent: parentOf.get(record.agentSessionId) ?? null,
+        fork: forks.has(record.agentSessionId),
       }));
 
     const rows = [...liveRows, ...storedRows];
@@ -520,42 +585,70 @@ export function Sidebar() {
               </div>
               {!isCollapsed && (
                 <ul className="sidebar-sessions">
-                  {unpinned.map((row) => {
-                    const children = row.id ? unpinned.filter((child) => child.parent === row.id) : [];
-                    // A worker shows only while its orchestrator's team is
-                    // open; one whose orchestrator is not listed stands alone.
-                    if (row.parent && unpinned.some((parent) => parent.id === row.parent) && !openTeams[row.parent]) return null;
-                    // A finished worker folds away: the live ones are what to watch.
-                    if (row.parent && !row.running && unpinned.some((parent) => parent.id === row.parent) && !openFinished[row.parent]) return null;
-                    const running = children.filter((child) => child.running).length;
-                    const finished = children.length - running;
-                    return (
-                      <SessionGroup key={row.liveId ?? row.id}>
-                        <SessionRow
-                          onMenu={(target, at) => setMenu({ row: target, at })}
-                          onRename={(title) => {
-                            setRenaming(null);
-                            if (title !== null && row.id) void renameSession(row.workspaceId, row.id, title);
-                          }}
-                          renaming={renaming === row.id}
-                          row={row}
-                        />
-                        {children.length > 0 && row.id && (
-                          <li className="session-li session-worker">
-                            <button className="disclosure small" onClick={() => toggleTeam(row.id as string)} type="button">
-                              <IconChevron open={!!openTeams[row.id]} size={12} /> {children.length === 1 ? t("1 worker") : t("{count} workers", { count: children.length })}
-                              {running > 0 ? ` · ${t("{count} running", { count: running })}` : ""}
-                            </button>
-                            {openTeams[row.id] && finished > 0 && (
-                              <button className="link small sidebar-finished" onClick={() => setOpenFinished({ ...openFinished, [row.id as string]: !openFinished[row.id as string] })} type="button">
-                                {openFinished[row.id] ? t("hide finished") : t("show {count} finished", { count: finished })}
+                  {(() => {
+                    // Who is shown: a row under a listed parent shows while
+                    // that parent shows and has it open — a fork while its
+                    // nested sessions are open (the default), a worker while
+                    // the team is open and, once finished, when asked for.
+                    const byId = new Map(unpinned.filter((row) => row.id).map((row) => [row.id as string, row]));
+                    const depthOf = new Map<Row, number>();
+                    const shown = new Set<Row>();
+                    for (const row of unpinned) {
+                      const parent = row.parent ? byId.get(row.parent) : undefined;
+                      if (!parent) {
+                        depthOf.set(row, 0);
+                        shown.add(row);
+                        continue;
+                      }
+                      depthOf.set(row, (depthOf.get(parent) ?? 0) + 1);
+                      const open = row.fork ? !closedForks[row.parent as string] : !!openTeams[row.parent as string] && (row.running || !!openFinished[row.parent as string]);
+                      if (shown.has(parent) && open) shown.add(row);
+                    }
+                    return unpinned.map((row) => {
+                      if (!shown.has(row)) return null;
+                      const children = row.id ? unpinned.filter((child) => child.parent === row.id) : [];
+                      const workers = children.filter((child) => !child.fork);
+                      const nested = children.filter((child) => child.fork);
+                      const running = workers.filter((child) => child.running).length;
+                      const finished = workers.length - running;
+                      const depth = depthOf.get(row) ?? 0;
+                      return (
+                        <SessionGroup key={row.liveId ?? row.id}>
+                          <SessionRow
+                            depth={depth}
+                            onMenu={(target, at) => setMenu({ row: target, at })}
+                            onRename={(title) => {
+                              setRenaming(null);
+                              if (title !== null && row.id) void renameSession(row.workspaceId, row.id, title);
+                            }}
+                            renaming={renaming === row.id}
+                            row={row}
+                          />
+                          {nested.length > 0 && row.id && (
+                            <li className="session-li session-nested" style={{ marginLeft: 14 * (depth + 1) }}>
+                              <button aria-expanded={!closedForks[row.id]} className="disclosure small" onClick={() => toggleForks(row.id as string)} type="button">
+                                <IconChevron open={!closedForks[row.id]} size={12} />{" "}
+                                {nested.length === 1 ? t("1 nested session") : t("{count} nested sessions", { count: nested.length })}
                               </button>
-                            )}
-                          </li>
-                        )}
-                      </SessionGroup>
-                    );
-                  })}
+                            </li>
+                          )}
+                          {workers.length > 0 && row.id && (
+                            <li className="session-li session-worker" style={{ marginLeft: 14 * (depth + 1) }}>
+                              <button className="disclosure small" onClick={() => toggleTeam(row.id as string)} type="button">
+                                <IconChevron open={!!openTeams[row.id]} size={12} /> {workers.length === 1 ? t("1 worker") : t("{count} workers", { count: workers.length })}
+                                {running > 0 ? ` · ${t("{count} running", { count: running })}` : ""}
+                              </button>
+                              {openTeams[row.id] && finished > 0 && (
+                                <button className="link small sidebar-finished" onClick={() => setOpenFinished({ ...openFinished, [row.id as string]: !openFinished[row.id as string] })} type="button">
+                                  {openFinished[row.id] ? t("hide finished") : t("show {count} finished", { count: finished })}
+                                </button>
+                              )}
+                            </li>
+                          )}
+                        </SessionGroup>
+                      );
+                    });
+                  })()}
                   {unpinned.length === 0 && pinnedRows.length === 0 && archivedRows.length === 0 && (
                     <li className="small muted sidebar-note">{trusted ? t("No sessions yet.") : t("Select the workspace to open it.")}</li>
                   )}
@@ -591,7 +684,15 @@ export function Sidebar() {
         })}
       </div>
 
-      {menu && <RowMenu at={menu.at} onClose={() => setMenu(null)} onRename={() => setRenaming(menu.row.id)} row={menu.row} />}
+      {menu && (
+        <RowMenu
+          at={menu.at}
+          onClose={() => setMenu(null)}
+          onRename={() => setRenaming(menu.row.id)}
+          parentLabel={(menu.row.parent && groups.flatMap((group) => [...group.unpinned, ...group.pinnedRows, ...group.archivedRows]).find((row) => row.id === menu.row.parent)?.label) || null}
+          row={menu.row}
+        />
+      )}
 
       {removing && (
         <div aria-modal="true" className="modal-backdrop" role="dialog">

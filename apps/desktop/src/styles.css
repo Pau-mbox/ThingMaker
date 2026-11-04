@@ -4987,6 +4987,17 @@ button.odyssey-task-title svg {
   font-size: 12px;
 }
 
+/* A fork, nested under the session it was copied from, as Claude Desktop
+   shows one: a tree line down the left, the row at full size. */
+.session-nested {
+  margin-left: 14px;
+  border-left: 1px solid var(--border-strong);
+}
+
+.session-nested > .disclosure {
+  color: var(--muted);
+}
+
 /* The composer's team menu: saved teams, and who is on the one under the pointer */
 
 .team-menu-anchor {

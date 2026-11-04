@@ -160,6 +160,8 @@ export type OpenRequest = {
   combo?: Combo;
   /** The main session's handle, for a side session of it. */
   sideOf?: string;
+  /** For a fork: the agent's message the copy ends at; absent copies it all. */
+  forkAt?: string;
 };
 
 export const api = {
@@ -262,6 +264,8 @@ export const api = {
     call<void>(COMMANDS.sessionArchive, { request: { workspaceId, agentSessionId, archived, provider } }),
   sessionPin: (workspaceId: string, agentSessionId: string, pinned: boolean, provider?: Provider) =>
     call<void>(COMMANDS.sessionPin, { request: { workspaceId, agentSessionId, pinned, provider } }),
+  sessionNest: (workspaceId: string, agentSessionId: string, parentAgentSessionId: string | null) =>
+    call<void>(COMMANDS.sessionNest, { request: { workspaceId, agentSessionId, parentAgentSessionId } }),
   sessionRename: (workspaceId: string, agentSessionId: string, title: string | null, provider?: Provider) =>
     call<void>(COMMANDS.sessionRename, { request: { workspaceId, agentSessionId, title, provider } }),
 

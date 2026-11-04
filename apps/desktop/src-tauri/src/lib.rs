@@ -261,6 +261,7 @@ pub fn run() {
             commands::session::session_archive,
             commands::session::session_pin,
             commands::session::session_rename,
+            commands::session::session_nest,
             commands::mcp::mcp_overview,
             commands::mcp::mcp_catalog,
             commands::mcp::mcp_parse,

@@ -84,6 +84,16 @@ describe("the sidebar", () => {
     ];
     expect(nestWorkers(rows).map((row) => row.id)).toEqual(["o2", "o1", "w1", "orphan"]);
   });
+
+  it("lists a fork of a fork under the fork, at any depth", () => {
+    const rows = [
+      { id: "f2", parent: "f1" },
+      { id: "main", parent: null },
+      { id: "f1", parent: "main" },
+      { id: "f3", parent: "main" },
+    ];
+    expect(nestWorkers(rows).map((row) => row.id)).toEqual(["main", "f1", "f2", "f3"]);
+  });
 });
 
 const message = (role: "user" | "agent" | "thought", text: string, key: string): Card => ({

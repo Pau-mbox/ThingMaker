@@ -72,6 +72,8 @@ def option(name, default):
 SESSION = option("--session", "d847b2a3-c7b5-4459-8b0f-02fdd03031a4")
 # The id `session/fork` hands out for a copy of SESSION.
 FORK = "e958c3b4-d8c6-4560-9c13-13ee14142b5b"
+# The id of a copy that ends at a message (the AIR fork point).
+FORK_AT = "a7c2f1d0-5b3e-4c8a-9f61-2d4e8b0c7a19"
 # A model this account cannot select, the way an exhausted Fable behaves.
 REFUSE_MODEL = option("--refuse-model", None)
 SLOW = float(option("--slow", "0"))
@@ -271,8 +273,13 @@ for line in sys.stdin:
         else:
             sys.stderr.write("fork: " + json.dumps(params) + "\n")
             sys.stderr.flush()
-            cwds[FORK] = params.get("cwd")
-            send({"jsonrpc": "2.0", "id": request, "result": {"sessionId": FORK, "configOptions": config_options()}})
+            point = (((params.get("_meta") or {}).get("jetbrains") or {}).get("air") or {}).get("fork") or {}
+            if point and point.get("messageId") != "m-reply-1":
+                send({"jsonrpc": "2.0", "id": request, "error": {"code": -32602, "message": f"Fork point message {point.get('messageId')} was not found"}})
+            else:
+                copy = FORK_AT if point else FORK
+                cwds[copy] = params.get("cwd")
+                send({"jsonrpc": "2.0", "id": request, "result": {"sessionId": copy, "configOptions": config_options()}})
     elif method == "session/load":
         loaded = params.get("sessionId")
         if loaded != SESSION:

@@ -60,6 +60,9 @@ pub enum SessionOrigin {
     Unknown,
     /// A side session: a copy of another session, shown inside it.
     Side,
+    /// A fork: a copy of another session, listed under it as a nested
+    /// session of its own.
+    Fork,
 }
 
 impl SessionOrigin {
@@ -69,6 +72,7 @@ impl SessionOrigin {
             Self::Cli => "cli",
             Self::Unknown => "unknown",
             Self::Side => "side",
+            Self::Fork => "fork",
         }
     }
 
@@ -77,6 +81,7 @@ impl SessionOrigin {
             "desktop" => Self::Desktop,
             "cli" => Self::Cli,
             "side" => Self::Side,
+            "fork" => Self::Fork,
             _ => Self::Unknown,
         }
     }
@@ -341,6 +346,13 @@ impl Storage {
     }
 
     /// Marks a session as a worker of `parent` (both desktop row ids).
+    /// Marks a row as a fork, for a copy that was made without `session/fork`
+    /// (a provider that cannot fork starts one with a brief instead).
+    pub fn session_mark_fork(&self, id: &str) -> Result<(), StorageError> {
+        self.conn().execute("UPDATE sessions SET origin = 'fork' WHERE id = ?1", params![id])?;
+        Ok(())
+    }
+
     pub fn session_set_parent(&self, id: &str, parent: Option<&str>) -> Result<(), StorageError> {
         self.conn().execute("UPDATE sessions SET parent_session_id = ?2 WHERE id = ?1", params![id, parent])?;
         Ok(())
@@ -463,6 +475,26 @@ mod tests {
             storage.workspace_set_trust("nope", TrustState::InspectOnly, None),
             Err(StorageError::NotFound(_))
         ));
+    }
+
+    #[test]
+    fn a_fork_is_kept_as_one_nested_under_its_source_until_moved_out() {
+        let storage = Storage::open_in_memory().unwrap();
+        let workspace = storage.workspace_upsert("/p", "/p", "w-1").unwrap();
+        let main = storage.session_upsert(&workspace.id, "main", SessionOrigin::Desktop, Provider::Claude).unwrap();
+        let copy = storage.session_upsert(&workspace.id, "copy", SessionOrigin::Fork, Provider::Claude).unwrap();
+        storage.session_set_parent(&copy.id, Some(&main.id)).unwrap();
+        let read = storage.session_by_agent_id(&workspace.id, "copy").unwrap().unwrap();
+        assert_eq!((read.origin, read.parent_session_id.as_deref()), (SessionOrigin::Fork, Some(main.id.as_str())));
+
+        // A copy made by brief starts as an ordinary session and is marked.
+        let briefed = storage.session_upsert(&workspace.id, "briefed", SessionOrigin::Desktop, Provider::Gemini).unwrap();
+        storage.session_mark_fork(&briefed.id).unwrap();
+        assert_eq!(storage.session_by_agent_id(&workspace.id, "briefed").unwrap().unwrap().origin, SessionOrigin::Fork);
+
+        storage.session_set_parent(&copy.id, None).unwrap();
+        let moved = storage.session_by_agent_id(&workspace.id, "copy").unwrap().unwrap();
+        assert_eq!((moved.origin, moved.parent_session_id), (SessionOrigin::Fork, None), "moved out, still a fork");
     }
 
     #[test]
