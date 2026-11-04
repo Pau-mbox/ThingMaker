@@ -28,6 +28,7 @@ import { BackgroundTasksButton } from "./BackgroundTasks";
 import { bigThingTurnOf, splitSideNotes, userMessageText } from "../bigThingTurns";
 import { AttachmentThumb, BlockImage, InlineImage, workspaceImageRenderer } from "./InlineImage";
 import { Markdown } from "../markdown";
+import { copiesItself, forkPointAt } from "../fork";
 import type { Card } from "../projection";
 import { assignImages, keyOf, type ImageRef } from "../transcriptImages";
 import { detectTestRun, editedFilesIn, shellResultsOf } from "../toolSummary";
@@ -231,6 +232,44 @@ const CardView = memo(
   (before, after) => before.card === after.card && before.sessionId === after.sessionId && sameImages(before.images, after.images),
 );
 
+/**
+ * "Fork from here": a new session from this point, nested under this one,
+ * which stays as it is. At a reply the copy keeps it; at your own message the
+ * copy ends just before it, and the message waits in the fork's composer.
+ */
+function ForkFromHere({ sessionId, cardKey }: { sessionId: string; cardKey: string }) {
+  const forkSession = useStore((s) => s.forkSession);
+  const provider = useStore((s) => s.sessions[sessionId]?.snapshot.provider);
+  const ready = useStore((s) => Boolean(s.sessions[sessionId]?.snapshot.agentSessionId));
+  if (!provider || !ready) return null;
+  const fork = () => {
+    const session = useStore.getState().sessions[sessionId];
+    const agentSessionId = session?.snapshot.agentSessionId;
+    if (!session || !agentSessionId) return;
+    const cards = session.projection.cards;
+    const point = forkPointAt(cards, cards.findIndex((entry) => entry.key === cardKey));
+    if (!point) return;
+    void forkSession({ workspaceId: session.workspaceId, agentSessionId, provider, key: sessionId }, point);
+  };
+  const cards = useStore.getState().sessions[sessionId]?.projection.cards ?? [];
+  const point = forkPointAt(cards, cards.findIndex((entry) => entry.key === cardKey));
+  const summary = point && !point.fresh && !copiesItself(provider, point, cards);
+  return (
+    <button
+      className="link small"
+      onClick={fork}
+      title={
+        summary
+          ? t("Starts a new session from this point, briefed on the conversation so far: {provider} cannot copy part of a conversation. This one stays as it is.", { provider: PROVIDER_LABELS[provider] })
+          : t("Starts a new session from this point. This one stays as it is.")
+      }
+      type="button"
+    >
+      {t("fork from here")}
+    </button>
+  );
+}
+
 function CardBody({ card, sessionId }: { card: Card; sessionId: string }) {
   // Narrow selections, so an update elsewhere in the session does not
   // redraw this card.
@@ -264,6 +303,7 @@ function CardBody({ card, sessionId }: { card: Card; sessionId: string }) {
               <button className="link small" onClick={() => copyText(messageText(card))} type="button">
                 {t("copy")}
               </button>
+              <ForkFromHere cardKey={card.key} sessionId={sessionId} />
             </span>
           </article>
         );
@@ -286,6 +326,7 @@ function CardBody({ card, sessionId }: { card: Card; sessionId: string }) {
               <button className="link small" onClick={() => copyText(messageText(card))} type="button">
                 {t("copy")}
               </button>
+              {card.message.role === "user" && <ForkFromHere cardKey={card.key} sessionId={sessionId} />}
             </span>
           </header>
           <Blocks blocks={shownBlocks(card)} markdown={card.message.role !== "user"} onLink={onLink} workspaceId={workspaceId} />
