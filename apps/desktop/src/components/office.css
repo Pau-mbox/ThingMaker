@@ -105,6 +105,9 @@
   --screen: #2a2f3a;
   --code: #2a2f3a;
   position: relative;
+  /* Its layers stack in the thousands (desks, notes, vignette): keep them inside
+     the room so they never paint over the app's popovers. */
+  isolation: isolate;
   width: 100%;
   aspect-ratio: 160 / 290;
   flex: none;
