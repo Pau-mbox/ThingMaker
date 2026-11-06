@@ -98,7 +98,7 @@ describe("side chats in the rest of the app", () => {
     expect(splitSideNotes("A message that merely mentions [From the side transcript]")).toEqual({ notes: [], rest: "A message that merely mentions [From the side transcript]" });
     const { notes, rest } = splitSideNotes(text);
     render(<SideNotesCard notes={notes} own={rest} />);
-    expect(screen.getByText("Side chat → this session: 2 notes")).toBeTruthy();
+    expect(screen.getByText("Fork → this session: 2 notes")).toBeTruthy();
     expect(screen.getByText("Now carry on with the tests")).toBeTruthy();
   });
 });

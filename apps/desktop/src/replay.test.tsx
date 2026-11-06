@@ -120,7 +120,8 @@ describe("real turn replay", () => {
     expect(errors.filter((e) => String(e).includes("Error")).length).toBe(0);
     render(<SessionPanel sessionId={id} />);
     expect(screen.getByText(/Hey! How can I help\?/)).toBeTruthy();
-    expect(screen.getByText(/last submission harness-: accepted/)).toBeTruthy();
+    // An accepted submission is the normal case: nothing under the prompt.
+    expect(screen.queryByText(/last submission/)).toBeNull();
     const chip = screen.getByTitle("gpt-5.6-sol · OpenAI subscription");
     fireEvent.click(chip);
     expect(screen.getByRole("slider", { name: "Reasoning effort" })).toBeTruthy();

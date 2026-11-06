@@ -390,4 +390,8 @@ export const shell: Record<string, string> = {
   "Fork into a worktree": "Bifurcar en un worktree",
   "Fork this session": "Bifurcar esta sesión",
   "Fork this session into a worktree": "Bifurcar esta sesión en un worktree",
+  "Stops this session and moves it to Archived. Its transcript stays on disk.": "Detiene esta sesión y la mueve a Archivadas. Su transcripción sigue en disco.",
+  "Moves this session to Archived. Its transcript stays on disk.": "Mueve esta sesión a Archivadas. Su transcripción sigue en disco.",
+  "Resize the sidebar": "Cambiar el ancho de la barra lateral",
+  "Drag to resize, double-click to reset": "Arrastra para cambiar el ancho, doble clic para restablecerlo",
 };

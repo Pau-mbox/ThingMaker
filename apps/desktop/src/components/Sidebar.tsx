@@ -15,7 +15,6 @@ import {
   IconGear,
   IconAgents,
   IconKey,
-  IconMessage,
   IconPin,
   IconPinFilled,
   IconPlus,
@@ -186,18 +185,15 @@ function SessionRow({
         title={row.liveId ? `${row.id}${shortcut}` : row.trusted ? t("Resume {id}", { id: row.id ?? "" }) : t("Trust the workspace to resume")}
         type="button"
       >
-        {row.liveId ? (
-          <AttentionDot exited={row.exited} kind={row.attention} running={row.running} />
-        ) : (
-          <span className="session-glyph">
-            <IconMessage size={14} />
-          </span>
-        )}
+        {/* The provider leads the row; an open session's state sits on its corner. */}
+        <span className={`session-lead ${row.liveId ? "" : "session-lead-stored"}`}>
+          <ProviderBadge provider={row.provider} title={t("Runs on {provider}", { provider: row.provider === "gemini" ? "Gemini (Antigravity)" : PROVIDER_LABELS[row.provider] })} />
+          {row.liveId && <AttentionDot exited={row.exited} kind={row.attention} running={row.running} />}
+        </span>
         <span className="session-label">
           <span className="sidebar-title">{row.label}</span>
           {showProject && <span className="session-project">{row.project}</span>}
         </span>
-        <ProviderBadge provider={row.provider} title={t("Runs on {provider}", { provider: row.provider === "gemini" ? "Gemini (Antigravity)" : PROVIDER_LABELS[row.provider] })} />
         <span className="row-meta">{row.running ? t("running") : row.exited ? t("exited") : relative(row.updated)}</span>
       </button>
       <span className="row-actions">
@@ -237,6 +233,7 @@ function RowMenu({ row, at, onClose, onRename, parentLabel }: { row: Row; at: { 
   const archiveSession = useStore((s) => s.archiveSession);
   const forkSession = useStore((s) => s.forkSession);
   const nestSession = useStore((s) => s.nestSession);
+  const stopAndArchive = useStore((s) => s.stopAndArchive);
   const menu = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -305,8 +302,14 @@ function RowMenu({ row, at, onClose, onRename, parentLabel }: { row: Row; at: { 
       <button className="context-item" onClick={act(() => row.id && void pinSession(row.workspaceId, row.id, !row.pinned))} role="menuitem" type="button">
         {row.pinned ? t("Unpin") : t("Pin to top")}
       </button>
-      {!row.liveId && (
-        <button className="context-item" onClick={act(() => row.id && void archiveSession(row.workspaceId, row.id, !row.archived))} role="menuitem" type="button">
+      {row.id && (
+        <button
+          className="context-item"
+          onClick={act(() => row.id && void (row.archived ? archiveSession(row.workspaceId, row.id, false) : stopAndArchive(row.workspaceId, row.id, row.liveId ?? undefined)))}
+          role="menuitem"
+          title={row.archived ? undefined : row.liveId ? t("Stops this session and moves it to Archived. Its transcript stays on disk.") : t("Moves this session to Archived. Its transcript stays on disk.")}
+          type="button"
+        >
           {row.archived ? t("Restore") : t("Archive")}
         </button>
       )}
@@ -321,6 +324,62 @@ function RowMenu({ row, at, onClose, onRename, parentLabel }: { row: Row; at: { 
         </button>
       )}
     </div>
+  );
+}
+
+/** The sidebar's width, its bounds and the default. */
+const SIDEBAR_WIDTH = 300;
+const SIDEBAR_MIN = 220;
+const SIDEBAR_MAX = 520;
+
+function clampWidth(width: unknown): number {
+  const value = typeof width === "number" && Number.isFinite(width) ? width : SIDEBAR_WIDTH;
+  return Math.round(Math.min(SIDEBAR_MAX, Math.max(SIDEBAR_MIN, value)));
+}
+
+/** The sidebar's right edge: drag to widen or narrow it, double-click for the default. */
+function SidebarResizer({ width, onResize }: { width: number; onResize: (width: number, done: boolean) => void }) {
+  const [dragging, setDragging] = useState(false);
+  return (
+    <div
+      aria-label={t("Resize the sidebar")}
+      aria-orientation="vertical"
+      aria-valuemax={SIDEBAR_MAX}
+      aria-valuemin={SIDEBAR_MIN}
+      aria-valuenow={width}
+      className={`sidebar-resizer ${dragging ? "dragging" : ""}`}
+      onDoubleClick={() => onResize(SIDEBAR_WIDTH, true)}
+      onKeyDown={(event) => {
+        if (event.key === "ArrowLeft" || event.key === "ArrowRight") {
+          event.preventDefault();
+          onResize(width + (event.key === "ArrowRight" ? 16 : -16), true);
+        }
+      }}
+      onPointerDown={(event) => {
+        event.preventDefault();
+        const start = event.clientX;
+        const from = width;
+        let last = from;
+        setDragging(true);
+        document.body.classList.add("resizing-sidebar");
+        const move = (next: PointerEvent) => {
+          last = from + next.clientX - start;
+          onResize(last, false);
+        };
+        const up = () => {
+          setDragging(false);
+          document.body.classList.remove("resizing-sidebar");
+          onResize(last, true);
+          window.removeEventListener("pointermove", move);
+          window.removeEventListener("pointerup", up);
+        };
+        window.addEventListener("pointermove", move);
+        window.addEventListener("pointerup", up);
+      }}
+      role="separator"
+      tabIndex={0}
+      title={t("Drag to resize, double-click to reset")}
+    />
   );
 }
 
@@ -387,6 +446,38 @@ export function Sidebar() {
     setClosedForks(next);
     remember("thingmaker.sidebar.closedForks", next);
   };
+  // The sidebar's width, dragged from its right edge and remembered here.
+  const [width, setWidth] = useState(() => clampWidth(remembered("thingmaker.sidebar.width", SIDEBAR_WIDTH)));
+  const resize = (next: number, done: boolean) => {
+    const clamped = clampWidth(next);
+    setWidth(clamped);
+    if (done) remember("thingmaker.sidebar.width", clamped);
+  };
+  // The scrollbar shows while the list scrolls, then fades away.
+  const [scrolling, setScrolling] = useState(false);
+  const scrollTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const body = useRef<HTMLDivElement>(null);
+  const onScroll = () => {
+    setScrolling(true);
+    if (scrollTimer.current) clearTimeout(scrollTimer.current);
+    scrollTimer.current = setTimeout(() => {
+      setScrolling(false);
+      // WebKit keeps painting a scrollbar thumb whose style changed while
+      // nothing scrolls; a reflow of the scroller repaints it hidden.
+      requestAnimationFrame(() => {
+        const element = body.current;
+        if (!element) return;
+        const top = element.scrollTop;
+        element.style.overflowY = "hidden";
+        void element.offsetHeight;
+        element.style.overflowY = "";
+        element.scrollTop = top;
+      });
+    }, 900);
+  };
+  useEffect(() => () => {
+    if (scrollTimer.current) clearTimeout(scrollTimer.current);
+  }, []);
   const renameSession = useStore((s) => s.renameSession);
   const removeWorkspace = useStore((s) => s.removeWorkspace);
   const [removing, setRemoving] = useState<{ id: string; name: string; live: number } | null>(null);
@@ -472,7 +563,8 @@ export function Sidebar() {
   const manyProjects = workspaces.length > 1;
 
   return (
-    <nav aria-label={t("Workspaces and sessions")} className="sidebar">
+    <nav aria-label={t("Workspaces and sessions")} className="sidebar" style={IS_REMOTE ? undefined : { width }}>
+      {!IS_REMOTE && <SidebarResizer onResize={resize} width={width} />}
       <div className="sidebar-top" data-tauri-drag-region>
         <button aria-label={t("Hide sidebar (⌘B)")} className="icon-button remote-hidden" onClick={toggleSidebar} title={t("Hide sidebar (⌘B)")} type="button">
           <IconSidebar />
@@ -486,7 +578,7 @@ export function Sidebar() {
         </button>
       </div>
 
-      <div className="sidebar-body">
+      <div className={`sidebar-body ${scrolling ? "scrolling" : ""}`} onScroll={onScroll} ref={body}>
         {workspaces.length === 0 && (
           <button className="sidebar-empty" onClick={() => void addWorkspaceByPicker()} type="button">
             <IconFolder size={18} />

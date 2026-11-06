@@ -114,7 +114,9 @@ code {
 }
 
 .sidebar {
-  width: 280px;
+  position: relative;
+  width: 300px;
+  max-width: 50vw;
   flex: none;
   display: flex;
   flex-direction: column;
@@ -163,10 +165,47 @@ code {
   border-radius: 20px;
 }
 
+/* The sidebar's right edge, dragged to resize it. */
+.sidebar-resizer {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  right: -3px;
+  width: 6px;
+  z-index: 5;
+  cursor: col-resize;
+  -webkit-app-region: no-drag;
+}
+.sidebar-resizer::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 2px;
+  width: 2px;
+  background: transparent;
+  transition: background 120ms ease;
+}
+.sidebar-resizer:hover::after,
+.sidebar-resizer:focus-visible::after,
+.sidebar-resizer.dragging::after {
+  background: var(--accent);
+}
+.sidebar-resizer:focus-visible {
+  outline: none;
+}
+body.resizing-sidebar {
+  cursor: col-resize;
+  user-select: none;
+}
+body.resizing-sidebar * {
+  cursor: col-resize !important;
+}
+
 .sidebar-body {
   flex: 1;
   overflow: auto;
-  padding: 4px 8px 12px;
+  padding: 4px 4px 12px 6px;
   display: flex;
   flex-direction: column;
   gap: 8px;
@@ -332,30 +371,35 @@ code {
 }
 
 .session-li {
+  position: relative;
   display: flex;
   align-items: center;
-  gap: 2px;
 }
 
+/* Pin and ⋯ float over the row's end on hover rather than holding a column
+   of their own, so the title gets the whole width the rest of the time. */
 .row-actions {
-  display: inline-flex;
+  position: absolute;
+  right: 2px;
+  top: 50%;
+  transform: translateY(-50%);
+  display: none;
   gap: 1px;
-  flex: none;
+  padding-left: 14px;
+  background: linear-gradient(to right, transparent, var(--panel-2) 12px);
+  border-radius: var(--radius-sm);
 }
 
-.session-li .row-action {
-  visibility: hidden;
+.session-li:hover .row-actions,
+.session-li:focus-within .row-actions {
+  display: inline-flex;
 }
 
-.session-li:hover .row-action,
-.session-li:focus-within .row-action {
-  visibility: visible;
+.session-li:has(.session-row.selected) .row-actions {
+  background: linear-gradient(to right, transparent, var(--panel-3) 12px);
 }
 
-/* A pin is state, not a hover affordance: it stays visible so a pinned row
-   explains itself and can be unpinned without hunting. */
 .session-li .row-action.row-action-on {
-  visibility: visible;
   color: var(--accent);
 }
 
@@ -367,14 +411,14 @@ code {
   flex: 1;
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 7px;
   width: 100%;
   text-align: left;
   background: none;
   border: none;
   border-left: 2px solid transparent;
   color: var(--text-2);
-  padding: 5px 8px;
+  padding: 4px 6px;
   border-radius: var(--radius-sm);
   cursor: pointer;
   min-width: 0;
@@ -417,17 +461,41 @@ code {
   white-space: nowrap;
 }
 
-/* Stored sessions get a quiet glyph where live ones get a status dot, so the
-   two states are distinguishable without reading the meta column. */
-.session-glyph {
+/* The provider's mark leads each row. An open session wears its status dot
+   on the mark's corner; a stored one's mark is quieter, so the two read apart
+   without the meta column. */
+.session-lead {
+  position: relative;
   display: inline-flex;
-  color: var(--muted);
-  opacity: 0.75;
   flex: none;
 }
 
-.session-row:hover .session-glyph,
-.session-row.selected .session-glyph {
+.session-lead .provider-mark {
+  width: 18px;
+  height: 18px;
+}
+
+.session-lead .dot {
+  position: absolute;
+  right: -2px;
+  bottom: -2px;
+  box-shadow: 0 0 0 2px var(--sidebar);
+}
+
+.session-row:hover .session-lead .dot {
+  box-shadow: 0 0 0 2px var(--panel-2);
+}
+
+.session-row.selected .session-lead .dot {
+  box-shadow: 0 0 0 2px var(--panel-3);
+}
+
+.session-lead-stored {
+  opacity: 0.6;
+}
+
+.session-row:hover .session-lead-stored,
+.session-row.selected .session-lead-stored {
   opacity: 1;
 }
 
@@ -1667,7 +1735,7 @@ code {
 
 .composer {
   flex: none;
-  padding: 8px 22px 12px;
+  padding: 6px 22px 8px;
   display: flex;
   flex-direction: column;
   gap: 6px;
@@ -1876,7 +1944,11 @@ code {
   justify-content: flex-end;
   gap: 12px;
   padding: 0 8px;
-  min-height: 16px;
+}
+
+/* Nothing to report: the row takes no height at all. */
+.composer-meta:empty {
+  display: none;
 }
 
 .send-button {
@@ -2985,6 +3057,20 @@ code {
 
 ::-webkit-scrollbar-track {
   background: transparent;
+}
+
+/* The session list's scrollbar shows only while it scrolls. */
+.sidebar-body::-webkit-scrollbar {
+  width: 6px;
+}
+
+.sidebar-body::-webkit-scrollbar-thumb {
+  background: transparent;
+  border: none;
+}
+
+.sidebar-body.scrolling::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.18);
 }
 
 /* Live activity (running turn) */

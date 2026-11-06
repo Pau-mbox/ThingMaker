@@ -426,6 +426,9 @@ type State = {
   sampleUsage: (sessionId: string, phase: "start" | "tick" | "settle") => Promise<void>;
   loadRecords: (workspaceId: string) => Promise<void>;
   archiveSession: (workspaceId: string, agentSessionId: string, archived: boolean) => Promise<void>;
+  /** Archives a session, stopping it first when it is open. Its transcript
+   *  stays on disk, and Archived can bring it back. */
+  stopAndArchive: (workspaceId: string, agentSessionId: string, liveId?: string) => Promise<void>;
   pinSession: (workspaceId: string, agentSessionId: string, pinned: boolean) => Promise<void>;
   renameSession: (workspaceId: string, agentSessionId: string, title: string | null) => Promise<void>;
   loadRepoInfo: (workspaceId: string) => Promise<void>;
@@ -1331,6 +1334,15 @@ export const useStore = create<State>((set, get) => ({
     } catch (error) {
       set({ error: asError(error) });
     }
+  },
+
+  async stopAndArchive(workspaceId, agentSessionId, liveId) {
+    if (liveId && get().sessions[liveId]) {
+      await get().stop(liveId);
+      // Kept running when asked, or it failed to stop: it stays listed.
+      if (get().sessions[liveId]) return;
+    }
+    await get().archiveSession(workspaceId, agentSessionId, true);
   },
 
   /**
@@ -2382,7 +2394,7 @@ export const useStore = create<State>((set, get) => ({
     const base = live ? sessionTitle(live, records) : record?.titleOverlay || record?.autoTitle || t("Session");
     // A side chat is a fork that can also act on this session's goal.
     const side = Boolean(how?.side && live);
-    const title = forkTitle(base, records.map((entry) => entry.titleOverlay || entry.autoTitle || ""), side ? "side" : "fork");
+    const title = forkTitle(base, records.map((entry) => entry.titleOverlay || entry.autoTitle || ""), "fork");
     // The copy works the way the original does: its model, effort and team.
     const options = live ? asConfigOptions(live.snapshot.configOptions) : [];
     const chosen = (option: { currentValue?: unknown } | undefined) => (typeof option?.currentValue === "string" && option.currentValue !== "default" ? option.currentValue : undefined);

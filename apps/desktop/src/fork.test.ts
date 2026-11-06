@@ -148,6 +148,21 @@ describe("forking a session", () => {
     expect(api.sessionNest).toHaveBeenCalledWith("w1", "agent-fork", null);
     expect(loadRecords).toHaveBeenCalledWith("w1");
   });
+
+  it("archives an open session by stopping it first", async () => {
+    useStore.setState({ sessions: { main: live("main"), fork: live("fork") }, sessionOrder: ["main", "fork"], inspectWorkspace: vi.fn(async () => undefined) } as never);
+    await useStore.getState().stopAndArchive("w1", "agent-fork", "fork");
+    expect(api.sessionStop).toHaveBeenCalledWith({ id: "fork", attachmentGeneration: "1" });
+    expect(useStore.getState().sessions.fork).toBeUndefined();
+    expect(api.sessionArchive).toHaveBeenCalledWith("w1", "agent-fork", true);
+  });
+
+  it("keeps a session listed when it is not stopped", async () => {
+    useStore.setState({ sessions: { main: live("main"), fork: live("fork") }, sessionOrder: ["main", "fork"] } as never);
+    vi.mocked(api.sessionStop).mockRejectedValue(new Error("busy"));
+    await useStore.getState().stopAndArchive("w1", "agent-fork", "fork");
+    expect(api.sessionArchive).not.toHaveBeenCalled();
+  });
 });
 
 describe("reports from nested sessions", () => {

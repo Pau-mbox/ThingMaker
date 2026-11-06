@@ -1,4 +1,4 @@
-import { Fragment, memo, useCallback, useEffect, useMemo, useRef, useState, type ClipboardEvent, type KeyboardEvent, type ReactElement, type ReactNode } from "react";
+import { Fragment, memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ClipboardEvent, type KeyboardEvent, type ReactElement, type ReactNode } from "react";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import type { ContentBlock, Mention, Provider, ToolPatch } from "@thingmaker/contracts";
 import { PROVIDER_LABELS } from "@thingmaker/contracts";
@@ -634,10 +634,10 @@ function SideChatButton({ sessionId }: { sessionId: string }) {
       className="tab tab-side"
       disabled={!ready || busy}
       onClick={start}
-      title={ready ? t("Talk to a copy of this session without adding to its conversation. The copy opens as a session nested under this one, and reports back.") : t("Send this session a message first: there is nothing to copy yet.")}
+      title={ready ? t("A copy of this conversation in a new session, nested under this one. This one stays as it is, and the copy reports back.") : t("Send this session a message first: there is nothing to copy yet.")}
       type="button"
     >
-      <IconBranch size={13} /> {t("Side chat")}
+      <IconBranch size={13} /> {t("Fork")}
     </button>
   );
 }
@@ -651,7 +651,6 @@ export function SessionPanel({ sessionId }: { sessionId: string }) {
   const steer = useStore((s) => s.steer);
   const enqueue = useStore((s) => s.enqueue);
   const cancel = useStore((s) => s.cancel);
-  const stop = useStore((s) => s.stop);
   const refreshSnapshot = useStore((s) => s.refreshSnapshot);
   const focusToken = useStore((s) => s.focusComposerToken);
   const inspection = useStore((s) => (session ? s.inspections[session.workspaceId] : undefined));
@@ -676,7 +675,17 @@ export function SessionPanel({ sessionId }: { sessionId: string }) {
   const composerRef = useRef<HTMLTextAreaElement>(null);
   const searchRef = useRef<HTMLInputElement>(null);
   const [query, setQuery] = useState("");
-  const [visible, setVisible] = useState(uiPrefs.transcriptPage);
+  // Opens on the latest page and the one before it; reaching the top loads
+  // the page before that (see the scroll handler below).
+  const [visible, setVisible] = useState(uiPrefs.transcriptPage * 2);
+  const pageRef = useRef(uiPrefs.transcriptPage);
+  pageRef.current = uiPrefs.transcriptPage;
+  /** Cards not yet shown above the window, read by the scroll handler. */
+  const hiddenAboveRef = useRef(0);
+  /** Where the reader was when earlier cards were asked for, to put them back
+   *  there once the cards are in. Set while a page is loading, so one reach of
+   *  the top loads one page. */
+  const growingRef = useRef<{ height: number; top: number } | null>(null);
   const [dropping, setDropping] = useState(false);
   const [mention, setMention] = useState<{ token: string; matches: string[]; index: number; truncated: boolean; copy: boolean } | null>(null);
 
@@ -700,6 +709,13 @@ export function SessionPanel({ sessionId }: { sessionId: string }) {
     const onScroll = () => {
       const top = element.scrollTop;
       if (top < lastTop - 2) followRef.current = false;
+      // Scrolling up into the top loads the page before. Only a move up by
+      // the reader does it: putting the reader back after the load moves
+      // down, so it cannot set off another.
+      if (top < lastTop && top < 240 && hiddenAboveRef.current > 0 && !growingRef.current) {
+        growingRef.current = { height: element.scrollHeight, top };
+        setVisible((count) => count + pageRef.current);
+      }
       if (!query && element.scrollHeight - top - element.clientHeight < 48) followRef.current = true;
       lastTop = top;
     };
@@ -755,6 +771,15 @@ export function SessionPanel({ sessionId }: { sessionId: string }) {
       setTimeout(() => target.classList.remove("jump-flash"), 1600);
     });
   }, [transcriptFocus, tab, session, query, visible, clearJumpFocus]);
+
+  // Earlier cards went in above: keep the reader on what they were reading.
+  useLayoutEffect(() => {
+    const growing = growingRef.current;
+    const element = transcriptRef.current;
+    if (!growing || !element) return;
+    growingRef.current = null;
+    element.scrollTop = element.scrollHeight - growing.height + growing.top;
+  }, [visible]);
 
   /** Sending a prompt goes back to the bottom to follow the reply. */
   const sendAndFollow = () => {
@@ -946,9 +971,11 @@ export function SessionPanel({ sessionId }: { sessionId: string }) {
   const sendKey = uiPrefs.enterSends ? "Enter" : "Shift+Enter";
   const hasInput = !!draft.trim() || attachments.length > 0 || mentions.length > 0;
   const canSend = !inFlightRequestId && projection.attachment === "attached" && projection.process !== "exited";
-  const lastSubmission = [...projection.submissions.entries()].at(-1);
+  // Only a submission that went wrong is worth a line under the prompt.
+  const lastSubmission = [...projection.submissions.entries()].filter(([, entry]) => entry.state === "rejected" || entry.state === "outcome_unknown").at(-1);
   const mediaOk = { image: projection.capabilities?.promptImage ?? false, audio: projection.capabilities?.promptAudio ?? false };
   const windowStart = Math.max(0, filteredCards.length - visible);
+  hiddenAboveRef.current = windowStart;
   const shownCards = filteredCards.slice(windowStart);
   const transcriptGroups = groupCards(shownCards);
   const docPlaces = placeDocs(transcriptGroups, projection.toolCalls, [workspaceRoot, workspaceDisplay].filter(Boolean));
@@ -1083,8 +1110,8 @@ export function SessionPanel({ sessionId }: { sessionId: string }) {
             </button>
           ))}
         </div>
-        {!isWorker && <SideChatButton sessionId={sessionId} />}
         <span className="tabs-spacer" />
+        {!isWorker && <SideChatButton sessionId={sessionId} />}
         {/* The terminal is still a view (the command palette opens it); its
             place in the bar went to the commands left running in the
             background, which nothing else shows once a turn has ended. */}
@@ -1095,38 +1122,29 @@ export function SessionPanel({ sessionId }: { sessionId: string }) {
       {active && <div aria-hidden="true" className="progress-line" />}
       {tab === "transcript" && (
         <>
-          {/* Only rendered when it has something to carry, so the transcript
-              keeps the height in the common case. Search opens with ⌘F and
-              export lives in the top bar. */}
-          {(searchOpen || windowStart > 0) && (
+          {/* Only rendered while searching, so the transcript keeps the
+              height. Search opens with ⌘F and export lives in the top bar;
+              earlier cards load on their own when the top is reached. */}
+          {searchOpen && (
             <div className="transcript-tools">
-              {searchOpen && (
-                <>
-                  <input
-                    aria-label={t("Search transcript")}
-                    className="input"
-                    onChange={(e) => setQuery(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === "Escape") {
-                        setQuery("");
-                        setSearchOpen(false);
-                        composerRef.current?.focus();
-                      }
-                    }}
-                    placeholder={t("Search transcript (Esc to close)")}
-                    ref={searchRef}
-                    value={query}
-                  />
-                  <span className="small muted">
-                    {t("{shown} of {total} entries", { shown: filteredCards.length, total: projection.cards.length })}
-                  </span>
-                </>
-              )}
-              {windowStart > 0 && (
-                <button className="link small" onClick={() => setVisible((v) => v + uiPrefs.transcriptPage)} type="button">
-                  {t("show {n} earlier of {total}", { n: Math.min(uiPrefs.transcriptPage, windowStart), total: windowStart })}
-                </button>
-              )}
+              <input
+                aria-label={t("Search transcript")}
+                className="input"
+                onChange={(e) => setQuery(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Escape") {
+                    setQuery("");
+                    setSearchOpen(false);
+                    composerRef.current?.focus();
+                  }
+                }}
+                placeholder={t("Search transcript (Esc to close)")}
+                ref={searchRef}
+                value={query}
+              />
+              <span className="small muted">
+                {t("{shown} of {total} entries", { shown: filteredCards.length, total: projection.cards.length })}
+              </span>
             </div>
           )}
           <BigThingBand sessionId={sessionId} />
@@ -1306,8 +1324,8 @@ export function SessionPanel({ sessionId }: { sessionId: string }) {
                     : t("Queue for the next turn ({key}), or steer this one (⌘{key}). Type @ to mention a file.", { key: sendKey })
                   : t("Queue for the next turn ({key}). Type @ to mention a file.", { key: sendKey })
                 : uiPrefs.enterSends
-                  ? t("Prompt (Enter to send, Shift+Enter for newline). Type @ to mention a file; drop or paste images to attach.")
-                  : t("Prompt (Shift+Enter to send, Enter for newline). Type @ to mention a file; drop or paste images to attach.")
+                  ? t("Enter to send | Shift + Enter for newline")
+                  : t("Shift + Enter to send | Enter for newline")
             }
             ref={composerRef}
             rows={1}
@@ -1370,9 +1388,6 @@ export function SessionPanel({ sessionId }: { sessionId: string }) {
         </div>
         </div>
         <div className="row wrap composer-meta">
-          <button className="link small" onClick={() => void stop(sessionId)} type="button">
-            {t("stop session")}
-          </button>
           {lastSubmission && (
             <span className="small muted">
               {t("last submission {id}: {state}", { id: String(lastSubmission[0]).slice(0, 8), state: String(lastSubmission[1].state).replace("_", " ") })}

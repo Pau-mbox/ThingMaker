@@ -99,11 +99,11 @@ export function SideNotesCard({ notes, own }: { notes: string[]; own: string }) 
   return (
     <>
       <details className="card card-bigthing-turn card-side-note">
-        <summary title={t("Passed on by a side chat, not written by you.")}>
+        <summary title={t("Passed on by a fork, not written by you.")}>
           <span className="bigthing-turn-mark" aria-hidden="true">
             ↳
           </span>
-          <span className="bigthing-turn-text">{notes.length === 1 ? t("Side chat → this session: {note}", { note: notes[0]! }) : t("Side chat → this session: {n} notes", { n: notes.length })}</span>
+          <span className="bigthing-turn-text">{notes.length === 1 ? t("Fork → this session: {note}", { note: notes[0]! }) : t("Fork → this session: {n} notes", { n: notes.length })}</span>
         </summary>
         <ul className="bigthing-turn-prompt">
           {notes.map((note, index) => (

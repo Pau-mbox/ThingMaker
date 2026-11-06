@@ -321,7 +321,7 @@ export function SettingsPanel() {
             type="number"
             value={uiPrefs.transcriptPage}
           />{" "}
-          <span className="small muted">{t("entries rendered at once; earlier entries load on request")}</span>
+          <span className="small muted">{t("entries loaded at a time; earlier ones load as you scroll up")}</span>
         </label>
         <p className="small muted">
           {t(
