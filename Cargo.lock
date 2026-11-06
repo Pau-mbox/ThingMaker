@@ -4975,7 +4975,7 @@ dependencies = [
 
 [[package]]
 name = "thingmaker-desktop"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "axum",
  "base64 0.22.1",
@@ -5014,7 +5014,7 @@ dependencies = [
 
 [[package]]
 name = "thingmaker-supervisor"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "blake3",
  "ignore",
