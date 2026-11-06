@@ -89,9 +89,15 @@ keep a copy somewhere safe. To rotate it, ship one release whose
    workspace and both `package.json` files, refreshes `Cargo.lock`, commits
    "Release v0.2.0" and tags `v0.2.0`. It refuses a version that is not newer
    or a tree with uncommitted changes.
-2. `git push origin main && git push origin v0.2.0` starts the workflow.
-3. When both builds are attached, edit the draft's notes (the app shows them)
-   and publish it. Every ThingMaker from then on sees the update.
+2. Write the notes first, as a draft for the tag that is not pushed yet:
+   `gh release create v0.2.0 --draft --title "ThingMaker v0.2.0" --notes-file notes.md`.
+   The workflow builds into that draft and puts its notes in `latest.json`,
+   which is what the app's update panel shows. Without one it makes a draft
+   with a generic line.
+3. `git push origin main && git push origin v0.2.0` starts the workflow.
+4. When both builds are attached, publish the draft. Every ThingMaker from
+   then on sees the update. Editing the notes after the build changes the
+   release page, not `latest.json`.
 
 **What is still missing.** The macOS app is ad-hoc signed, not signed with an
 Apple Developer ID or notarized, and the Windows installer is not

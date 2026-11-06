@@ -22,6 +22,7 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       release_id: ${{ steps.release.outputs.id }}
+      notes: ${{ steps.release.outputs.notes }}
     steps:
       - id: release
         env:
@@ -36,6 +37,13 @@ jobs:
             id=$(gh api "repos/$GH_REPO/releases" --jq ".[] | select(.tag_name == \"$TAG\") | .id" | head -n 1)
           fi
           echo "id=$id" >> "$GITHUB_OUTPUT"
+          # The draft's notes (written before the tag is pushed, or the
+          # default above) are what the updater shows: latest.json carries them.
+          {
+            echo "notes<<THINGMAKER_NOTES"
+            gh api "repos/$GH_REPO/releases/$id" --jq .body
+            echo "THINGMAKER_NOTES"
+          } >> "$GITHUB_OUTPUT"
 
   build:
     needs: create-release
@@ -78,4 +86,5 @@ jobs:
         with:
           projectPath: apps/desktop
           releaseId: ${{ needs.create-release.outputs.release_id }}
+          releaseBody: ${{ needs.create-release.outputs.notes }}
           args: ${{ matrix.args }}
