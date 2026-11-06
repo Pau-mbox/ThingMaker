@@ -1,7 +1,7 @@
 {
   "name": "thingmaker",
   "private": true,
-  "version": "0.1.2",
+  "version": "0.1.3",
   "description": "ThingMaker: one desktop for Claude Code, Codex and Gemini on your own subscriptions (Tauri 2 / React / Rust supervisor).",
   "license": "MIT",
   "engines": {
