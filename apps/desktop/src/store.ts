@@ -412,6 +412,8 @@ type State = {
   loadTeamPresets: () => Promise<void>;
   saveTeamPreset: (preset: TeamPreset) => Promise<void>;
   deleteTeamPreset: (id: string) => Promise<void>;
+  /** Saves teams read from a file, all at once. */
+  addTeamPresets: (presets: TeamPreset[]) => Promise<boolean>;
   /** Makes a preset (or none) what a new session starts with. */
   setDefaultPreset: (id: string | null) => Promise<void>;
   /** Starts a session led by the preset's orchestrator, with its workers. */
@@ -2582,6 +2584,18 @@ export const useStore = create<State>((set, get) => ({
       if (get().defaultPresetId === saved.id) await get().saveDefaultCombo(saved.combo);
     } catch (error) {
       set({ error: asError(error) });
+    }
+  },
+
+  async addTeamPresets(presets) {
+    const list = presets.reduce((all, preset) => upsertPreset(all, preset), get().teamPresets);
+    try {
+      await api.prefSet(TEAM_PRESETS_KEY, list);
+      set({ teamPresets: list });
+      return true;
+    } catch (error) {
+      set({ error: asError(error) });
+      return false;
     }
   },
 

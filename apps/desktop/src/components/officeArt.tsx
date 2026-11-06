@@ -266,7 +266,8 @@ export const COLUMN_ORANGE = (height: number) => column(height, PALETTE.orange, 
 
 /** Everything that does not change with the crew. */
 /** `h` is the room's height; `dy` how far the lounge has moved from where a three-row office puts it. */
-export const Backdrop = memo(function Backdrop({ h, dy, wall, logo }: { h: number; dy: number; wall?: string | null; logo?: string | null }) {
+/** `board`: the whiteboard is out, standing where the coffee table and the cubes are, so they make way. */
+export const Backdrop = memo(function Backdrop({ h, dy, wall, logo, board = false }: { h: number; dy: number; wall?: string | null; logo?: string | null; board?: boolean }) {
   const speckles = Array.from({ length: 70 }, (_, i) => ({ x: (i * 37) % ROOM.w, y: (i * 11) % 9 }));
   return (
     <>
@@ -337,12 +338,12 @@ export const Backdrop = memo(function Backdrop({ h, dy, wall, logo }: { h: numbe
       <g transform={`translate(0 ${dy})`}>
       <rect fill="#a88f5e" height="66" width="150" x="5" y="223" />
       <rect fill="url(#office-jute)" height="62" width="146" x="7" y="225" />
-      {drawSprite(CUBES, 94, 230, "cubes")}
+      {!board && drawSprite(CUBES, 94, 230, "cubes")}
       {drawSprite(FRIDGE, 114, 222, "fridge")}
       {drawSprite(COFFEE_MACHINE, 128, 230, "coffee")}
       {drawSprite(PLANT, 142, 224, "plant")}
       {drawSprite(SOFA, 10, 226, "sofa")}
-      {drawSprite(COFFEE_TABLE, 56, 250, "table")}
+      {!board && drawSprite(COFFEE_TABLE, 56, 250, "table")}
       {drawSprite(BEANBAG_TAUPE, 8, 254, "bean1")}
       {drawSprite(BEANBAG_DARK, 124, 252, "bean2")}
       {drawSprite(BEANBAG_BALL, 96, 258, "ball")}

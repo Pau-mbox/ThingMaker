@@ -387,6 +387,9 @@ impl SessionActor {
         for (name, value) in launch.environment() {
             environment = environment.with_set(name, value);
         }
+        if let Some((name, value)) = task_list_switch(&launch) {
+            environment = environment.with_set(name, value);
+        }
         let spec = launch::launch_spec(&config.target, launch.arguments(), launch.root(), &environment, std::env::vars());
         let generation = config.attachment_generation;
         let (transport, incoming) = Connection::spawn(&launch, spec, generation)
@@ -2332,6 +2335,14 @@ pub fn content_blocks_to_values(blocks: &[ContentBlock]) -> Vec<Value> {
         .collect()
 }
 
+/// Claude Code leaves its task-list tools (TaskCreate, TaskUpdate, TaskList)
+/// out of SDK sessions unless this is set. With them, the agent keeps a list
+/// of steps for longer work, which `claude-agent-acp` reports as the session's
+/// plan: the checklist above the composer and the office's whiteboard.
+fn task_list_switch(launch: &AgentLaunch) -> Option<(&'static str, &'static str)> {
+    matches!(launch, AgentLaunch::Claude(_)).then_some(("CLAUDE_CODE_ENABLE_TODO_TOOLS", "1"))
+}
+
 /// Where a `session/fork` copy ends: the message as the agent named it,
 /// under the `_meta` key `claude-agent-acp` reads (JetBrains AIR's fork
 /// point), kept beside whatever `_meta` the launch already sends.
@@ -2340,4 +2351,17 @@ fn fork_point(params: &mut Value, message_id: &str) {
         params["_meta"] = json!({});
     }
     params["_meta"]["jetbrains"] = json!({ "air": { "fork": { "version": 1, "messageId": message_id } } });
+}
+
+#[cfg(test)]
+mod task_list_tests {
+    use super::*;
+
+    #[test]
+    fn claude_sessions_get_their_task_list_tools_and_others_are_left_alone() {
+        let claude = AgentLaunch::Claude(claude::ClaudeLaunchOptions::new("/work", "/usr/bin/node", vec!["adapter.js".into()]));
+        assert_eq!(task_list_switch(&claude), Some(("CLAUDE_CODE_ENABLE_TODO_TOOLS", "1")));
+        let codex = AgentLaunch::Codex(codex::CodexLaunchOptions::new("/work", "/usr/bin/codex"));
+        assert_eq!(task_list_switch(&codex), None);
+    }
 }

@@ -17,6 +17,7 @@ import { useStore } from "../store";
 import { buildCrew } from "./crew";
 import { IconChevron, IconImage, IconOffice } from "./icons";
 import { OfficeScene } from "./OfficeScene";
+import { boardPlan } from "./OfficeBoard";
 
 /** One spot a person can fill with their own image: pick a file, or take theirs away. */
 function ImageSlot({ slot, label }: { slot: OfficeSlot; label: string }) {
@@ -180,7 +181,7 @@ export function OfficePane({ sessionId }: { sessionId: string }) {
           <p className="office-custom-note">{t("Your images stay on this device.")}</p>
         </div>
       )}
-      <OfficeScene crew={crew} logo={logo} wall={wall} />
+      <OfficeScene crew={crew} logo={logo} plan={boardPlan(projection.plan?.content, foreground)} wall={wall} />
       <details className="office-roster" open={crew.length > 1}>
         <summary>{t("Everyone in the office ({n})", { n: crew.length })}</summary>
         <ul>

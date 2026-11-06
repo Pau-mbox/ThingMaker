@@ -18,12 +18,14 @@
  * pixel stays crisp.
  */
 import { memo, useEffect, useRef, useState, type CSSProperties } from "react";
+import type { PlanContent } from "@thingmaker/contracts";
 import { t } from "../i18n";
 import { TinyBot } from "./TinyBot";
 import type { CrewMember } from "./crew";
 import { useIdleActs, type Act, type Move } from "./officeActs";
 import { HalloweenDecor, OFFICE_THEME } from "./officeDecor";
 import { Backdrop, CHAIR, CHAIR_COLORS, DESK_FRONT, DESK_H, DESK_ITEMS, DESK_W, MONITOR, ROOM, drawSprite } from "./officeArt";
+import { OfficeBoard } from "./OfficeBoard";
 import "./office.css";
 
 export { ROOM };
@@ -116,8 +118,9 @@ function ActIcon({ act }: { act: Act }) {
   }
 }
 
-/** `wall` and `logo` are a person's own images for the big screen and the framed picture, when they chose any. */
-export const OfficeScene = memo(function OfficeScene({ crew, wall = null, logo = null }: { crew: CrewMember[]; wall?: string | null; logo?: string | null }) {
+/** `wall` and `logo` are a person's own images for the big screen and the framed picture, when they chose any.
+ *  `plan` is the lead's plan of steps, written on a whiteboard in the lounge while it is out (see OfficeBoard). */
+export const OfficeScene = memo(function OfficeScene({ crew, wall = null, logo = null, plan = null }: { crew: CrewMember[]; wall?: string | null; logo?: string | null; plan?: Extract<PlanContent, { planType: "items" }> | null }) {
   const places = placeCrew(crew);
   const layout = layoutFor(crew.filter((member) => member.kind !== "lead").length);
   const { ref, width } = useWidth();
@@ -130,7 +133,7 @@ export const OfficeScene = memo(function OfficeScene({ crew, wall = null, logo =
   return (
     <div aria-label={t("The crew's office: {working} of {total} at work", { working, total: crew.length })} className="office-scene" ref={ref} role="img" style={{ aspectRatio: `${ROOM.w} / ${layout.h}` }}>
       <svg {...layer} className="office-layer office-back">
-        <Backdrop dy={layout.dy} h={layout.h} logo={logo} wall={wall} />
+        <Backdrop board={!!plan} dy={layout.dy} h={layout.h} logo={logo} wall={wall} />
         {OFFICE_THEME === "halloween" && <HalloweenDecor columns={layout.columns} dy={layout.dy} rows={layout.rows} />}
         {desks.map((desk) => (
           <g className={desk.on ? "office-desk-on" : undefined} key={desk.key}>
@@ -140,6 +143,7 @@ export const OfficeScene = memo(function OfficeScene({ crew, wall = null, logo =
           </g>
         ))}
       </svg>
+      {plan && <OfficeBoard dy={layout.dy} h={layout.h} plan={plan} />}
       {crew.map((member, index) => {
         const place = places[index] as Place;
         const lead = member.kind === "lead";

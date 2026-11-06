@@ -483,3 +483,119 @@
   margin: 0;
   color: var(--muted);
 }
+
+/* The whiteboard (OfficeBoard): rolls into the lounge while the lead has a plan. */
+.office-scene {
+  container-type: inline-size;
+}
+
+.office-board {
+  position: absolute;
+  pointer-events: auto;
+  animation: office-board-in 0.9s cubic-bezier(0.2, 0.8, 0.3, 1) both;
+}
+
+@keyframes office-board-in {
+  from {
+    transform: translateX(70%);
+    opacity: 0;
+  }
+  to {
+    transform: none;
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .office-board {
+    animation: none;
+  }
+}
+
+[data-reduce-motion="true"] .office-board {
+  animation: none;
+}
+
+.office-board-frame {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+  filter: drop-shadow(0 1px 0 rgba(0, 0, 0, 0.3));
+}
+
+/* Marker on white: sized with the room (1/160 of its width is one room pixel). */
+.office-board-face {
+  position: absolute;
+  overflow: hidden;
+  padding: calc(100cqw / 160 * 0.8) calc(100cqw / 160 * 1.6);
+  box-sizing: border-box;
+  color: #1d3a8a;
+  font-size: max(7px, calc(100cqw / 160 * 3));
+  line-height: 1.32;
+  font-family: "Comic Sans MS", "Chalkboard SE", "Marker Felt", var(--sans, sans-serif);
+}
+
+.office-board-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  color: #c4303a;
+  font-weight: 700;
+  border-bottom: 1px solid rgba(196, 48, 58, 0.35);
+  margin-bottom: 1px;
+}
+
+.office-board-count {
+  font-variant-numeric: tabular-nums;
+}
+
+.office-board-steps {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.office-board-step {
+  display: flex;
+  gap: 0.35em;
+  min-width: 0;
+}
+
+.office-board-mark {
+  flex: none;
+  width: 0.9em;
+  text-align: center;
+}
+
+.office-board-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.office-board-completed {
+  color: #7d8597;
+}
+
+.office-board-completed .office-board-mark {
+  color: #2e9b57;
+  font-weight: 700;
+}
+
+.office-board-completed .office-board-text {
+  text-decoration: line-through;
+  text-decoration-color: rgba(125, 133, 151, 0.7);
+}
+
+.office-board-in_progress {
+  color: #c4303a;
+  font-weight: 700;
+}
+
+.office-board-more {
+  color: #7d8597;
+  font-size: 0.85em;
+}

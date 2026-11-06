@@ -4,6 +4,7 @@
  * The list and the editor take the screen; the retry policy waits behind
  * Advanced at the bottom.
  */
+import { TeamsTransfer } from "./TeamsTransfer";
 import { useEffect, useState } from "react";
 import { type JobRetryPolicy, type TeamPreset } from "@thingmaker/contracts";
 import { api } from "../ipc";
@@ -233,6 +234,7 @@ export function TeamsView() {
     <div className="panel teams-view">
       <header className="teams-header">
         <h2>{t("Teams")}</h2>
+        <TeamsTransfer onImported={setSelectedId} />
       </header>
       <div className="teams-layout">
         <nav aria-label={t("Teams")} className="teams-list">

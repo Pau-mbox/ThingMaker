@@ -522,4 +522,6 @@ export const session: Record<string, string> = {
   "Fork → this session: {note}": "Bifurcación → esta sesión: {note}",
   "Fork → this session: {n} notes": "Bifurcación → esta sesión: {n} notas",
   "A copy of this conversation in a new session, nested under this one. This one stays as it is, and the copy reports back.": "Una copia de esta conversación en una sesión nueva, anidada bajo esta. Esta se queda como está, y la copia informa de vuelta.",
+  "Whiteboard: {done} of {total} steps done": "Pizarra: {done} de {total} pasos hechos",
+  "✓ {n} above": "✓ {n} arriba",
 };
